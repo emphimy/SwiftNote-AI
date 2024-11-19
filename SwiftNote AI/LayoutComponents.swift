@@ -2,70 +2,6 @@
 
 import SwiftUI
 
-// MARK: - Custom Navigation Bar
-struct CustomNavigationBar: View {
-    let title: String
-    let leftItems: [NavBarItem]
-    let rightItems: [NavBarItem]
-    @Environment(\.dismiss) private var dismiss
-    
-    init(
-        title: String,
-        leftItems: [NavBarItem] = [],
-        rightItems: [NavBarItem] = []
-    ) {
-        self.title = title
-        self.leftItems = leftItems
-        self.rightItems = rightItems
-        
-        #if DEBUG
-        print("🧭 NavBar: Creating navigation bar with title: \(title)")
-        #endif
-    }
-    
-    var body: some View {
-        HStack(spacing: Theme.Spacing.md) {
-            // Left Items
-            HStack(spacing: Theme.Spacing.sm) {
-                if leftItems.isEmpty {
-                    Button(action: {
-                        #if DEBUG
-                        print("🧭 NavBar: Back button tapped")
-                        #endif
-                        dismiss()
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .foregroundColor(Theme.Colors.primary)
-                    }
-                } else {
-                    ForEach(leftItems) { item in
-                        NavBarButton(item: item)
-                    }
-                }
-            }
-            
-            Spacer()
-            
-            // Title
-            Text(title)
-                .font(Theme.Typography.h3)
-                .lineLimit(1)
-            
-            Spacer()
-            
-            // Right Items
-            HStack(spacing: Theme.Spacing.sm) {
-                ForEach(rightItems) { item in
-                    NavBarButton(item: item)
-                }
-            }
-        }
-        .padding(.horizontal, Theme.Spacing.md)
-        .frame(height: 44)
-        .background(Theme.Colors.background)
-    }
-}
-
 // MARK: - Navigation Bar Item
 struct NavBarItem: Identifiable {
     let id = UUID()
@@ -331,45 +267,107 @@ struct EmptyStateView: View {
 // MARK: - Preview Provider
 #if DEBUG
 struct LayoutComponents_Previews: PreviewProvider {
-    static var previews: some View {
-        Group {
-            // Navigation Bar Preview
-            CustomNavigationBar(
-                title: "Example Title",
-                rightItems: [
-                    NavBarItem(icon: "gear") { print("Settings tapped") },
-                    NavBarItem(icon: "square.and.arrow.up") { print("Share tapped") }
-                ]
-            )
-            .previewDisplayName("Navigation Bar")
-            
-            // Section Header Preview
-            SectionHeader(
-                title: "Section Title",
-                subtitle: "Optional subtitle text",
-                trailing: { AnyView(Button("See All") { print("See all tapped") }) }
-            )
-            .previewDisplayName("Section Header")
-            
-            // Divider Preview
-            VStack {
-                CustomDivider()
-                CustomDivider(title: "Or continue with")
-            }
-            .previewDisplayName("Dividers")
-            
-            // Empty State Preview
-            EmptyStateView(
-                icon: "doc.text",
-                title: "No Notes Yet",
-                message: "Start by creating your first note",
-                actionTitle: "Create Note"
-            ) {
-                print("Create note tapped")
-            }
-            .previewDisplayName("Empty State")
-        }
-        .previewLayout(.sizeThatFits)
-    }
+   static var previews: some View {
+       Group {
+           // Navigation Bar Preview
+           HStack {
+               VStack(alignment: .leading) {
+                   Text("Example Title")
+                       .font(Theme.Typography.h2)
+               }
+               Spacer()
+               
+               HStack(spacing: Theme.Spacing.sm) {
+                   NavBarButton(item: NavBarItem(icon: "gear") {
+                       #if DEBUG
+                       print("🧭 Preview: Settings button tapped")
+                       #endif
+                   })
+                   NavBarButton(item: NavBarItem(icon: "square.and.arrow.up") {
+                       #if DEBUG
+                       print("🧭 Preview: Share button tapped")
+                       #endif
+                   })
+               }
+           }
+           .padding()
+           .previewDisplayName("Navigation Bar")
+           
+           // Section Header Preview
+           SectionHeader(
+               title: "Section Title",
+               subtitle: "Optional subtitle text",
+               trailing: {
+                   AnyView(
+                       Button("See All") {
+                           #if DEBUG
+                           print("📑 Preview: See all button tapped")
+                           #endif
+                       }
+                   )
+               }
+           )
+           .previewDisplayName("Section Header")
+           
+           // Divider Preview
+           VStack(spacing: Theme.Spacing.md) {
+               CustomDivider()
+               CustomDivider(title: "Or continue with")
+               CustomDivider(title: "Custom color", color: Theme.Colors.primary)
+               CustomDivider(thickness: 2)
+           }
+           .padding()
+           .previewDisplayName("Dividers")
+           
+           // Empty State Preview
+           EmptyStateView(
+               icon: "doc.text",
+               title: "No Notes Yet",
+               message: "Start by creating your first note",
+               actionTitle: "Create Note"
+           ) {
+               #if DEBUG
+               print("🗑️ Preview: Empty state action button tapped")
+               #endif
+           }
+           .previewDisplayName("Empty State")
+           
+           // List/Grid Container Preview
+           ListGridContainer(viewMode: .constant(.list)) {
+               ForEach(0..<3) { i in
+                   RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                       .fill(Theme.Colors.secondary)
+                       .frame(height: 80)
+                       .overlay(
+                           Text("Item \(i + 1)")
+                               .foregroundColor(.white)
+                       )
+               }
+           }
+           .frame(height: 300)
+           .previewDisplayName("List Container")
+           
+           ListGridContainer(viewMode: .constant(.grid)) {
+               ForEach(0..<4) { i in
+                   RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                       .fill(Theme.Colors.secondary)
+                       .frame(height: 120)
+                       .overlay(
+                           Text("Grid Item \(i + 1)")
+                               .foregroundColor(.white)
+                       )
+               }
+           }
+           .frame(height: 300)
+           .previewDisplayName("Grid Container")
+       }
+       .padding()
+       .previewLayout(.sizeThatFits)
+       .onAppear {
+           #if DEBUG
+           print("📱 Preview: Layout components preview appeared")
+           #endif
+       }
+   }
 }
 #endif
