@@ -304,7 +304,20 @@ struct AudioRecordingView: View {
                 
                 VStack(spacing: Theme.Spacing.xl) {
                     // Waveform Visualization
-                    WaveformView(audioLevel: viewModel.audioLevel)
+                    EnhancedWaveformView(
+                        audioLevel: viewModel.audioLevel,
+                        configuration: WaveformConfiguration(
+                            primaryColor: viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary,
+                            secondaryColor: (viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary).opacity(0.3),
+                            backgroundColor: Theme.Colors.background,
+                            maxBars: 60,
+                            spacing: 2,
+                            minBarHeight: 10,
+                            maxBarHeight: 100,
+                            barWidth: 3,
+                            animationDuration: 0.15
+                        )
+                    )
                         .frame(height: 200)
                         .padding()
                     
