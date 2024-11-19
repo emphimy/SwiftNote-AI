@@ -111,76 +111,49 @@ struct CustomTextField: View {
 struct SearchBar: View {
     @Binding var text: String
     let placeholder: String
-    let onCancel: (() -> Void)?
-    
     @State private var isEditing = false
     
-    init(
-        text: Binding<String>,
-        placeholder: String = "Search",
-        onCancel: (() -> Void)? = nil
-    ) {
-        self._text = text
-        self.placeholder = placeholder
-        self.onCancel = onCancel
-        
-        #if DEBUG
-        print("🔍 SearchBar: Creating search bar with placeholder: \(placeholder)")
-        #endif
-    }
-    
     var body: some View {
-        HStack {
+        HStack(spacing: Theme.Spacing.xs) {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(Theme.Colors.secondaryText)
+                    .font(Theme.Typography.caption)
                 
                 TextField(placeholder, text: $text)
-                    .onChange(of: text) { newValue in
-                        #if DEBUG
-                        print("🔍 SearchBar: Search text changed to: \(newValue)")
-                        #endif
-                    }
+                    .font(Theme.Typography.body)
                 
                 if !text.isEmpty {
                     Button(action: {
-                        #if DEBUG
-                        print("🔍 SearchBar: Clear text button tapped")
-                        #endif
                         text = ""
                     }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(Theme.Colors.secondaryText)
+                            .font(Theme.Typography.caption)
                     }
                 }
             }
-            .padding(Theme.Spacing.sm)
+            .padding(Theme.Spacing.md)
+            .frame(maxWidth: 280)
             .background(Theme.Colors.secondaryBackground)
             .cornerRadius(Theme.Layout.cornerRadius)
             
             if isEditing {
-                Button("Cancel") {
-                    #if DEBUG
-                    print("🔍 SearchBar: Cancel button tapped")
-                    #endif
-                    
+                Button(action: {
                     withAnimation {
-                        isEditing = false
-                        text = ""
-                        onCancel?()
-                        
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                                       to: nil, from: nil, for: nil)
+                        isEditing = false
                     }
+                }) {
+                    Image(systemName: "magnifyingglass.circle.fill")
+                        .foregroundColor(Theme.Colors.primary)
+                        .font(.system(size: 22))
                 }
-                .foregroundColor(Theme.Colors.primary)
-                .transition(.move(edge: .trailing))
             }
         }
         .onTapGesture {
-            withAnimation {
-                isEditing = true
-            }
+            isEditing = true
         }
     }
 }
@@ -210,9 +183,15 @@ struct CustomInput_Previews: PreviewProvider {
                 isEnabled: false
             )
             
-            SearchBar(text: .constant(""))
+            SearchBar(
+                text: .constant(""),
+                placeholder: "Search" // Add this missing parameter
+            )
             
-            SearchBar(text: .constant("Search term"))
+            SearchBar(
+                text: .constant("Search term"),
+                placeholder: "Search" // Add this missing parameter
+            )
         }
         .padding()
         .previewLayout(.sizeThatFits)

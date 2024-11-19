@@ -58,8 +58,10 @@ private struct HomeHeaderView: View {
    
    var body: some View {
        VStack(spacing: Theme.Spacing.sm) {
-           SearchBar(text: $searchText)
-           
+           SearchBar(
+               text: $searchText,
+               placeholder: "Search notes"
+           )
            HStack {
                Spacer()
                
@@ -86,6 +88,8 @@ private struct NotesContentView: View {
    @ObservedObject var viewModel: HomeViewModel
    let cardActions: (NoteCardConfiguration) -> CardActions
    @Environment(\.horizontalSizeClass) private var sizeClass
+   @Environment(\.managedObjectContext) private var viewContext
+   @State private var selectedNote: NoteCardConfiguration?
    
    private var gridColumns: [GridItem] {
        let count = sizeClass == .compact ? 2 : 3
@@ -107,7 +111,7 @@ private struct NotesContentView: View {
                    icon: "note.text",
                    title: "No Notes Yet",
                    message: "Start by creating your first note",
-                   actionTitle: "Create Note"
+                   actionTitle: nil
                ) {
                    #if DEBUG
                    print("🏠 NotesContent: Empty state create note tapped")
@@ -120,9 +124,17 @@ private struct NotesContentView: View {
                        ForEach(viewModel.notes, id: \.title) { note in
                            Group {
                                if viewModel.viewMode == .list {
-                                   NoteListCard(configuration: note, actions: cardActions(note))
+                                   NoteListCard(
+                                       configuration: note,
+                                       actions: cardActions(note),
+                                       onTap: { selectedNote = note }
+                                   )
                                } else {
-                                   NoteGridCard(configuration: note, actions: cardActions(note))
+                                   NoteGridCard(
+                                       configuration: note,
+                                       actions: cardActions(note),
+                                       onTap: { selectedNote = note }
+                                   )
                                }
                            }
                            .transition(.scale.combined(with: .opacity))
@@ -131,6 +143,9 @@ private struct NotesContentView: View {
                }
                .padding(.horizontal, Theme.Spacing.md)
            }
+       }
+       .sheet(item: $selectedNote) { note in
+           NoteDetailsView(note: note, context: viewContext)
        }
    }
 }
@@ -191,7 +206,7 @@ private struct AddNoteActionSheet: View {
                print("🏠 AddNoteSheet: Google Drive selected")
                #endif
            },
-           ActionCardItem(title: "Dropbox", icon: "box.fill", color: .blue) {
+           ActionCardItem(title: "Dropbox", icon: "archivebox.fill", color: .blue) {
                #if DEBUG
                print("🏠 AddNoteSheet: Dropbox selected")
                #endif
@@ -200,11 +215,64 @@ private struct AddNoteActionSheet: View {
    }
 }
 
+// MARK: - Custom Add Button
+private struct AddNoteButton: View {
+    let action: () -> Void
+    @State private var isPressed = false
+    
+    var body: some View {
+        Button(action: {
+            #if DEBUG
+            print("🏠 AddNoteButton: Button pressed with haptic feedback")
+            #endif
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+                isPressed = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    isPressed = false
+                }
+            }
+            action()
+        }) {
+            ZStack {
+                // Main button background
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Theme.Colors.primary,
+                                Theme.Colors.primary.opacity(0.8)
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 96, height: 96)
+                    .shadow(color: Theme.Colors.primary.opacity(0.3), radius: 8, x: 0, y: 4)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.white.opacity(0.2), lineWidth: 2)
+                    )
+                
+                // Plus icon
+                Image(systemName: "plus")
+                    .font(.system(size: 28, weight: .heavy))
+                    .foregroundColor(.white)
+            }
+        }
+        .scaleEffect(isPressed ? 0.95 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
+        .padding(.bottom, Theme.Spacing.xl)
+    }
+}
+
 // MARK: - Content View
 struct ContentView: View {
    @Environment(\.managedObjectContext) private var viewContext
    @StateObject private var viewModel: HomeViewModel
    @Environment(\.toastManager) private var toastManager
+   @State private var selectedNote: NoteCardConfiguration?
+
    
    init(context: NSManagedObjectContext? = nil) {
        let ctx = context ?? PersistenceController.shared.container.viewContext
@@ -238,31 +306,26 @@ struct ContentView: View {
                    Spacer()
                    HStack {
                        Spacer()
-                       Button(action: {
-                           #if DEBUG
-                           print("🏠 ContentView: Add note button tapped")
-                           #endif
+                       AddNoteButton(action: {
                            viewModel.isShowingAddNote = true
-                       }) {
-                           Image(systemName: "plus")
-                               .font(.title2)
-                               .foregroundColor(.white)
-                               .frame(width: 60, height: 60)
-                               .background(Theme.Colors.primary)
-                               .clipShape(Circle())
-                               .shadow(radius: 4)
-                       }
-                       .padding([.trailing, .bottom], Theme.Spacing.lg)
+                       })
+                       Spacer()
                    }
                }
            }
            .navigationBarTitleDisplayMode(.inline)
+           .sheet(isPresented: $viewModel.isShowingSettings) {
+               NavigationView {
+                   SettingsView()
+               }
+           }
            .toolbar {
                ToolbarItem(placement: .navigationBarTrailing) {
                    Button(action: {
                        #if DEBUG
                        print("🏠 ContentView: Settings button tapped")
                        #endif
+                       viewModel.isShowingSettings = true
                    }) {
                        Image(systemName: "gear")
                            .foregroundColor(Theme.Colors.primary)
@@ -271,7 +334,9 @@ struct ContentView: View {
            }
            .sheet(isPresented: $viewModel.isShowingAddNote) {
                AddNoteActionSheet()
-                   .presentationDetents([.height(400)])
+                   .presentationDetents([.height(470)])
+                   .presentationDragIndicator(.visible)
+
            }
        }
        .onAppear {

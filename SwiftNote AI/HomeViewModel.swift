@@ -17,6 +17,8 @@ final class HomeViewModel: ObservableObject {
    @Published var viewMode: ListGridContainer<AnyView>.ViewMode = .list
    @Published var isShowingAddNote: Bool = false
    @Published var isLoading: Bool = false
+   @Published var isShowingSettings = false
+
    
    private let viewContext: NSManagedObjectContext
    

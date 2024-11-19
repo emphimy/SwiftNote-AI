@@ -1,18 +1,30 @@
 import SwiftUI
 
 // MARK: - Note Card Configuration
-struct NoteCardConfiguration {
-    let title: String
+struct NoteCardConfiguration: Identifiable, Equatable {
+    let id = UUID()
+    var title: String
     let date: Date
-    let preview: String
+    var preview: String
     let sourceType: NoteSourceType
     let isFavorite: Bool
-    let tags: [String]
+    var tags: [String]
+    
+    static func == (lhs: NoteCardConfiguration, rhs: NoteCardConfiguration) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.title == rhs.title &&
+        lhs.date == rhs.date &&
+        lhs.preview == rhs.preview &&
+        lhs.sourceType == rhs.sourceType &&
+        lhs.isFavorite == rhs.isFavorite &&
+        lhs.tags == rhs.tags
+    }
     
     // MARK: - Debug Description
     var debugDescription: String {
         """
         NoteCard:
+        - ID: \(id)
         - Title: \(title)
         - Date: \(date)
         - Preview: \(preview)

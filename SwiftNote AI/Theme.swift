@@ -117,6 +117,52 @@ enum Theme {
                                 x: 0,
                                 y: 8)
     }
+    // MARK: - Settings
+    enum Settings {
+        static let iconSize: CGFloat = 32
+        static let cardPadding: CGFloat = 16
+        static let cornerRadius: CGFloat = 12
+        static let animationDuration: Double = 0.3
+        
+        static let sections: [SettingsSection] = [
+            .init(
+                id: "account",
+                title: "Account & Security",
+                icon: "person.circle.fill",
+                color: Colors.primary
+            ),
+            .init(
+                id: "appearance",
+                title: "Appearance",
+                icon: "paintbrush.fill",
+                color: Colors.accent
+            ),
+            .init(
+                id: "notifications",
+                title: "Notifications",
+                icon: "bell.fill",
+                color: Colors.warning
+            ),
+            .init(
+                id: "storage",
+                title: "Storage & Data",
+                icon: "internaldrive.fill",
+                color: Colors.secondary
+            ),
+            .init(
+                id: "privacy",
+                title: "Privacy & Security",
+                icon: "lock.fill",
+                color: Colors.error
+            ),
+            .init(
+                id: "support",
+                title: "Help & Support",
+                icon: "questionmark.circle.fill",
+                color: Colors.success
+            )
+        ]
+    }
 }
 
 // MARK: - Shadow Model
