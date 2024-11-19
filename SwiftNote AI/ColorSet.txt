@@ -1,0 +1,52 @@
+Color Set for the app
+
+
+/*
+PrimaryColor:
+- Light: #007AFF
+- Dark: #0A84FF
+
+SecondaryColor:
+- Light: #5856D6
+- Dark: #5E5CE6
+
+Accent:
+- Light: #FF9500
+- Dark: #FF9F0A
+
+Background:
+- Light: #FFFFFF
+- Dark: #1C1C1E
+
+SecondaryBackground:
+- Light: #F2F2F7
+- Dark: #2C2C2E
+
+TertiaryBackground:
+- Light: #E5E5EA
+- Dark: #3A3A3C
+
+Text:
+- Light: #000000
+- Dark: #FFFFFF
+
+SecondaryText:
+- Light: #3C3C43 (0.6 opacity)
+- Dark: #EBEBF5 (0.6 opacity)
+
+TertiaryText:
+- Light: #3C3C43 (0.3 opacity)
+- Dark: #EBEBF5 (0.3 opacity)
+
+Success:
+- Light: #34C759
+- Dark: #30D158
+
+Error:
+- Light: #FF3B30
+- Dark: #FF453A
+
+Warning:
+- Light: #FF9500
+- Dark: #FF9F0A
+*/
