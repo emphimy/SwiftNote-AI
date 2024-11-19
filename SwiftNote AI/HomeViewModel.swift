@@ -18,6 +18,9 @@ final class HomeViewModel: ObservableObject {
    @Published var isShowingAddNote: Bool = false
    @Published var isLoading: Bool = false
    @Published var isShowingSettings = false
+   @Published var isShowingRecording = false
+
+
 
    
    private let viewContext: NSManagedObjectContext

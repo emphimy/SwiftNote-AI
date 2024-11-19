@@ -174,13 +174,26 @@ private struct RefreshableScrollView<Content: View>: View {
 
 // MARK: - Add Note Action Sheet
 private struct AddNoteActionSheet: View {
-   var body: some View {
-       ActionCard(items: [
-           ActionCardItem(title: "Record Audio", icon: "mic.fill", color: .blue) {
-               #if DEBUG
-               print("🏠 AddNoteSheet: Record audio selected")
-               #endif
-           },
+    @ObservedObject var viewModel: HomeViewModel
+    
+    init(viewModel: HomeViewModel) {
+        self._viewModel = ObservedObject(wrappedValue: viewModel)
+        
+        #if DEBUG
+        print("🏠 AddNoteSheet: Initializing with viewModel")
+        #endif
+    }
+
+    var body: some View {
+        ActionCard(items: [
+            ActionCardItem(title: "Record Audio", icon: "mic.fill", color: .blue) {
+                #if DEBUG
+                print("🏠 AddNoteSheet: Record audio selected")
+                #endif
+                viewModel.isShowingAddNote = false
+                viewModel.isShowingRecording = true
+            },
+        
            ActionCardItem(title: "Upload Audio", icon: "waveform", color: .orange) {
                #if DEBUG
                print("🏠 AddNoteSheet: Upload audio selected")
@@ -333,10 +346,13 @@ struct ContentView: View {
                }
            }
            .sheet(isPresented: $viewModel.isShowingAddNote) {
-               AddNoteActionSheet()
+               AddNoteActionSheet(viewModel: viewModel)
                    .presentationDetents([.height(470)])
                    .presentationDragIndicator(.visible)
 
+           }
+           .sheet(isPresented: $viewModel.isShowingRecording) {
+               AudioRecordingView(context: viewContext)
            }
        }
        .onAppear {
