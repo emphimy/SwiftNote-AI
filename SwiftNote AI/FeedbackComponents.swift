@@ -1,19 +1,5 @@
-// File: Components/Feedback/FeedbackComponents.swift
-
 import SwiftUI
 import Combine
-
-// MARK: - Toast Message
-struct ToastMessage: Identifiable, Equatable {
-    let id = UUID()
-    let message: String
-    let type: ToastType
-    let duration: TimeInterval
-    
-    static func == (lhs: ToastMessage, rhs: ToastMessage) -> Bool {
-        lhs.id == rhs.id
-    }
-}
 
 enum ToastType {
     case success
@@ -40,6 +26,34 @@ enum ToastType {
     }
 }
 
+enum LoadingStyle: Equatable {
+    case circular
+    case linear(progress: Double)
+    case indeterminate
+    
+    var animation: Animation {
+        switch self {
+        case .circular, .indeterminate:
+            return .linear(duration: 1).repeatForever(autoreverses: false)
+        case .linear:
+            return .spring()
+        }
+    }
+    
+    static func == (lhs: LoadingStyle, rhs: LoadingStyle) -> Bool {
+        switch (lhs, rhs) {
+        case (.circular, .circular):
+            return true
+        case (.indeterminate, .indeterminate):
+            return true
+        case let (.linear(lProgress), .linear(rProgress)):
+            return lProgress == rProgress
+        default:
+            return false
+        }
+    }
+}
+
 // MARK: - Toast View
 struct ToastView: View {
     let message: ToastMessage
@@ -55,6 +69,24 @@ struct ToastView: View {
                 .foregroundColor(.white)
             
             Spacer()
+            
+            if let action = message.action {
+                Button(action: {
+                    #if DEBUG
+                    print("🍞 Toast: Action button tapped")
+                    #endif
+                    action.action()
+                    onDismiss()
+                }) {
+                    Text(action.title)
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, Theme.Spacing.xs)
+                        .padding(.vertical, Theme.Spacing.xxs)
+                        .background(Color.white.opacity(0.2))
+                        .cornerRadius(Theme.Layout.cornerRadius / 2)
+                }
+            }
             
             Button(action: {
                 #if DEBUG
@@ -76,38 +108,73 @@ struct ToastView: View {
     }
 }
 
+// MARK: - Toast Manager Constants
+private enum ToastConstants {
+    static let maxVisibleToasts = 3
+    static let defaultDuration: TimeInterval = 3.0
+}
+
 // MARK: - Toast Manager
-class ToastManager: ObservableObject {
+@MainActor
+final class ToastManager: ObservableObject {
     @Published private(set) var activeToasts: [ToastMessage] = []
     private var cancellables = Set<AnyCancellable>()
+    
+    nonisolated private func calculateDismissDelay(_ duration: TimeInterval) -> UInt64 {
+        UInt64(duration * 1_000_000_000)
+    }
+    
+    private func processToastQueue() {
+        #if DEBUG
+        print("🍞 ToastManager: Processing toast queue with \(activeToasts.count) toasts")
+        #endif
+        
+        if activeToasts.count > ToastConstants.maxVisibleToasts {
+            let excessToasts = activeToasts.count - ToastConstants.maxVisibleToasts
+            activeToasts.removeFirst(excessToasts)
+            
+            #if DEBUG
+            print("🍞 ToastManager: Removed \(excessToasts) excess toasts")
+            #endif
+        }
+    }
     
     func show(
         _ message: String,
         type: ToastType = .info,
-        duration: TimeInterval = 3.0
+        duration: TimeInterval = ToastConstants.defaultDuration,
+        action: ToastAction? = nil
     ) {
         #if DEBUG
-        print("🍞 Toast: Showing message: \(message), type: \(type)")
+        print("🍞 ToastManager: Showing toast - Message: \(message), Type: \(type)")
         #endif
         
-        let toast = ToastMessage(message: message,
-                               type: type,
-                               duration: duration)
+        let toast = ToastMessage(
+            message: message,
+            type: type,
+            duration: duration,
+            action: action
+        )
         
-        activeToasts.append(toast)
+        withAnimation(.spring()) {
+            activeToasts.append(toast)
+            processToastQueue()
+        }
         
-        // Automatically dismiss after duration
-        Just(toast)
-            .delay(for: .seconds(duration), scheduler: RunLoop.main)
-            .sink { [weak self] toast in
-                self?.dismiss(toast)
+        // Auto dismiss after duration
+        Task {
+            try? await Task.sleep(nanoseconds: calculateDismissDelay(duration))
+            await MainActor.run {
+                withAnimation(.spring()) {
+                    dismiss(toast)
+                }
             }
-            .store(in: &cancellables)
+        }
     }
     
     func dismiss(_ toast: ToastMessage) {
         #if DEBUG
-        print("🍞 Toast: Dismissing message: \(toast.message)")
+        print("🍞 ToastManager: Dismissing message: \(toast.message)")
         #endif
         
         withAnimation {
@@ -116,9 +183,34 @@ class ToastManager: ObservableObject {
     }
 }
 
+// MARK: - Enhanced Toast Models
+struct ToastAction {
+    let title: String
+    let action: () -> Void
+}
+
+struct ToastMessage: Identifiable, Equatable {
+    let id = UUID()
+    let message: String
+    let type: ToastType
+    let duration: TimeInterval
+    var action: ToastAction?
+    
+    static func == (lhs: ToastMessage, rhs: ToastMessage) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
 // MARK: - Toast Container
 struct ToastContainer: ViewModifier {
-    @StateObject private var toastManager = ToastManager()
+    // Use StateObject for the main instance
+    @StateObject private var toastManager: ToastManager = {
+        let manager = ToastManager()
+        #if DEBUG
+        print("🍞 ToastContainer: Creating new ToastManager instance")
+        #endif
+        return manager
+    }()
     
     func body(content: Content) -> some View {
         content
@@ -126,7 +218,12 @@ struct ToastContainer: ViewModifier {
                 ZStack {
                     ForEach(toastManager.activeToasts) { toast in
                         ToastView(message: toast) {
-                            toastManager.dismiss(toast)
+                            Task { @MainActor in
+                                #if DEBUG
+                                print("🍞 ToastContainer: Dismissing toast via overlay")
+                                #endif
+                                toastManager.dismiss(toast)
+                            }
                         }
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .zIndex(1)
@@ -137,19 +234,40 @@ struct ToastContainer: ViewModifier {
                 .padding(.top, Theme.Spacing.lg)
                 , alignment: .top
             )
-            .environment(\.toastManager, toastManager)
+            .transformEnvironment(\.toastManager) { environment in
+                #if DEBUG
+                print("🍞 ToastContainer: Injecting ToastManager into environment")
+                #endif
+                environment = toastManager
+            }
     }
 }
 
 // MARK: - Environment Key for Toast Manager
 private struct ToastManagerKey: EnvironmentKey {
-    static var defaultValue: ToastManager = ToastManager()
+    @MainActor static var defaultValue: ToastManager = {
+        let manager = ToastManager()
+        #if DEBUG
+        print("🍞 ToastManagerKey: Creating default ToastManager")
+        #endif
+        return manager
+    }()
 }
 
 extension EnvironmentValues {
     var toastManager: ToastManager {
-        get { self[ToastManagerKey.self] }
-        set { self[ToastManagerKey.self] = newValue }
+        get {
+            #if DEBUG
+            print("🍞 EnvironmentValues: Accessing ToastManager")
+            #endif
+            return self[ToastManagerKey.self]
+        }
+        set {
+            #if DEBUG
+            print("🍞EnvironmentValues: Setting new ToastManager")
+            #endif
+            self[ToastManagerKey.self] = newValue
+        }
     }
 }
 
@@ -157,33 +275,6 @@ extension EnvironmentValues {
 struct LoadingIndicator: View {
     let message: String?
     let style: LoadingStyle
-    
-    enum LoadingStyle: Equatable {
-        case circular
-        case linear(progress: Double)
-        case indeterminate
-        
-        var animation: Animation {
-            switch self {
-            case .circular, .indeterminate:
-                return .linear(duration: 1).repeatForever(autoreverses: false)
-            case .linear:
-                return .spring()
-            }
-        }
-        static func == (lhs: LoadingStyle, rhs: LoadingStyle) -> Bool {
-            switch (lhs, rhs) {
-            case (.circular, .circular):
-                return true
-            case (.indeterminate, .indeterminate):
-                return true
-            case let (.linear(lProgress), .linear(rProgress)):
-                return lProgress == rProgress
-            default:
-                return false
-            }
-        }
-    }
     
     init(
         message: String? = nil,
@@ -221,6 +312,134 @@ struct LoadingIndicator: View {
             }
         }
         .padding(Theme.Spacing.md)
+    }
+}
+
+// MARK: - Enhanced Loading States
+enum LoadingState: Equatable {
+    case idle
+    case loading(message: String? = nil)
+    case success(message: String)
+    case error(message: String)
+    
+    var isLoading: Bool {
+        if case .loading = self {
+            return true
+        }
+        return false
+    }
+}
+
+// MARK: - Enhanced Loading Indicator
+struct EnhancedLoadingIndicator: View {
+    let state: LoadingState
+    let style: LoadingStyle
+    let retryAction: (() -> Void)?
+    
+    init(
+        state: LoadingState,
+        style: LoadingStyle = .circular,
+        retryAction: (() -> Void)? = nil
+    ) {
+        self.state = state
+        self.style = style
+        self.retryAction = retryAction
+        
+        #if DEBUG
+        print("⏳ LoadingIndicator: Creating with state: \(String(describing: state))")
+        #endif
+    }
+    
+    var body: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            switch state {
+            case .idle:
+                EmptyView()
+                
+            case .loading(let message):
+                LoadingIndicator(message: message, style: style)
+                
+            case .success(let message):
+                VStack(spacing: Theme.Spacing.sm) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(Theme.Colors.success)
+                        .font(.system(size: 48))
+                    
+                    Text(message)
+                        .font(Theme.Typography.body)
+                        .foregroundColor(Theme.Colors.success)
+                }
+                .transition(.scale.combined(with: .opacity))
+                
+            case .error(let message):
+                VStack(spacing: Theme.Spacing.sm) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(Theme.Colors.error)
+                        .font(.system(size: 48))
+                    
+                    Text(message)
+                        .font(Theme.Typography.body)
+                        .foregroundColor(Theme.Colors.error)
+                        .multilineTextAlignment(.center)
+                    
+                    if let retryAction = retryAction {
+                        Button(action: {
+                            #if DEBUG
+                            print("⏳ LoadingIndicator: Retry action triggered")
+                            #endif
+                            retryAction()
+                        }) {
+                            Label("Retry", systemImage: "arrow.clockwise")
+                                .font(Theme.Typography.body)
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .padding(.top, Theme.Spacing.sm)
+                    }
+                }
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .padding(Theme.Spacing.lg)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                .fill(Theme.Colors.background)
+                .standardShadow()
+        )
+        .animation(.spring(), value: state)
+    }
+}
+
+// MARK: - Loading Container Modifier
+struct LoadingContainerModifier: ViewModifier {
+    let state: LoadingState
+    let retryAction: (() -> Void)?
+    
+    func body(content: Content) -> some View {
+        ZStack {
+            content
+                .disabled(state.isLoading)
+                .opacity(state.isLoading ? 0.6 : 1.0)
+            
+            if state.isLoading {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                
+                EnhancedLoadingIndicator(
+                    state: state,
+                    retryAction: retryAction
+                )
+            }
+        }
+        .animation(.easeInOut, value: state.isLoading)
+    }
+}
+
+extension View {
+    func loadingContainer(
+        state: LoadingState,
+        retryAction: (() -> Void)? = nil
+    ) -> some View {
+        modifier(LoadingContainerModifier(state: state, retryAction: retryAction))
     }
 }
 

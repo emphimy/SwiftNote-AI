@@ -5,8 +5,8 @@ enum Theme {
     // MARK: - Colors
     enum Colors {
         // Primary
-        static let primary = Color("PrimaryColor", bundle: .main)
-        static let secondary = Color("SecondaryColor", bundle: .main)
+        static let primary = Color("AppPrimary", bundle: .main)
+        static let secondary = Color("AppSecondary", bundle: .main)
         static let accent = Color("Accent", bundle: .main)
         
         // Background

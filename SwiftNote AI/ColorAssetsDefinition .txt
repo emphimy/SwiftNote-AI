@@ -2,11 +2,11 @@ Color Set for the app
 
 
 /*
-PrimaryColor:
+AppPrimary:
 - Light: #007AFF
 - Dark: #0A84FF
 
-SecondaryColor:
+AppSecondary:
 - Light: #5856D6
 - Dark: #5E5CE6
 
