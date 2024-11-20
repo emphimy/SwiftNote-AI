@@ -150,43 +150,8 @@ struct NoteDetailsView: View {
     
     // MARK: - Content Section
     private var contentSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            if viewModel.note.sourceType == .audio {
-                AudioPlayerControls(
-                    duration: 180, // Replace with actual duration
-                    currentTime: $viewModel.currentTime,
-                    isPlaying: $viewModel.isPlaying,
-                    playbackRate: $viewModel.playbackRate
-                ) { newTime in
-                    #if DEBUG
-                    print("📝 NoteDetailsView: Seeking to time: \(newTime)")
-                    #endif
-                    // Handle seek
-                }
-            }
-            
-            if viewModel.isEditing {
-                TextEditor(text: Binding(
-                    get: { viewModel.note.preview },
-                    set: { newContent in
-                        #if DEBUG
-                        print("📝 NoteDetailsView: Updating content")
-                        #endif
-                        var updatedNote = viewModel.note
-                        updatedNote.preview = newContent
-                        viewModel.note = updatedNote
-                    }
-                ))
-                .font(Theme.Typography.body)
-                .frame(minHeight: 200)
-                .padding(Theme.Spacing.sm)
-                .background(Theme.Colors.secondaryBackground)
-                .cornerRadius(Theme.Layout.cornerRadius)
-            } else {
-                Text(viewModel.note.preview)
-                    .font(Theme.Typography.body)
-            }
-        }
+        NoteStudyTabs(note: viewModel.note)
+            .padding(.top, Theme.Spacing.md)
     }
     
     // MARK: - Tags Section

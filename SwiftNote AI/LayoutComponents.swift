@@ -105,7 +105,6 @@ struct ListGridContainer<Content: View>: View {
                     LazyVStack(spacing: Theme.Spacing.sm) {
                         content
                     }
-                    .padding(.horizontal, Theme.Spacing.md)
                 }
             case .grid:
                 ScrollView {
@@ -118,7 +117,6 @@ struct ListGridContainer<Content: View>: View {
                     ) {
                         content
                     }
-                    .padding(.horizontal, Theme.Spacing.md)
                 }
             }
         }

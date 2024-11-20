@@ -126,6 +126,7 @@ private struct HomeHeaderView: View {
 
 
 // MARK: - Notes Content View
+// MARK: - Notes Content View
 private struct NotesContentView: View {
     @ObservedObject var viewModel: HomeViewModel
     let cardActions: (NoteCardConfiguration) -> CardActions
@@ -134,10 +135,26 @@ private struct NotesContentView: View {
     @State private var selectedNote: NoteCardConfiguration?
     @State private var isRefreshing = false
     
-    private var gridColumns: [GridItem] {
-        let count = sizeClass == .compact ? 2 : 3
-        return Array(repeating: GridItem(.flexible(), spacing: Theme.Spacing.md), count: count)
+    var body: some View {
+        NotesScrollContent(
+            viewModel: viewModel,
+            isRefreshing: $isRefreshing,
+            selectedNote: $selectedNote,
+            cardActions: cardActions
+        )
+        .sheet(item: $selectedNote) { note in
+            NoteDetailsView(note: note, context: viewContext)
+        }
     }
+}
+
+// MARK: - Notes Scroll Content
+private struct NotesScrollContent: View {
+    @ObservedObject var viewModel: HomeViewModel
+    @Binding var isRefreshing: Bool
+    @Binding var selectedNote: NoteCardConfiguration?
+    let cardActions: (NoteCardConfiguration) -> CardActions
+    @Environment(\.horizontalSizeClass) private var sizeClass
     
     var body: some View {
         RefreshableScrollView {
@@ -154,6 +171,25 @@ private struct NotesContentView: View {
                 }
             }
         } content: {
+            NotesContentContainer(
+                viewModel: viewModel,
+                isRefreshing: $isRefreshing,
+                selectedNote: $selectedNote,
+                cardActions: cardActions
+            )
+        }
+    }
+}
+
+// MARK: - Notes Content Container
+private struct NotesContentContainer: View {
+    @ObservedObject var viewModel: HomeViewModel
+    @Binding var isRefreshing: Bool
+    @Binding var selectedNote: NoteCardConfiguration?
+    let cardActions: (NoteCardConfiguration) -> CardActions
+    
+    var body: some View {
+        Group {
             if viewModel.isLoading {
                 LoadingIndicator(message: "Loading notes...")
                     .padding(.top, Theme.Spacing.xl)
@@ -171,56 +207,89 @@ private struct NotesContentView: View {
                 }
                 .transition(.opacity)
             } else {
-                ListGridContainer(viewMode: $viewModel.viewMode) {
-                    AnyView(
-                        ForEach(viewModel.notes, id: \.title) { note in
-                            Group {
-                                if viewModel.viewMode == .list {
-                                    NoteListCard(
-                                        configuration: note,
-                                        actions: cardActions(note),
-                                        onTap: { selectedNote = note }
-                                    )
-                                    .transition(.asymmetric(
-                                        insertion: .scale.combined(with: .opacity),
-                                        removal: .opacity
-                                    ))
-                                } else {
-                                    NoteGridCard(
-                                        configuration: note,
-                                        actions: cardActions(note),
-                                        onTap: { selectedNote = note }
-                                    )
-                                    .transition(.asymmetric(
-                                        insertion: .scale.combined(with: .opacity),
-                                        removal: .opacity
-                                    ))
-                                }
-                            }
-                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewModel.viewMode)
-                        }
-                    )
-                }
-                .padding(.horizontal, Theme.Spacing.md)
+                NotesGridListView(
+                    viewModel: viewModel,
+                    selectedNote: $selectedNote,
+                    cardActions: cardActions
+                )
             }
         }
-        .overlay(
-            Group {
-                if isRefreshing {
-                    VStack {
-                        ProgressView()
-                            .tint(Theme.Colors.primary)
-                        Text("Refreshing...")
-                            .font(Theme.Typography.caption)
-                            .foregroundColor(Theme.Colors.secondaryText)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black.opacity(0.1))
+        .overlay(RefreshingOverlay(isRefreshing: isRefreshing))
+    }
+}
+
+// MARK: - Notes Grid/List View
+private struct NotesGridListView: View {
+    @ObservedObject var viewModel: HomeViewModel
+    @Binding var selectedNote: NoteCardConfiguration?
+    let cardActions: (NoteCardConfiguration) -> CardActions
+    
+    var body: some View {
+        ListGridContainer(viewMode: $viewModel.viewMode) {
+
+            AnyView(
+                ForEach(viewModel.notes, id: \.title) { note in
+                    NoteCardView(
+                        note: note,
+                        viewMode: viewModel.viewMode,
+                        cardActions: cardActions,
+                        selectedNote: $selectedNote
+                    )
                 }
+            )
+        }
+        .padding(.horizontal, Theme.Spacing.md)
+    }
+}
+
+// MARK: - Note Card View
+private struct NoteCardView: View {
+    let note: NoteCardConfiguration
+    let viewMode: ListGridContainer<AnyView>.ViewMode
+    let cardActions: (NoteCardConfiguration) -> CardActions
+    @Binding var selectedNote: NoteCardConfiguration?
+    
+    var body: some View {
+        Group {
+            if viewMode == .list {
+                NoteListCard(
+                    configuration: note,
+                    actions: cardActions(note),
+                    onTap: { selectedNote = note }
+                )
+            } else {
+                NoteGridCard(
+                    configuration: note,
+                    actions: cardActions(note),
+                    onTap: { selectedNote = note }
+                )
             }
-        )
-        .sheet(item: $selectedNote) { note in
-            NoteDetailsView(note: note, context: viewContext)
+        }
+        .transition(.asymmetric(
+            insertion: .scale.combined(with: .opacity),
+            removal: .opacity
+        ))
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewMode)
+    }
+}
+
+// MARK: - Refreshing Overlay
+private struct RefreshingOverlay: View {
+    let isRefreshing: Bool
+    
+    var body: some View {
+        Group {
+            if isRefreshing {
+                VStack {
+                    ProgressView()
+                        .tint(Theme.Colors.primary)
+                    Text("Refreshing...")
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.secondaryText)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black.opacity(0.1))
+            }
         }
     }
 }
@@ -232,8 +301,6 @@ private struct ScaleButtonStyle: ButtonStyle {
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
-
-
    
 private struct RefreshableScrollView<Content: View>: View {
    let onRefresh: () -> Void
