@@ -13,8 +13,6 @@ struct SettingsSection: Identifiable {
 // MARK: - ViewModel
 @MainActor
 final class SettingsViewModel: ObservableObject {
-    @AppStorage("isDarkMode") var isDarkMode = false
-    @AppStorage("useSystemTheme") var useSystemTheme = true
     @AppStorage("notificationsEnabled") var notificationsEnabled = true
     @AppStorage("autoBackupEnabled") var autoBackupEnabled = true
     @AppStorage("biometricLockEnabled") var biometricLockEnabled = false
@@ -149,6 +147,7 @@ final class SettingsViewModel: ObservableObject {
 
 // MARK: - Settings View
 struct SettingsView: View {
+    @EnvironmentObject private var themeManager: ThemeManager
     @StateObject private var viewModel = SettingsViewModel()
     @Environment(\.toastManager) private var toastManager
     @Environment(\.dismiss) private var dismiss
@@ -267,21 +266,19 @@ struct SettingsView: View {
     
     private var appearanceSection: some View {
         VStack(spacing: Theme.Spacing.md) {
-            Toggle("Use System Theme", isOn: $viewModel.useSystemTheme)
-                .onChange(of: viewModel.useSystemTheme) { newValue in
-                    #if DEBUG
-                    print("⚙️ SettingsView: System theme toggled: \(newValue)")
-                    #endif
-                }
-            
-            if !viewModel.useSystemTheme {
-                Toggle("Dark Mode", isOn: $viewModel.isDarkMode)
-                    .onChange(of: viewModel.isDarkMode) { newValue in
-                        #if DEBUG
-                        print("⚙️ SettingsView: Dark mode toggled: \(newValue)")
-                        #endif
-                    }
+            Picker("Theme", selection: Binding(
+                get: { themeManager.currentTheme },
+                set: { themeManager.setTheme($0) }
+            )) {
+                Text("System").tag(ThemeMode.system)
+                Text("Light").tag(ThemeMode.light)
+                Text("Dark").tag(ThemeMode.dark)
             }
+            .pickerStyle(.segmented)
+            
+            Text("Choose how SwiftNote AI appears to you")
+                .font(Theme.Typography.caption)
+                .foregroundColor(Theme.Colors.secondaryText)
         }
     }
     
@@ -565,26 +562,30 @@ struct SettingsView_Previews: PreviewProvider {
     static var previews: some View {
         NavigationView {
             SettingsView()
+                .environmentObject(ThemeManager())
         }
         .previewDisplayName("Settings View")
         
-        SettingsRow(
-            icon: "person.fill",
-            title: "Edit Profile",
-            color: Theme.Colors.primary
-        )
-        .padding()
-        .previewLayout(.sizeThatFits)
-        .previewDisplayName("Settings Row")
-        
-        StorageProgressBar(
-            used: 0.7,
-            usedText: "3.5 GB",
-            totalText: "5 GB"
-        )
-        .padding()
-        .previewLayout(.sizeThatFits)
-        .previewDisplayName("Storage Progress Bar")
+        // Individual component previews
+        Group {
+            SettingsRow(
+                icon: "person.fill",
+                title: "Edit Profile",
+                color: Theme.Colors.primary
+            )
+            .padding()
+            .previewLayout(.sizeThatFits)
+            .previewDisplayName("Settings Row")
+            
+            StorageProgressBar(
+                used: 0.7,
+                usedText: "3.5 GB",
+                totalText: "5 GB"
+            )
+            .padding()
+            .previewLayout(.sizeThatFits)
+            .previewDisplayName("Storage Progress Bar")
+        }
     }
 }
 #endif

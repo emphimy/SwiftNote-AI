@@ -1,5 +1,70 @@
 import SwiftUI
 
+// MARK: - Theme Mode
+enum ThemeMode: String {
+    case light
+    case dark
+    case system
+    
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .light: return .light
+        case .dark: return .dark
+        case .system: return nil
+        }
+    }
+}
+
+// MARK: - Theme Manager
+@MainActor
+final class ThemeManager: ObservableObject {
+    // MARK: - Published Properties
+    @Published private(set) var currentTheme: ThemeMode {
+        didSet {
+            #if DEBUG
+            print("🎨 ThemeManager: Theme changed to \(currentTheme)")
+            #endif
+            UserDefaults.standard.setValue(currentTheme.rawValue, forKey: "app_theme")
+        }
+    }
+    
+    // MARK: - Initialization
+    init() {
+        if let savedTheme = UserDefaults.standard.string(forKey: "app_theme"),
+           let theme = ThemeMode(rawValue: savedTheme) {
+            self.currentTheme = theme
+            #if DEBUG
+            print("🎨 ThemeManager: Initialized with saved theme: \(theme)")
+            #endif
+        } else {
+            self.currentTheme = .system
+            #if DEBUG
+            print("🎨 ThemeManager: Initialized with default theme: system")
+            #endif
+        }
+    }
+    
+    // MARK: - Theme Management
+    func setTheme(_ theme: ThemeMode) {
+        #if DEBUG
+        print("🎨 ThemeManager: Setting theme to \(theme)")
+        #endif
+        currentTheme = theme
+    }
+    
+    // MARK: - Environment Support
+    func resolveColorScheme(for environment: ColorScheme) -> ColorScheme {
+        switch currentTheme {
+        case .light:
+            return .light
+        case .dark:
+            return .dark
+        case .system:
+            return environment
+        }
+    }
+}
+
 // MARK: - Theme
 enum Theme {
     // MARK: - Colors
@@ -117,6 +182,7 @@ enum Theme {
                                 x: 0,
                                 y: 8)
     }
+    
     // MARK: - Settings
     enum Settings {
         static let iconSize: CGFloat = 32

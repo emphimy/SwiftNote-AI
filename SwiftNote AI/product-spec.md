@@ -1,7 +1,7 @@
 # AI Notes App - Product Specification Document
 
 ## Core Features Overview
-The app allows students to record/upload content, automatically generate study materials using AI, and organize their notes effectively.
+The app allows students to record/upload content, automatically generate study materials using AI, and organize their notes effectively. Minimum required compatibility iOS 16+
 
 ## User Interface Specifications
 
