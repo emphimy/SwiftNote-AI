@@ -482,31 +482,6 @@ private struct ContentBlockView: View {
         }
     }
 }
-// MARK: - Quiz Tab View
-struct QuizTabView: View {
-    let note: NoteCardConfiguration
-    @StateObject private var viewModel = QuizViewModel()
-    
-    var body: some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            if viewModel.isLoading {
-                LoadingIndicator(message: "Generating quiz...")
-            } else if viewModel.questions.isEmpty {
-                EmptyStateView(
-                    icon: "checkmark.circle",
-                    title: "No Questions Yet",
-                    message: "Tap to generate quiz questions from your note.",
-                    actionTitle: "Generate Quiz"
-                ) {
-                    viewModel.generateQuestions(from: note)
-                }
-            } else {
-                NoteCardConfiguration.QuizContent(questions: viewModel.questions)
-            }
-        }
-        .padding()
-    }
-}
 
 // MARK: - Flashcards Tab View
 struct FlashcardsTabView: View {

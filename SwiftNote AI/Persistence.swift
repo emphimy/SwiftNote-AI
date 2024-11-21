@@ -1,10 +1,3 @@
-//
-//  Persistence.swift
-//  SwiftNote AI
-//
-//  Created by Serkan Kutlubay on 11/19/24.
-//
-
 import CoreData
 
 struct PersistenceController {
@@ -21,9 +14,10 @@ struct PersistenceController {
         do {
             try viewContext.save()
         } catch {
-            // Replace this implementation with code to handle the error appropriately.
-            // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
             let nsError = error as NSError
+            #if DEBUG
+            print("🗄️ Persistence: Failed to save preview context - \(nsError), \(nsError.userInfo)")
+            #endif
             fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
         }
         return result
@@ -33,25 +27,78 @@ struct PersistenceController {
 
     init(inMemory: Bool = false) {
         container = NSPersistentCloudKitContainer(name: "SwiftNote_AI")
+        
         if inMemory {
             container.persistentStoreDescriptions.first!.url = URL(fileURLWithPath: "/dev/null")
         }
+        
+        #if DEBUG
+        print("🗄️ Persistence: Initializing persistent container")
+        #endif
+        
         container.loadPersistentStores(completionHandler: { (storeDescription, error) in
             if let error = error as NSError? {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-
-                /*
-                 Typical reasons for an error here include:
-                 * The parent directory does not exist, cannot be created, or disallows writing.
-                 * The persistent store is not accessible, due to permissions or data protection when the device is locked.
-                 * The device is out of space.
-                 * The store could not be migrated to the current model version.
-                 Check the error message to determine what the actual problem was.
-                 */
+                #if DEBUG
+                print("🗄️ Persistence: Failed to load persistent stores - \(error), \(error.userInfo)")
+                #endif
                 fatalError("Unresolved error \(error), \(error.userInfo)")
             }
+            #if DEBUG
+            print("🗄️ Persistence: Successfully loaded persistent stores")
+            #endif
         })
+        
+        setupDefaultValues()
         container.viewContext.automaticallyMergesChangesFromParent = true
+        
+        #if DEBUG
+        print("🗄️ Persistence: Container setup completed")
+        #endif
+    }
+    
+    // MARK: - Property Setup Methods
+    private func setupDefaultValues() {
+        let context = container.viewContext
+        
+        // Check if default values are already set
+        let fetchRequest = NSFetchRequest<NSManagedObject>(entityName: "QuizAnalytics")
+        fetchRequest.predicate = NSPredicate(format: "id != nil")
+        fetchRequest.fetchLimit = 1
+        
+        do {
+            let count = try context.count(for: fetchRequest)
+            guard count == 0 else {
+                #if DEBUG
+                print("🗄️ Persistence: Default values already set")
+                #endif
+                return
+            }
+            
+            // Create default QuizAnalytics entity
+            let analytics = NSEntityDescription.insertNewObject(forEntityName: "QuizAnalytics", into: context) // Fixed parameter label
+            analytics.setValue(UUID(), forKey: "id")
+            analytics.setValue(UUID(), forKey: "noteId")
+            analytics.setValue(0, forKey: "completedQuizzes")
+            analytics.setValue(0, forKey: "correctAnswers")
+            analytics.setValue(0, forKey: "totalQuestions")
+            analytics.setValue(0.0, forKey: "averageScore")
+            
+            // Create default QuizProgress entity
+            let progress = NSEntityDescription.insertNewObject(forEntityName: "QuizProgress", into: context) // Fixed parameter label
+            progress.setValue(UUID(), forKey: "id")
+            progress.setValue(UUID(), forKey: "noteId")
+            progress.setValue(Data(), forKey: "answers")
+            progress.setValue(Date(), forKey: "timestamp")
+            
+            try context.save()
+            
+            #if DEBUG
+            print("🗄️ Persistence: Successfully created default entities")
+            #endif
+        } catch {
+            #if DEBUG
+            print("🗄️ Persistence: Failed to setup default values - \(error)")
+            #endif
+        }
     }
 }
