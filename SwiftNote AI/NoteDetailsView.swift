@@ -3,6 +3,18 @@ import CoreData
 import AVKit
 import Combine
 
+// MARK: - Export URL Model
+struct ExportURLWrapper: Identifiable {
+    let id = UUID()
+    let url: URL
+    
+    #if DEBUG
+    var debugDescription: String {
+        "ExportURLWrapper - id: \(id), url: \(url)"
+    }
+    #endif
+}
+
 // MARK: - Note Details View Model
 @MainActor
 final class NoteDetailsViewModel: ObservableObject {
@@ -13,8 +25,11 @@ final class NoteDetailsViewModel: ObservableObject {
     @Published var playbackRate: Float = 1.0
     @Published var errorMessage: String?
     @Published var isLoading = false
-    
+    @Published var isExporting = false
+    @Published var exportURL: ExportURLWrapper?
+
     private let viewContext: NSManagedObjectContext
+    private let pdfExportService = PDFExportService()
     
     init(note: NoteCardConfiguration, context: NSManagedObjectContext) {
         self.note = note
@@ -34,12 +49,12 @@ final class NoteDetailsViewModel: ObservableObject {
         #endif
         
         let request = NSFetchRequest<NSManagedObject>(entityName: "Note")
-        request.predicate = NSPredicate(format: "title == %@ AND timestamp == %@", 
+        request.predicate = NSPredicate(format: "title == %@ AND timestamp == %@",
                                       note.title, note.date as CVarArg)
         
         do {
             guard let noteObject = try viewContext.fetch(request).first else {
-                throw NSError(domain: "NoteDetails", code: 404, 
+                throw NSError(domain: "NoteDetails", code: 404,
                             userInfo: [NSLocalizedDescriptionKey: "Note not found"])
             }
             
@@ -58,6 +73,23 @@ final class NoteDetailsViewModel: ObservableObject {
             #endif
             throw error
         }
+    }
+    
+    func exportPDF() async throws {
+        #if DEBUG
+        print("📄 NoteDetailsViewModel: Starting PDF export")
+        #endif
+        
+        isExporting = true
+        defer { isExporting = false }
+        
+        let url = try await pdfExportService.exportNote(note)
+        let savedURL = try await pdfExportService.savePDF(url, withName: note.title)
+        exportURL = ExportURLWrapper(url: savedURL)
+        
+        #if DEBUG
+        print("📄 NoteDetailsViewModel: PDF export completed successfully")
+        #endif
     }
 }
 
@@ -102,8 +134,21 @@ struct NoteDetailsView: View {
                 }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(viewModel.isEditing ? "Save" : "Edit") {
-                        handleEditSave()
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Button(action: {
+                            #if DEBUG
+                            print("📄 NoteDetailsView: Export button tapped")
+                            #endif
+                            handleExport()
+                        }) {
+                            Image(systemName: "square.and.arrow.up")
+                                .foregroundColor(Theme.Colors.primary)
+                        }
+                        .disabled(viewModel.isExporting)
+                        
+                        Button(viewModel.isEditing ? "Save" : "Edit") {
+                            handleEditSave()
+                        }
                     }
                 }
             }
@@ -111,6 +156,9 @@ struct NoteDetailsView: View {
                 if viewModel.isLoading {
                     LoadingIndicator(message: "Saving changes...")
                 }
+            }
+            .sheet(item: $viewModel.exportURL) { wrapper in
+                ShareSheet(items: [wrapper.url])
             }
         }
     }
@@ -197,6 +245,34 @@ struct NoteDetailsView: View {
             viewModel.isEditing = true
         }
     }
+    
+    private func handleExport() {
+        Task {
+            do {
+                try await viewModel.exportPDF()
+                toastManager.show("PDF exported successfully", type: .success)
+            } catch {
+                #if DEBUG
+                print("📄 NoteDetailsView: PDF export failed - \(error)")
+                #endif
+                toastManager.show(error.localizedDescription, type: .error)
+            }
+        }
+    }
+}
+
+// MARK: - Share Sheet
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        #if DEBUG
+        print("📄 ShareSheet: Creating activity view controller")
+        #endif
+        return UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - Preview Provider

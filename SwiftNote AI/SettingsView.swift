@@ -17,6 +17,7 @@ final class SettingsViewModel: ObservableObject {
     @AppStorage("autoBackupEnabled") var autoBackupEnabled = true
     @AppStorage("biometricLockEnabled") var biometricLockEnabled = false
     
+    @Published var showingSaveDialog = false
     @Published var storageUsage: StorageUsage?
     @Published var isLoading = false
     @Published var errorMessage: String?
@@ -24,6 +25,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var showingDeleteAccountAlert = false
     @Published var showingLogoutAlert = false
     @Published var failedRecordings: [FailedRecording] = []
+    @Published var exportURL: ExportURLWrapper?
     
     private var cancellables = Set<AnyCancellable>()
     
@@ -112,6 +114,13 @@ final class SettingsViewModel: ObservableObject {
         }
     }
     
+    func cleanup() async {
+        #if DEBUG
+        print("⚙️ SettingsViewModel: Performing cleanup")
+        #endif
+        // Cleanup logic here
+    }
+    
     func clearCache() async throws {
         #if DEBUG
         print("⚙️ SettingsViewModel: Clearing cache")
@@ -147,84 +156,150 @@ final class SettingsViewModel: ObservableObject {
 
 // MARK: - Settings View
 struct SettingsView: View {
-    @EnvironmentObject private var themeManager: ThemeManager
     @StateObject private var viewModel = SettingsViewModel()
-    @Environment(\.toastManager) private var toastManager
+    @EnvironmentObject private var themeManager: ThemeManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.toastManager) private var toastManager
+    @State private var noteTitle: String = ""    
     
     var body: some View {
-        ScrollView {
+        NavigationView {
+            ScrollView {
+                settingsContent
+            }
+            .background(Theme.Colors.background.ignoresSafeArea())
+            .preferredColorScheme(themeManager.currentTheme.colorScheme)
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar { settingsToolbar }
+            .alert("Sign Out", isPresented: $viewModel.showingLogoutAlert) {
+                logoutAlert
+            }
+            .onAppear(perform: handleOnAppear)
+            .overlay { loadingOverlay }
+            .alert("Save Recording", isPresented: $viewModel.showingSaveDialog) {
+                saveRecordingAlert
+            }
+            .onChange(of: themeManager.currentTheme) { newTheme in
+                #if DEBUG
+                print("⚙️ SettingsView: Theme changed to \(newTheme), triggering view update")
+                #endif
+            }
+            .sheet(item: $viewModel.exportURL) { wrapper in
+                ShareSheet(items: [wrapper.url])
+            }
+        }
+    }
+    
+    // MARK: - Content Views
+    @ViewBuilder
+    private var settingsContent: some View {
+        VStack(spacing: Theme.Spacing.lg) {
             LazyVStack(spacing: Theme.Spacing.lg) {
                 ForEach(Theme.Settings.sections) { section in
                     sectionView(for: section)
                 }
-                
                 versionFooter
             }
             .padding()
         }
-        .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.large)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Done") {
-                    #if DEBUG
-                    print("⚙️ SettingsView: Done button tapped")
-                    #endif
-                    dismiss()
-                }
+    }
+    
+    // MARK: - Alert Views
+    @ViewBuilder
+    private var logoutAlert: some View {
+        Button("Cancel", role: .cancel) {}
+        Button("Sign Out", role: .destructive) {
+            handleLogout()
+        }
+    }
+    
+    @ViewBuilder
+    private var saveRecordingAlert: some View {
+        TextField("Note Title", text: $noteTitle)
+        Button("Cancel", role: .cancel) {
+            Task {
+                await viewModel.cleanup()
             }
         }
-        .onAppear {
-            #if DEBUG
-            print("⚙️ SettingsView: View appeared")
-            #endif
-            viewModel.calculateStorageUsage()
-            viewModel.fetchFailedRecordings()
-
+        Button("Save") {
+            saveRecording()
         }
-        .alert("Sign Out", isPresented: $viewModel.showingLogoutAlert) {
-            Button("Cancel", role: .cancel) {}
-            Button("Sign Out", role: .destructive) {
-                handleLogout()
+    }
+    
+    // MARK: - Toolbar
+    @ToolbarContentBuilder
+    private var settingsToolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button("Done") {
+                #if DEBUG
+                print("⚙️ SettingsView: Done button tapped")
+                #endif
+                dismiss()
             }
-        } message: {
-            Text("Are you sure you want to sign out?")
         }
+    }
+    
+    // MARK: - Loading Overlay
+    @ViewBuilder
+    private var loadingOverlay: some View {
+        if viewModel.isLoading {
+            LoadingIndicator(message: "Saving changes...")
+        }
+    }
+    
+    // MARK: - Lifecycle Methods
+    private func handleOnAppear() {
+        #if DEBUG
+        print("⚙️ SettingsView: View appeared")
+        #endif
+        viewModel.calculateStorageUsage()
+        viewModel.fetchFailedRecordings()
     }
     
     // MARK: - Section Views
     @ViewBuilder
-    private func sectionView(for section: SettingsSection) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            // Section Header
-            HStack {
-                Image(systemName: section.icon)
-                    .font(.system(size: Theme.Settings.iconSize))
-                    .foregroundColor(section.color)
-                
-                Text(section.title)
-                    .font(Theme.Typography.h3)
+        func sectionContent(for section: SettingsSection) -> some View {
+            switch section.id {
+            case "account":
+                accountSection
+            case "appearance":
+                appearanceSection
+            case "notifications":
+                notificationsSection
+            case "storage":
+                storageSection
+            case "privacy":
+                privacySection
+            case "support":
+                supportSection
+            default:
+                EmptyView()
             }
-            .padding(.bottom, Theme.Spacing.xs)
-            
-            // Section Content
-            Group {
-                switch section.id {
-                case "account": accountSection
-                case "appearance": appearanceSection
-                case "notifications": notificationsSection
-                case "storage": storageSection
-                case "privacy": privacySection
-                case "support": supportSection
-                default: EmptyView()
-                }
-            }
-            .padding(Theme.Settings.cardPadding)
-            .background(Theme.Colors.secondaryBackground)
-            .cornerRadius(Theme.Settings.cornerRadius)
         }
-    }
+
+        // MARK: - Update Original sectionView
+        @ViewBuilder
+        func sectionView(for section: SettingsSection) -> some View {
+            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                // Section Header
+                HStack {
+                    Image(systemName: section.icon)
+                        .font(.system(size: Theme.Settings.iconSize))
+                        .foregroundColor(section.color)
+                    
+                    Text(section.title)
+                        .font(Theme.Typography.h3)
+                }
+                .padding(.bottom, Theme.Spacing.xs)
+                
+                // Section Content
+                sectionContent(for: section)
+                    .padding(Theme.Settings.cardPadding)
+                    .background(Theme.Colors.secondaryBackground)
+                    .cornerRadius(Theme.Settings.cornerRadius)
+            }
+        }
     
     private var accountSection: some View {
         VStack(spacing: Theme.Spacing.md) {
@@ -268,9 +343,15 @@ struct SettingsView: View {
         VStack(spacing: Theme.Spacing.md) {
             Picker("Theme", selection: Binding(
                 get: { themeManager.currentTheme },
-                set: { themeManager.setTheme($0) }
+                set: { newTheme in
+                    #if DEBUG
+                    print("⚙️ SettingsView: Theme picker changed to \(newTheme)")
+                    #endif
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        themeManager.setTheme(newTheme)
+                    }
+                }
             )) {
-                Text("System").tag(ThemeMode.system)
                 Text("Light").tag(ThemeMode.light)
                 Text("Dark").tag(ThemeMode.dark)
             }
@@ -476,10 +557,45 @@ struct SettingsView: View {
             }
         }
     }
+    
+    private func saveRecording() {
+        #if DEBUG
+        print("⚙️ SettingsView: Attempting to save recording with title: \(noteTitle)")
+        #endif
+        
+        guard !noteTitle.isEmpty else {
+            #if DEBUG
+            print("⚙️ SettingsView: Error - Empty note title")
+            #endif
+            toastManager.show("Please enter a title", type: .error)
+            return
+        }
+        
+        Task {
+            do {
+                try await Task.sleep(nanoseconds: 1_000_000_000) // Simulating save operation
+                toastManager.show("Recording saved successfully", type: .success)
+                viewModel.showingSaveDialog = false
+                
+                #if DEBUG
+                print("⚙️ SettingsView: Recording saved successfully with title: \(noteTitle)")
+                #endif
+                
+            } catch {
+                #if DEBUG
+                print("⚙️ SettingsView: Error saving recording - \(error)")
+                #endif
+                toastManager.show("Failed to save recording", type: .error)
+            }
+        }
+    }
 }
 
 // MARK: - Supporting Views
 struct SettingsRow: View {
+    @EnvironmentObject private var themeManager: ThemeManager
+    @Environment(\.colorScheme) private var colorScheme
+    
     let icon: String
     let title: String
     let color: Color
@@ -489,7 +605,7 @@ struct SettingsRow: View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: icon)
-                    .foregroundColor(color)
+                    .foregroundColor(color.opacity(colorScheme == .dark ? 0.9 : 1.0))
                     .frame(width: 24)
                 
                 Text(title)
@@ -505,13 +621,22 @@ struct SettingsRow: View {
             
             if showDivider {
                 Divider()
+                    .background(Theme.Colors.tertiaryBackground)
                     .padding(.leading, 32)
             }
+        }
+        .onChange(of: themeManager.currentTheme) { newTheme in
+            #if DEBUG
+            print("⚙️ SettingsRow: Theme changed to \(newTheme) for row: \(title)")
+            #endif
         }
     }
 }
 
 struct StorageProgressBar: View {
+    @EnvironmentObject private var themeManager: ThemeManager
+    @Environment(\.colorScheme) private var colorScheme
+    
     let used: Double
     let usedText: String
     let totalText: String
@@ -552,6 +677,11 @@ struct StorageProgressBar: View {
                     .font(Theme.Typography.caption)
                     .foregroundColor(Theme.Colors.secondaryText)
             }
+        }
+        .onChange(of: themeManager.currentTheme) { newTheme in
+            #if DEBUG
+            print("⚙️ StorageProgressBar: Theme changed to \(newTheme)")
+            #endif
         }
     }
 }

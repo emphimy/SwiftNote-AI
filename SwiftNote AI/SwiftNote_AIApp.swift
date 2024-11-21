@@ -11,6 +11,11 @@ struct SwiftNote_AIApp: App {
                 .environment(\.managedObjectContext, persistenceController.container.viewContext)
                 .environmentObject(themeManager)
                 .preferredColorScheme(themeManager.currentTheme.colorScheme)
+                .onChange(of: themeManager.currentTheme) { newTheme in
+                    #if DEBUG
+                    print("🎨 App: Theme changed to \(newTheme) with colorScheme: \(String(describing: newTheme.colorScheme))")
+                    #endif
+                }
         }
     }
 }

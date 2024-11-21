@@ -1,4 +1,7 @@
 import SwiftUI
+import CoreData
+import AVKit
+import Combine
 
 // MARK: - Audio Type Check Extension
 private extension NoteSourceType {
@@ -154,156 +157,98 @@ struct ListenTabView: View {
                     )
                     
                     // MARK: - Transcript Section
-                    VStack(spacing: Theme.Spacing.lg) {
-                        if note.sourceType.supportsAudio {
-                            if let audioURL = note.audioURL {
-                                // MARK: - Audio Player Controls
-                                AudioPlayerControls(
-                                    duration: viewModel.duration,
-                                    currentTime: Binding(
-                                        get: { viewModel.currentTime },
-                                        set: { viewModel.seek(to: $0) }
-                                    ),
-                                    isPlaying: Binding(
-                                        get: { viewModel.isPlaying },
-                                        set: { newValue in
-                                            #if DEBUG
-                                            print("🎵 ListenTabView: Playback state changed to \(newValue)")
-                                            #endif
-                                            if newValue {
-                                                viewModel.play()
-                                            } else {
-                                                viewModel.pause()
-                                            }
-                                        }
-                                    ),
-                                    playbackRate: $viewModel.playbackRate,
-                                    onSeek: { newTime in
-                                        #if DEBUG
-                                        print("🎵 ListenTabView: Seeking to time: \(newTime)")
-                                        #endif
-                                        viewModel.seek(to: newTime)
-                                    }
+                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                        Text("Transcript")
+                            .font(Theme.Typography.h3)
+                            .padding(.horizontal)
+                        
+                        switch transcriptViewModel.loadingState {
+                        case .loading(let message):
+                            LoadingIndicator(message: message)
+                                .padding()
+                            
+                        case .error(let message):
+                            ErrorView(
+                                error: NSError(
+                                    domain: "Transcript",
+                                    code: -1,
+                                    userInfo: [NSLocalizedDescriptionKey: message]
                                 )
-                                
-                                // MARK: - Transcript Section
-                                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                                    Text("Transcript")
-                                        .font(Theme.Typography.h3)
-                                        .padding(.horizontal)
-                                    
-                                    switch transcriptViewModel.loadingState {
-                                    case .loading(let message):
-                                        LoadingIndicator(message: message)
-                                            .padding()
-                                        
-                                    case .error(let message):
-                                        ErrorView(
-                                            error: NSError(
-                                                domain: "Transcript",
-                                                code: -1,
-                                                userInfo: [NSLocalizedDescriptionKey: message]
-                                            )
-                                        ) {
-                                            #if DEBUG
-                                            print("🎵 ListenTabView: Retrying transcript generation")
-                                            #endif
-                                            Task {
-                                                await transcriptViewModel.generateTranscript(for: audioURL)
-                                            }
-                                        }
-                                        .padding()
-                                        
-                                    case .success(_):
-                                        if transcriptViewModel.segments.isEmpty {
-                                            EmptyStateView(
-                                                icon: "text.quote",
-                                                title: "No Transcript",
-                                                message: "Tap to generate transcript for this audio.",
-                                                actionTitle: "Generate Transcript"
-                                            ) {
-                                                #if DEBUG
-                                                print("🎵 ListenTabView: Manual transcript generation requested")
-                                                #endif
-                                                Task {
-                                                    await transcriptViewModel.generateTranscript(for: audioURL)
-                                                }
-                                            }
-                                            .padding()
-                                        } else {
-                                            ScrollView {
-                                                LazyVStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                                                    ForEach(transcriptViewModel.segments) { segment in
-                                                        TranscriptSegmentView(segment: segment) {
-                                                            #if DEBUG
-                                                            print("🎵 ListenTabView: Segment tapped at time: \(segment.startTime)")
-                                                            #endif
-                                                            let newTime = transcriptViewModel.seekToSegment(segment)
-                                                            viewModel.seek(to: newTime)
-                                                        }
-                                                    }
-                                                }
-                                                .padding()
-                                            }
-                                        }
-                                        
-                                    case .idle:
-                                        if transcriptViewModel.segments.isEmpty {
-                                            EmptyStateView(
-                                                icon: "text.quote",
-                                                title: "No Transcript",
-                                                message: "Tap to generate transcript for this audio.",
-                                                actionTitle: "Generate Transcript"
-                                            ) {
-                                                #if DEBUG
-                                                print("🎵 ListenTabView: Manual transcript generation requested")
-                                                #endif
-                                                Task {
-                                                    await transcriptViewModel.generateTranscript(for: audioURL)
-                                                }
-                                            }
-                                            .padding()
-                                        } else {
-                                            ScrollView {
-                                                LazyVStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                                                    ForEach(transcriptViewModel.segments) { segment in
-                                                        TranscriptSegmentView(segment: segment) {
-                                                            #if DEBUG
-                                                            print("🎵 ListenTabView: Segment tapped at time: \(segment.startTime)")
-                                                            #endif
-                                                            let newTime = transcriptViewModel.seekToSegment(segment)
-                                                            viewModel.seek(to: newTime)
-                                                        }
-                                                    }
-                                                }
-                                                .padding()
-                                            }
-                                        }
-                                    }
+                            ) {
+                                #if DEBUG
+                                print("🎵 ListenTabView: Retrying transcript generation")
+                                #endif
+                                Task {
+                                    await transcriptViewModel.generateTranscript(for: audioURL)
                                 }
-                            } else {
-                                // MARK: - Missing Audio Error
+                            }
+                            .padding()
+                            
+                        case .success(_):
+                            if transcriptViewModel.segments.isEmpty {
                                 EmptyStateView(
-                                    icon: "exclamationmark.triangle",
-                                    title: "Audio Not Found",
-                                    message: getErrorMessage(),
-                                    actionTitle: "Refresh"
+                                    icon: "text.quote",
+                                    title: "No Transcript",
+                                    message: "Tap to generate transcript for this audio.",
+                                    actionTitle: "Generate Transcript"
                                 ) {
                                     #if DEBUG
-                                    print("🎵 ListenTabView: Attempting to reload audio URL for type: \(note.sourceType)")
+                                    print("🎵 ListenTabView: Manual transcript generation requested")
                                     #endif
-                                    // Implement refresh logic if needed
+                                    Task {
+                                        await transcriptViewModel.generateTranscript(for: audioURL)
+                                    }
                                 }
                                 .padding()
+                            } else {
+                                ScrollView {
+                                    LazyVStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                                        ForEach(transcriptViewModel.segments) { segment in
+                                            TranscriptSegmentView(segment: segment) {
+                                                #if DEBUG
+                                                print("🎵 ListenTabView: Segment tapped at time: \(segment.startTime)")
+                                                #endif
+                                                let newTime = transcriptViewModel.seekToSegment(segment)
+                                                viewModel.seek(to: newTime)
+                                            }
+                                        }
+                                    }
+                                    .padding()
+                                }
                             }
-                        } else {
-                            // MARK: - Unsupported Content Type
-                            EmptyStateView(
-                                icon: "speaker.slash",
-                                title: "Audio Not Available",
-                                message: "This \(note.sourceType == .text ? "text" : "uploaded") note doesn't contain any audio content."
-                            )
-                            .padding()
+                            
+                        case .idle:
+                            if transcriptViewModel.segments.isEmpty {
+                                EmptyStateView(
+                                    icon: "text.quote",
+                                    title: "No Transcript",
+                                    message: "Tap to generate transcript for this audio.",
+                                    actionTitle: "Generate Transcript"
+                                ) {
+                                    #if DEBUG
+                                    print("🎵 ListenTabView: Manual transcript generation requested")
+                                    #endif
+                                    Task {
+                                        await transcriptViewModel.generateTranscript(for: audioURL)
+                                    }
+                                }
+                                .padding()
+                            } else {
+                                ScrollView {
+                                    LazyVStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                                        ForEach(transcriptViewModel.segments) { segment in
+                                            TranscriptSegmentView(segment: segment) {
+                                                #if DEBUG
+                                                print("🎵 ListenTabView: Segment tapped at time: \(segment.startTime)")
+                                                #endif
+                                                let newTime = transcriptViewModel.seekToSegment(segment)
+                                                viewModel.seek(to: newTime)
+                                            }
+                                        }
+                                    }
+                                    .padding()
+                                }
+                            }
                         }
                     }
                 } else {
@@ -372,6 +317,7 @@ struct ListenTabView: View {
         }
     }
 }
+
 private struct TranscriptSegmentView: View {
     let segment: TranscriptSegment
     let onTap: () -> Void
@@ -397,7 +343,11 @@ struct ReadTabView: View {
     
     init(note: NoteCardConfiguration) {
         self.note = note
-        _viewModel = StateObject(wrappedValue: ReadTabViewModel(note: note))
+        self._viewModel = StateObject(wrappedValue: ReadTabViewModel(note: note))
+        
+        #if DEBUG
+        print("📖 ReadTabView: Initializing with note: \(note.title)")
+        #endif
     }
     
     var body: some View {
@@ -406,12 +356,24 @@ struct ReadTabView: View {
             HStack {
                 SearchBar(text: $viewModel.searchText)
                 
-                Button(action: { viewModel.adjustTextSize(-2) }) {
+                Button(action: {
+                    #if DEBUG
+                    print("📖 ReadTabView: Decreasing text size")
+                    #endif
+                    viewModel.adjustTextSize(-2)
+                }) {
                     Image(systemName: "textformat.size.smaller")
+                        .foregroundColor(Theme.Colors.primary)
                 }
                 
-                Button(action: { viewModel.adjustTextSize(2) }) {
+                Button(action: {
+                    #if DEBUG
+                    print("📖 ReadTabView: Increasing text size")
+                    #endif
+                    viewModel.adjustTextSize(2)
+                }) {
                     Image(systemName: "textformat.size.larger")
+                        .foregroundColor(Theme.Colors.primary)
                 }
             }
             .padding(.horizontal)
@@ -420,6 +382,22 @@ struct ReadTabView: View {
             ScrollView {
                 if viewModel.isLoading {
                     LoadingIndicator(message: "Loading content...")
+                } else if let error = viewModel.errorMessage {
+                    ErrorView(
+                        error: NSError(
+                            domain: "ReadTab",
+                            code: -1,
+                            userInfo: [NSLocalizedDescriptionKey: error]
+                        )
+                    ) {
+                        #if DEBUG
+                        print("📖 ReadTabView: Retrying content load")
+                        #endif
+                        Task {
+                            await viewModel.loadContent()
+                        }
+                    }
+                    .padding()
                 } else if let content = viewModel.content {
                     VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                         ForEach(content.formattedContent) { block in
@@ -431,6 +409,9 @@ struct ReadTabView: View {
             }
         }
         .task {
+            #if DEBUG
+            print("📖 ReadTabView: Loading content on appear")
+            #endif
             await viewModel.loadContent()
         }
     }
@@ -499,10 +480,40 @@ struct FlashcardsTabView: View {
                     message: "Tap to generate flashcards from your note.",
                     actionTitle: "Generate Flashcards"
                 ) {
-                    viewModel.generateFlashcards(from: note)
+                    #if DEBUG
+                    print("🎴 FlashcardsTabView: Generating flashcards")
+                    #endif
+                    Task {
+                        await viewModel.generateFlashcards(from: note)
+                    }
                 }
             } else {
-                NoteCardConfiguration.FlashcardContent(flashcards: viewModel.flashcards)
+                if let currentCard = viewModel.flashcards[safe: viewModel.currentIndex] {
+                    FlashcardView(flashcard: currentCard) {
+                        #if DEBUG
+                        print("🎴 FlashcardsTabView: Card tapped - toggling")
+                        #endif
+                        viewModel.toggleCard()
+                    }
+                    
+                    FlashcardControls(
+                        currentCard: viewModel.currentIndex,
+                        totalCards: viewModel.totalCards,
+                        progress: viewModel.progress,
+                        onPrevious: {
+                            #if DEBUG
+                            print("🎴 FlashcardsTabView: Moving to previous card")
+                            #endif
+                            viewModel.previousCard()
+                        },
+                        onNext: {
+                            #if DEBUG
+                            print("🎴 FlashcardsTabView: Moving to next card")
+                            #endif
+                            viewModel.nextCard()
+                        }
+                    )
+                }
             }
         }
         .padding()
@@ -512,73 +523,266 @@ struct FlashcardsTabView: View {
 // MARK: - Chat Tab View
 struct ChatTabView: View {
     let note: NoteCardConfiguration
-    @StateObject private var viewModel = ChatViewModel()
+    @StateObject private var viewModel: ChatViewModel
+    @Environment(\.toastManager) private var toastManager
+    
+    init(note: NoteCardConfiguration) {
+        self.note = note
+        self._viewModel = StateObject(wrappedValue: ChatViewModel(noteContent: note.preview))
+        
+        #if DEBUG
+        print("💬 ChatTabView: Initialized with note: \(note.title)")
+        #endif
+    }
     
     var body: some View {
         VStack(spacing: 0) {
             // Chat Messages
-            ScrollView {
-                LazyVStack(spacing: Theme.Spacing.md) {
-                    ForEach(viewModel.messages) { message in
-                        ChatBubble(message: message)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: Theme.Spacing.md) {
+                        ForEach(viewModel.messages) { message in
+                            MessageBubble(message: message)
+                                .id(message.id)
+                        }
+                    }
+                    .padding()
+                }
+                .onChange(of: viewModel.messages.count) { _ in
+                    if let lastMessage = viewModel.messages.last {
+                        withAnimation {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        }
                     }
                 }
-                .padding()
+            }
+            
+            // Typing Indicator
+            if viewModel.state.isProcessing {
+                TypingIndicator()
+                    .padding()
+                    .transition(.move(edge: .bottom))
             }
             
             // Input Area
-            HStack(spacing: Theme.Spacing.sm) {
-                TextField("Ask a question...", text: $viewModel.inputText)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .disabled(viewModel.isProcessing)
-                
-                Button(action: {
+            ChatInputField(
+                text: $viewModel.inputText,
+                isProcessing: viewModel.state.isProcessing,
+                onSend: {
+                    #if DEBUG
+                    print("💬 ChatTabView: Send button tapped")
+                    #endif
                     viewModel.sendMessage()
-                }) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(Theme.Colors.primary)
                 }
-                .disabled(viewModel.inputText.isEmpty || viewModel.isProcessing)
-            }
+            )
             .padding()
-            .background(Theme.Colors.background)
-            .standardShadow()
+        }
+        .onChange(of: viewModel.state) { state in
+            if case .error(let message) = state {
+                toastManager.show(message, type: .error)
+            }
         }
     }
 }
 
-private struct ChatBubble: View {
-    let message: ChatViewModel.ChatMessage
+// MARK: - Message Bubble
+private struct MessageBubble: View {
+    let message: ChatMessage
     
     var body: some View {
         HStack {
-            if message.isUser {
+            if message.type == .user {
                 Spacer()
             }
             
-            Text(message.content)
-                .padding(Theme.Spacing.sm)
-                .background(message.isUser ? Theme.Colors.primary : Theme.Colors.secondaryBackground)
-                .foregroundColor(message.isUser ? .white : Theme.Colors.text)
-                .cornerRadius(Theme.Layout.cornerRadius)
-                .standardShadow()
+            VStack(alignment: message.type == .user ? .trailing : .leading, spacing: Theme.Spacing.xxs) {
+                Text(message.content)
+                    .padding(Theme.Spacing.sm)
+                    .background(message.type == .user ? Theme.Colors.primary : Theme.Colors.secondaryBackground)
+                    .foregroundColor(message.type == .user ? .white : Theme.Colors.text)
+                    .cornerRadius(Theme.Layout.cornerRadius)
+                
+                if case .failed(let error) = message.status {
+                    Text(error.localizedDescription)
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.error)
+                }
+            }
             
-            if !message.isUser {
+            if message.type == .assistant {
                 Spacer()
             }
+        }
+        .transition(.asymmetric(
+            insertion: .scale.combined(with: .opacity),
+            removal: .opacity
+        ))
+    }
+}
+
+// MARK: - Typing Indicator
+private struct TypingIndicator: View {
+    @State private var dots = ""
+    
+    var body: some View {
+        HStack {
+            Text("AI is typing\(dots)")
+                .font(Theme.Typography.caption)
+                .foregroundColor(Theme.Colors.secondaryText)
+                .onAppear {
+                    animateDots()
+                }
+            Spacer()
+        }
+    }
+    
+    private func animateDots() {
+        Task {
+            while true {
+                for i in 1...3 {
+                    await MainActor.run {
+                        dots = String(repeating: ".", count: i)
+                    }
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Chat Input Field
+private struct ChatInputField: View {
+    @Binding var text: String
+    let isProcessing: Bool
+    let onSend: () -> Void
+    
+    var body: some View {
+        HStack(spacing: Theme.Spacing.sm) {
+            TextField("Ask a question...", text: $text)
+                .textFieldStyle(RoundedBorderTextFieldStyle())
+                .disabled(isProcessing)
+            
+            Button(action: onSend) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(Theme.Colors.primary)
+            }
+            .disabled(text.isEmpty || isProcessing)
+        }
+        .background(Theme.Colors.background)
+        .standardShadow()
+    }
+}
+
+// MARK: - Flashcard View
+private struct FlashcardView: View {
+    let flashcard: FlashcardsViewModel.Flashcard
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack {
+                Spacer()
+                
+                Text(flashcard.isRevealed ? flashcard.back : flashcard.front)
+                    .font(Theme.Typography.body)
+                    .multilineTextAlignment(.center)
+                    .padding(Theme.Spacing.lg)
+                    .frame(maxWidth: .infinity)
+                
+                Spacer()
+                
+                if !flashcard.isRevealed {
+                    Text("Tap to reveal")
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.secondaryText)
+                        .padding(.bottom, Theme.Spacing.md)
+                }
+            }
+            .frame(height: 300)
+            .background(Theme.Colors.background)
+            .cornerRadius(Theme.Layout.cornerRadius)
+            .standardShadow()
+            .rotation3DEffect(
+                .degrees(flashcard.isRevealed ? 180 : 0),
+                axis: (x: 0, y: 1, z: 0)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+}
+
+// MARK: - Flashcard Controls
+private struct FlashcardControls: View {
+    let currentCard: Int
+    let totalCards: Int
+    let progress: Double
+    let onPrevious: () -> Void
+    let onNext: () -> Void
+    
+    var body: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            // Progress Bar
+            ProgressView(value: progress)
+                .tint(Theme.Colors.primary)
+            
+            // Navigation Controls
+            HStack {
+                Button(action: onPrevious) {
+                    Image(systemName: "chevron.left.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(Theme.Colors.primary)
+                }
+                .disabled(currentCard == 0)
+                
+                Spacer()
+                
+                Text("\(currentCard + 1) of \(totalCards)")
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.secondaryText)
+                
+                Spacer()
+                
+                Button(action: onNext) {
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.title2)
+                        .foregroundColor(Theme.Colors.primary)
+                }
+                .disabled(currentCard == totalCards - 1)
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+        }
+        .onChange(of: currentCard) { newValue in
+            #if DEBUG
+            print("🎴 FlashcardControls: Card changed to \(newValue + 1)/\(totalCards)")
+            #endif
         }
     }
 }
 
 // MARK: - View Models
 class AudioViewModel: ObservableObject {
-    @Published var duration: TimeInterval = 180
-    @Published var currentTime: TimeInterval = 0
-    @Published var isPlaying: Bool = false
-    @Published var playbackRate: Float = 1.0
+    // MARK: - Published Properties
+    @Published var duration: TimeInterval
+    @Published var currentTime: TimeInterval
+    @Published var isPlaying: Bool
+    @Published var playbackRate: Float
     @Published var transcript: String?
     
+    // MARK: - Initialization
+    init() {
+        self.duration = 180
+        self.currentTime = 0
+        self.isPlaying = false
+        self.playbackRate = 1.0
+        self.transcript = nil
+        
+        #if DEBUG
+        print("🎧 AudioViewModel: Initialized with default values")
+        #endif
+    }
+    
+    // MARK: - Public Methods
     func seek(to time: TimeInterval) {
         #if DEBUG
         print("🎧 AudioViewModel: Seeking to time: \(time)")
@@ -611,51 +815,125 @@ class QuizViewModel: ObservableObject {
     }
 }
 
-class FlashcardsViewModel: ObservableObject {
-    @Published var isLoading = false
-    @Published var flashcards: [Flashcard] = []
+@MainActor
+final class ChatViewModel: ObservableObject {
+    // MARK: - Published Properties
+    @Published private(set) var messages: [ChatMessage] = []
+    @Published private(set) var state: ChatState = .idle
+    @Published var inputText = ""
     
-    struct Flashcard: Identifiable {
-        let id = UUID()
-        let front: String
-        let back: String
+    // MARK: - Private Properties
+    private let noteContent: String
+    private var processingTask: Task<Void, Never>?
+    
+    // MARK: - Initialization
+    init(noteContent: String) {
+        self.noteContent = noteContent
+        
+        #if DEBUG
+        print("💬 ChatViewModel: Initializing with note content length: \(noteContent.count)")
+        #endif
     }
     
-    func generateFlashcards(from note: NoteCardConfiguration) {
+    // MARK: - Message Handling
+    func sendMessage() {
+        guard !inputText.isEmpty else {
+            #if DEBUG
+            print("💬 ChatViewModel: Attempted to send empty message")
+            #endif
+            return
+        }
+        
+        let messageText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        inputText = ""
+        
+        let message = ChatMessage(
+            content: messageText,
+            type: .user,
+            status: .sending
+        )
+        
         #if DEBUG
-        print("🎴 FlashcardsViewModel: Generating flashcards for note: \(note.title)")
+        print("💬 ChatViewModel: Sending message: \(messageText)")
         #endif
-        isLoading = true
-        // TODO: Implement AI-based flashcard generation
+        
+        messages.append(message)
+        processMessage(message)
+    }
+    
+    private func processMessage(_ message: ChatMessage) {
+        state = .processing
+        
+        processingTask = Task {
+            do {
+                // Simulate AI processing time
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+                
+                // Generate AI response based on context
+                let response = generateResponse(to: message)
+                
+                await MainActor.run {
+                    let responseMessage = ChatMessage(
+                        content: response,
+                        type: .assistant
+                    )
+                    messages.append(responseMessage)
+                    state = .idle
+                }
+                
+                #if DEBUG
+                print("💬 ChatViewModel: Response generated successfully")
+                #endif
+            } catch {
+                #if DEBUG
+                print("💬 ChatViewModel: Error processing message - \(error)")
+                #endif
+                
+                await MainActor.run {
+                    state = .error(error.localizedDescription)
+                }
+            }
+        }
+    }
+    
+    // MARK: - Cleanup
+    private func cleanup() {
+        processingTask?.cancel()
+        processingTask = nil
+        
+        #if DEBUG
+        print("💬 ChatViewModel: Cleanup performed")
+        #endif
+    }
+    
+    deinit {
+        // Create a separate Task that won't retain self
+        Task { @MainActor [processingTask] in
+            processingTask?.cancel()
+            
+            #if DEBUG
+            print("💬 ChatViewModel: Deinitializing and cleanup completed")
+            #endif
+        }
+    }
+    
+    // MARK: - Response Generation
+    private func generateResponse(to message: ChatMessage) -> String {
+        // TODO: Implement actual AI response generation
+        // This is a placeholder that simulates response generation
+        return "I understand you're asking about \(message.content). Let me help you with that based on the note content."
     }
 }
 
-class ChatViewModel: ObservableObject {
-    @Published var messages: [ChatMessage] = []
-    @Published var inputText = ""
-    @Published var isProcessing = false
-    
-    struct ChatMessage: Identifiable {
-        let id = UUID()
-        let content: String
-        let isUser: Bool
-        let timestamp: Date
-    }
-    
-    func sendMessage() {
+// MARK: - Array Safe Subscript Extension
+private extension Array {
+    /// Safe array subscript that returns nil if index is out of bounds
+    ///
+    /// Usage: array[safe: index]
+    subscript(safe index: Index) -> Element? {
         #if DEBUG
-        print("💬 ChatViewModel: Sending message: \(inputText)")
+        print("🔄 Array: Safe accessing index \(index) of \(count) elements")
         #endif
-        guard !inputText.isEmpty else { return }
-        
-        let userMessage = ChatMessage(
-            content: inputText,
-            isUser: true,
-            timestamp: Date()
-        )
-        messages.append(userMessage)
-        inputText = ""
-        
-        // TODO: Implement AI-based response generation
+        return indices.contains(index) ? self[index] : nil
     }
 }

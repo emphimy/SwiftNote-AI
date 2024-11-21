@@ -19,29 +19,18 @@ enum ThemeMode: String {
 @MainActor
 final class ThemeManager: ObservableObject {
     // MARK: - Published Properties
-    @Published private(set) var currentTheme: ThemeMode {
-        didSet {
-            #if DEBUG
-            print("🎨 ThemeManager: Theme changed to \(currentTheme)")
-            #endif
-            UserDefaults.standard.setValue(currentTheme.rawValue, forKey: "app_theme")
-        }
-    }
+    private let defaults: UserDefaults
+    @Published private(set) var currentTheme: ThemeMode
     
     // MARK: - Initialization
-    init() {
-        if let savedTheme = UserDefaults.standard.string(forKey: "app_theme"),
-           let theme = ThemeMode(rawValue: savedTheme) {
-            self.currentTheme = theme
-            #if DEBUG
-            print("🎨 ThemeManager: Initialized with saved theme: \(theme)")
-            #endif
-        } else {
-            self.currentTheme = .system
-            #if DEBUG
-            print("🎨 ThemeManager: Initialized with default theme: system")
-            #endif
-        }
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        let storedValue = defaults.string(forKey: "app_theme") ?? ThemeMode.system.rawValue
+        self.currentTheme = ThemeMode(rawValue: storedValue) ?? .system
+            
+        #if DEBUG
+        print("🎨 ThemeManager: Initialized with theme: \(currentTheme) from stored value: \(storedValue)")
+        #endif
     }
     
     // MARK: - Theme Management
@@ -49,10 +38,18 @@ final class ThemeManager: ObservableObject {
         #if DEBUG
         print("🎨 ThemeManager: Setting theme to \(theme)")
         #endif
-        currentTheme = theme
+        
+        withAnimation(.easeInOut(duration: 0.3)) {
+            currentTheme = theme
+            defaults.set(theme.rawValue, forKey: "app_theme")
+            
+            #if DEBUG
+            print("🎨 ThemeManager: Theme saved: \(theme.rawValue)")
+            #endif
+        }
     }
     
-    // MARK: - Environment Support
+    // MARK: - Color Scheme Resolution
     func resolveColorScheme(for environment: ColorScheme) -> ColorScheme {
         switch currentTheme {
         case .light:

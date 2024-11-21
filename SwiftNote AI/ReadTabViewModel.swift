@@ -16,41 +16,44 @@ final class ReadTabViewModel: ObservableObject {
     
     init(note: NoteCardConfiguration) {
         self.note = note
+        
         #if DEBUG
-        print("📖 ReadTabViewModel: Initializing with note: \(note.title)")
+        print("""
+        📖 ReadTabViewModel: Initializing
+        - Note Title: \(note.title)
+        - Content Length: \(note.preview.count)
+        """)
         #endif
     }
     
     func loadContent() async {
-        isLoading = true
-        defer { isLoading = false }
-        
-        do {
-            // Simulate potential error conditions
-            guard !note.preview.isEmpty else {
-                throw NSError(domain: "ReadTab", code: 1001,
-                             userInfo: [NSLocalizedDescriptionKey: "Note content is empty"])
+            isLoading = true
+            defer { isLoading = false }
+            
+            do {
+                guard !note.preview.isEmpty else {
+                    throw NSError(domain: "ReadTab", code: 1001,
+                                 userInfo: [NSLocalizedDescriptionKey: "Note content is empty"])
+                }
+                
+                let blocks = try parseContent(note.preview)
+                content = NoteContent(
+                    rawText: note.preview,
+                    formattedContent: blocks,
+                    summary: nil,
+                    highlights: []
+                )
+                
+                #if DEBUG
+                print("📖 ReadTabViewModel: Content loaded successfully")
+                #endif
+            } catch {
+                #if DEBUG
+                print("📖 ReadTabViewModel: Error loading content - \(error)")
+                #endif
+                errorMessage = "Failed to load content: \(error.localizedDescription)"
             }
-            
-            // Process raw text into formatted content
-            let blocks = try parseContent(note.preview)
-            content = NoteContent(
-                rawText: note.preview,
-                formattedContent: blocks,
-                summary: nil,
-                highlights: []
-            )
-            
-            #if DEBUG
-            print("📖 ReadTabViewModel: Content loaded successfully")
-            #endif
-        } catch {
-            #if DEBUG
-            print("📖 ReadTabViewModel: Error loading content - \(error)")
-            #endif
-            errorMessage = "Failed to load content: \(error.localizedDescription)"
         }
-    }
     
     private func parseContent(_ text: String) throws -> [ContentBlock] {
         guard !text.isEmpty else {
