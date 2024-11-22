@@ -50,7 +50,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
     private var recordingURL: URL?
     private let maxDuration: TimeInterval = 7200 // 2 hours
     private let viewContext: NSManagedObjectContext
-    private let cleanupActor = AudioRecordingCleanup()
+    private let cleanupManager = AudioCleanupManager.shared
     private var isCleanedUp = false
     
     // MARK: - Initialization
@@ -190,7 +190,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
         
         // Handle file cleanup on background
         if let url = recordingURL {
-            await cleanupActor.cleanup(url: url)
+            await cleanupManager.cleanup(url: url)
         }
     }
     
@@ -250,8 +250,11 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
         #endif
         
         // Create a new Task for cleanup that won't retain self
-        Task.detached { [cleanupActor, recordingURL] in
-            await cleanupActor.cleanup(url: recordingURL)
+        let urlToCleanup = recordingURL
+        Task.detached { [cleanupManager] in
+            if let url = urlToCleanup {
+                await cleanupManager.cleanup(url: url)
+            }
             
             #if DEBUG
             print("🎙️ AudioRecordingViewModel: Completed deinit cleanup")

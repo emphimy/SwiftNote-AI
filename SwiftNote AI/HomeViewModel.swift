@@ -1,5 +1,3 @@
-// HomeViewModel.swift
-
 import SwiftUI
 import CoreData
 
@@ -19,10 +17,12 @@ final class HomeViewModel: ObservableObject {
    @Published var isLoading: Bool = false
    @Published var isShowingSettings = false
    @Published var isShowingRecording = false
+   @Published var isShowingYouTubeInput = false
+   @Published var isShowingTextUpload = false
+   @Published var isShowingAudioUpload = false
 
 
 
-   
    private let viewContext: NSManagedObjectContext
    
    init(context: NSManagedObjectContext) {

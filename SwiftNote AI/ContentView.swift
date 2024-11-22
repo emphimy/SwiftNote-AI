@@ -346,26 +346,32 @@ private struct AddNoteActionSheet: View {
                 viewModel.isShowingRecording = true
             },
         
-           ActionCardItem(title: "Upload Audio", icon: "waveform", color: .orange) {
-               #if DEBUG
-               print("🏠 AddNoteSheet: Upload audio selected")
-               #endif
-           },
+            ActionCardItem(title: "Upload Audio", icon: "waveform", color: .orange) {
+                #if DEBUG
+                print("🏠 AddNoteSheet: Upload audio selected")
+                #endif
+                viewModel.isShowingAddNote = false
+                viewModel.isShowingAudioUpload = true
+            },
            ActionCardItem(title: "Scan Text", icon: "doc.text.viewfinder", color: .green) {
                #if DEBUG
                print("🏠 AddNoteSheet: Scan text selected")
                #endif
            },
-           ActionCardItem(title: "Upload Text", icon: "doc.badge.arrow.up", color: .blue) {
-               #if DEBUG
-               print("🏠 AddNoteSheet: Upload text selected")
-               #endif
-           },
-           ActionCardItem(title: "YouTube Video", icon: "video.fill", color: .red) {
-               #if DEBUG
-               print("🏠 AddNoteSheet: YouTube video selected")
-               #endif
-           },
+            ActionCardItem(title: "Upload Text", icon: "doc.badge.arrow.up", color: .blue) {
+                #if DEBUG
+                print("🏠 AddNoteSheet: Upload text selected")
+                #endif
+                viewModel.isShowingAddNote = false
+                viewModel.isShowingTextUpload = true
+            },
+            ActionCardItem(title: "YouTube Video", icon: "video.fill", color: .red) {
+                #if DEBUG
+                print("🏠 AddNoteSheet: YouTube video selected")
+                #endif
+                viewModel.isShowingAddNote = false
+                viewModel.isShowingYouTubeInput = true
+            },
            ActionCardItem(title: "Google Drive", icon: "externaldrive.fill", color: .blue) {
                #if DEBUG
                print("🏠 AddNoteSheet: Google Drive selected")
@@ -525,6 +531,15 @@ struct ContentView: View {
             }
             .sheet(isPresented: $viewModel.isShowingRecording) {
                 AudioRecordingView(context: viewContext)
+            }
+            .sheet(isPresented: $viewModel.isShowingYouTubeInput) {
+                YouTubeInputView(context: viewContext)
+            }
+            .sheet(isPresented: $viewModel.isShowingTextUpload) {
+                TextUploadView(context: viewContext)
+            }
+            .sheet(isPresented: $viewModel.isShowingAudioUpload) {
+                AudioUploadView(context: viewContext)
             }
         }
         .onAppear {
