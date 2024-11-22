@@ -10,6 +10,7 @@
         <attribute name="tags" optional="YES" attributeType="String"/>
         <attribute name="timestamp" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="title" optional="YES" attributeType="String"/>
+	<relationship name="folder" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Folder" inverseName="notes" inverseEntity="Folder"/>
     </entity>
     <entity name="QuizAnalytics" representedClassName="SwiftNote_AI.QuizAnalytics" syncable="YES" codeGenerationType="class">
         <attribute name="averageScore" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
@@ -26,5 +27,12 @@
         <attribute name="noteId" attributeType="UUID" defaultValueString="00000000-0000-0000-0000-000000000000" usesScalarValueType="NO"/>
         <attribute name="score" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
         <attribute name="timestamp" attributeType="Date" defaultDateTimeInterval="0" usesScalarValueType="NO"/>
+    </entity>
+    <entity name="Folder" representedClassName="Folder" syncable="YES" codeGenerationType="class">
+    	<attribute name="id" attributeType="UUID" defaultValueString="00000000-0000-0000-0000-000000000000" usesScalarValueType="NO"/>
+    	<attribute name="name" attributeType="String" defaultValueString="Untitled Folder"/>
+    	<attribute name="color" optional="YES" attributeType="String" defaultValueString="blue"/>
+    	<attribute name="timestamp" attributeType="Date" defaultDateTimeInterval="0" usesScalarValueType="NO"/>
+    	<relationship name="notes" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="Note" inverseName="folder" inverseEntity="Note"/>
     </entity>
 </model>

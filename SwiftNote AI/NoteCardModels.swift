@@ -20,6 +20,17 @@ struct NoteCardConfiguration: Identifiable, Equatable {
         }
     }
     
+    var folderName: String? {
+        folder?.name
+    }
+    
+    private var folder: Folder?
+    
+    var folderColor: Color? {
+        guard let colorName = folder?.color else { return nil }
+        return Color(colorName)
+    }
+    
     static func == (lhs: NoteCardConfiguration, rhs: NoteCardConfiguration) -> Bool {
         lhs.id == rhs.id &&
         lhs.title == rhs.title &&
@@ -29,6 +40,34 @@ struct NoteCardConfiguration: Identifiable, Equatable {
         lhs.isFavorite == rhs.isFavorite &&
         lhs.tags == rhs.tags &&
         lhs.audioURL == rhs.audioURL
+    }
+    
+    // MARK: - Initialization
+    init(
+        title: String,
+        date: Date,
+        preview: String,
+        sourceType: NoteSourceType,
+        isFavorite: Bool = false,
+        tags: [String] = [],
+        folder: Folder? = nil
+    ) {
+        self.title = title
+        self.date = date
+        self.preview = preview
+        self.sourceType = sourceType
+        self.isFavorite = isFavorite
+        self.tags = tags
+        self.folder = folder
+        
+        #if DEBUG
+        print("""
+        📝 NoteCardConfiguration: Created new configuration
+        - Title: \(title)
+        - Source Type: \(sourceType)
+        - Tags Count: \(tags.count)
+        """)
+        #endif
     }
     
     // MARK: - Debug Description

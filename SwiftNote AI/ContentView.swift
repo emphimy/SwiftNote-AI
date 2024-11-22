@@ -12,22 +12,25 @@ private struct CustomNavigationBar: View {
         Theme.Colors.primary
     ]
     
+    var currentFolder: Folder? = nil
+
+    
    var body: some View {
        HStack {
            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-               Text("My Notes")
-                   .font(Theme.Typography.h2)
-                   .foregroundStyle(
-                       LinearGradient(
-                           colors: gradientColors,
-                           startPoint: .leading,
-                           endPoint: .trailing
-                       )
-                   )
+               if let folder = currentFolder {
+                   HStack(spacing: Theme.Spacing.xs) {
+                       Circle()
+                           .fill(Color(folder.color ?? "blue"))
+                           .frame(width: 8, height: 8)
+                       Text(folder.name ?? "Untitled")
+                   }
+                   .font(Theme.Typography.caption)
+                   .foregroundColor(Theme.Colors.secondaryText)
+               }
                Text("Good \(timeOfDay)")
                    .font(Theme.Typography.caption)
                    .foregroundColor(Theme.Colors.secondaryText)
-                   .transition(.opacity)
            }
            .animation(.easeInOut, value: timeOfDay)
            
@@ -68,6 +71,27 @@ private struct CustomNavigationBar: View {
        default: return "evening"
        }
    }
+}
+
+// MARK: - Folder Navigation Button
+private struct FolderNavigationButton: View {
+    @Binding var isShowingFolders: Bool
+    
+    var body: some View {
+        Button(action: {
+            #if DEBUG
+            print("📁 ContentView: Folder navigation button tapped")
+            #endif
+            isShowingFolders = true
+        }) {
+            Image(systemName: "folder.fill")
+                .font(.title2)
+                .foregroundColor(Theme.Colors.primary)
+                .frame(width: 44, height: 44)
+                .background(Theme.Colors.secondaryBackground)
+                .cornerRadius(Theme.Layout.cornerRadius)
+        }
+    }
 }
 
 // MARK: - Home Header View
@@ -124,8 +148,6 @@ private struct HomeHeaderView: View {
     }
 }
 
-
-// MARK: - Notes Content View
 // MARK: - Notes Content View
 private struct NotesContentView: View {
     @ObservedObject var viewModel: HomeViewModel
@@ -462,6 +484,8 @@ struct ContentView: View {
     @StateObject private var viewModel: HomeViewModel
     @Environment(\.toastManager) private var toastManager
     @State private var selectedNote: NoteCardConfiguration?
+    @State private var isShowingFolders = false
+    @State private var selectedFolder: Folder?
     
     init(context: NSManagedObjectContext? = nil) {
         let ctx = context ?? PersistenceController.shared.container.viewContext
@@ -490,7 +514,7 @@ struct ContentView: View {
                     )
                 }
                 
-                // Add Note Button
+                // Note Button
                 VStack {
                     Spacer()
                     HStack {
@@ -509,16 +533,24 @@ struct ContentView: View {
                 }
             }
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    FolderNavigationButton(isShowingFolders: $isShowingFolders)
+                        .onChange(of: isShowingFolders) { newValue in
+                            #if DEBUG
+                            print("📁 ContentView: Folder visibility changed to: \(newValue)")
+                            #endif
+                        }
+                }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         #if DEBUG
-                        print("🏠 ContentView: Settings button tapped")
+                        print("⚙️ ContentView: Settings button tapped")
                         #endif
                         viewModel.isShowingSettings = true
                     }) {
                         Image(systemName: "gear")
                             .foregroundColor(Theme.Colors.primary)
-                            // Replace symbolEffect with scale animation
                             .scaleEffect(viewModel.isShowingSettings ? 1.1 : 1.0)
                             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewModel.isShowingSettings)
                     }
@@ -540,6 +572,9 @@ struct ContentView: View {
             }
             .sheet(isPresented: $viewModel.isShowingAudioUpload) {
                 AudioUploadView(context: viewContext)
+            }
+            .sheet(isPresented: $isShowingFolders) {
+                FolderListView(selectedFolder: $selectedFolder)
             }
         }
         .onAppear {

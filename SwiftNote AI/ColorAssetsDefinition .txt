@@ -49,4 +49,25 @@ Error:
 Warning:
 - Light: #FF9500
 - Dark: #FF9F0A
+
+FolderBlue:
+- Light: #007AFF
+- Dark: #0A84FF
+
+FolderGreen:
+- Light: #34C759
+- Dark: #30D158
+
+FolderRed:
+- Light: #FF3B30
+- Dark: #FF453A
+
+FolderPurple:
+- Light: #5856D6
+- Dark: #5E5CE6
+
+FolderOrange:
+- Light: #FF9500
+- Dark: #FF9F0A
 */
+
