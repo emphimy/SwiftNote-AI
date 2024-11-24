@@ -375,11 +375,13 @@ private struct AddNoteActionSheet: View {
                 viewModel.isShowingAddNote = false
                 viewModel.isShowingAudioUpload = true
             },
-           ActionCardItem(title: "Scan Text", icon: "doc.text.viewfinder", color: .green) {
-               #if DEBUG
-               print("🏠 AddNoteSheet: Scan text selected")
-               #endif
-           },
+            ActionCardItem(title: "Scan Text", icon: "doc.text.viewfinder", color: .green) {
+                #if DEBUG
+                print("🏠 AddNoteSheet: Scan text selected")
+                #endif
+                viewModel.isShowingAddNote = false
+                viewModel.isShowingTextScan = true
+            },
             ActionCardItem(title: "Upload Text", icon: "doc.badge.arrow.up", color: .blue) {
                 #if DEBUG
                 print("🏠 AddNoteSheet: Upload text selected")
@@ -575,6 +577,9 @@ struct ContentView: View {
             }
             .sheet(isPresented: $isShowingFolders) {
                 FolderListView(selectedFolder: $selectedFolder)
+            }
+            .sheet(isPresented: $viewModel.isShowingTextScan) {
+                ScanTextView(context: viewContext)
             }
         }
         .onAppear {

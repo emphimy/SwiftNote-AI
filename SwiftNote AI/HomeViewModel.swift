@@ -20,6 +20,8 @@ final class HomeViewModel: ObservableObject {
     @Published var isShowingYouTubeInput = false
     @Published var isShowingTextUpload = false
     @Published var isShowingAudioUpload = false
+    @Published var isShowingTextScan = false
+    
     
     @Published var currentFolder: Folder? {
         didSet {
