@@ -396,16 +396,22 @@ private struct AddNoteActionSheet: View {
                 viewModel.isShowingAddNote = false
                 viewModel.isShowingYouTubeInput = true
             },
-           ActionCardItem(title: "Google Drive", icon: "externaldrive.fill", color: .blue) {
-               #if DEBUG
-               print("🏠 AddNoteSheet: Google Drive selected")
-               #endif
-           },
-           ActionCardItem(title: "Dropbox", icon: "archivebox.fill", color: .blue) {
-               #if DEBUG
-               print("🏠 AddNoteSheet: Dropbox selected")
-               #endif
-           }
+            ActionCardItem(title: "Google Drive", icon: "externaldrive.fill", color: .blue) {
+                #if DEBUG
+                print("🏠 AddNoteSheet: Google Drive selected")
+                #endif
+                viewModel.isShowingAddNote = false
+                viewModel.isShowingCloudStorageImport = true
+                viewModel.selectedCloudStorage = .googleDrive
+            },
+            ActionCardItem(title: "Dropbox", icon: "archivebox.fill", color: .blue) {
+                #if DEBUG
+                print("🏠 AddNoteSheet: Dropbox selected")
+                #endif
+                viewModel.isShowingAddNote = false
+                viewModel.isShowingCloudStorageImport = true
+                viewModel.selectedCloudStorage = .dropbox
+            }
        ])
    }
 }
@@ -580,6 +586,11 @@ struct ContentView: View {
             }
             .sheet(isPresented: $viewModel.isShowingTextScan) {
                 ScanTextView(context: viewContext)
+            }
+            .sheet(isPresented: $viewModel.isShowingCloudStorageImport) {
+                if let provider = viewModel.selectedCloudStorage {
+                    CloudStorageImportView(context: viewContext, provider: provider)
+                }
             }
         }
         .onAppear {

@@ -21,7 +21,13 @@ final class HomeViewModel: ObservableObject {
     @Published var isShowingTextUpload = false
     @Published var isShowingAudioUpload = false
     @Published var isShowingTextScan = false
-    
+    @Published var isShowingCloudStorageImport = false
+    @Published var selectedCloudStorage: CloudStorageProvider?
+
+    enum CloudStorageProvider {
+        case googleDrive
+        case dropbox
+    }
     
     @Published var currentFolder: Folder? {
         didSet {
