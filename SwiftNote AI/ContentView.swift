@@ -667,6 +667,38 @@ private struct CardActionsImplementation: CardActions {
    }
 }
 
-#Preview {
-   ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+#if DEBUG
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        NavigationView {
+            SettingsView()
+                .environmentObject(ThemeManager())
+                .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+        }
+        .previewDisplayName("Settings View")
+        
+        // Individual component previews
+        Group {
+            SettingsRow(
+                icon: "person.fill",
+                title: "Edit Profile",
+                color: Theme.Colors.primary
+            )
+            .environmentObject(ThemeManager()) // Add this line
+            .padding()
+            .previewLayout(.sizeThatFits)
+            .previewDisplayName("Settings Row")
+            
+            StorageProgressBar(
+                used: 0.7,
+                usedText: "3.5 GB",
+                totalText: "5 GB"
+            )
+            .environmentObject(ThemeManager()) // Add this line
+            .padding()
+            .previewLayout(.sizeThatFits)
+            .previewDisplayName("Storage Progress Bar")
+        }
+    }
 }
+#endif

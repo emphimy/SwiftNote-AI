@@ -1,6 +1,8 @@
 import SwiftUI
 import CoreData
 import Combine
+import SafariServices
+import LocalAuthentication
 
 // MARK: - Models
 struct SettingsSection: Identifiable {
@@ -16,6 +18,7 @@ final class SettingsViewModel: ObservableObject {
     @AppStorage("notificationsEnabled") var notificationsEnabled = true
     @AppStorage("autoBackupEnabled") var autoBackupEnabled = true
     @AppStorage("biometricLockEnabled") var biometricLockEnabled = false
+    @AppStorage("biometricEnabled") var biometricEnabled = false
     
     @Published var showingSaveDialog = false
     @Published var storageUsage: StorageUsage?
@@ -56,6 +59,43 @@ final class SettingsViewModel: ObservableObject {
         }
     }
     
+    func toggleBiometric() async throws {
+        #if DEBUG
+        print("⚙️ SettingsViewModel: Attempting to toggle biometric auth")
+        #endif
+        
+        let context = LAContext()
+        var error: NSError?
+        
+        // First check if biometric auth is available
+        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
+            #if DEBUG
+            print("⚙️ SettingsViewModel: Biometric auth not available - \(String(describing: error))")
+            #endif
+            throw error ?? NSError(domain: "Settings", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Biometric authentication not available"])
+        }
+        
+        // Request biometric authentication
+        do {
+            try await context.evaluatePolicy(
+                .deviceOwnerAuthenticationWithBiometrics,
+                localizedReason: "Enable biometric authentication for SwiftNote AI"
+            )
+            
+            #if DEBUG
+            print("⚙️ SettingsViewModel: Biometric auth toggle successful")
+            #endif
+            
+            biometricEnabled.toggle()
+        } catch {
+            #if DEBUG
+            print("⚙️ SettingsViewModel: Biometric auth failed - \(error)")
+            #endif
+            throw error
+        }
+    }
+        
     func fetchFailedRecordings() {
         #if DEBUG
         print("⚙️ SettingsViewModel: Fetching failed recordings")
@@ -160,7 +200,8 @@ struct SettingsView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @Environment(\.dismiss) private var dismiss
     @Environment(\.toastManager) private var toastManager
-    @State private var noteTitle: String = ""    
+    @Environment(\.managedObjectContext) private var viewContext
+    @State private var noteTitle: String = ""
     
     var body: some View {
         NavigationView {
@@ -199,7 +240,6 @@ struct SettingsView: View {
                 ForEach(Theme.Settings.sections) { section in
                     sectionView(for: section)
                 }
-                versionFooter
             }
             .padding()
         }
@@ -259,24 +299,26 @@ struct SettingsView: View {
     
     // MARK: - Section Views
     @ViewBuilder
-        func sectionContent(for section: SettingsSection) -> some View {
-            switch section.id {
-            case "account":
-                accountSection
-            case "appearance":
-                appearanceSection
-            case "notifications":
-                notificationsSection
-            case "storage":
-                storageSection
-            case "privacy":
-                privacySection
-            case "support":
-                supportSection
-            default:
-                EmptyView()
-            }
+    func sectionContent(for section: SettingsSection) -> some View {
+        switch section.id {
+        case "account":
+            accountSection
+        case "appearance":
+            appearanceSection
+        case "notifications":
+            notificationsSection
+        case "storage":
+            storageSection
+        case "privacy":
+            privacySection
+        case "support":
+            supportSection
+        case "about":
+            AboutSection()
+        default:
+            EmptyView()
         }
+    }
 
         // MARK: - Update Original sectionView
         @ViewBuilder
@@ -304,22 +346,12 @@ struct SettingsView: View {
     private var accountSection: some View {
         VStack(spacing: Theme.Spacing.md) {
             NavigationLink {
-                Text("Profile Settings")
+                ProfileView(context: viewContext)
             } label: {
                 SettingsRow(
                     icon: "person.fill",
                     title: "Edit Profile",
                     color: Theme.Colors.primary
-                )
-            }
-            
-            NavigationLink {
-                Text("Security Settings")
-            } label: {
-                SettingsRow(
-                    icon: "key.fill",
-                    title: "Security",
-                    color: Theme.Colors.warning
                 )
             }
             
@@ -373,7 +405,7 @@ struct SettingsView: View {
                 }
             
             NavigationLink {
-                Text("Notification Preferences")
+                NotificationView(context: viewContext)
             } label: {
                 SettingsRow(
                     icon: "bell.badge.fill",
@@ -478,15 +510,22 @@ struct SettingsView: View {
     
     private var privacySection: some View {
         VStack(spacing: Theme.Spacing.md) {
-            Toggle("Biometric Lock", isOn: $viewModel.biometricLockEnabled)
-                .onChange(of: viewModel.biometricLockEnabled) { newValue in
-                    #if DEBUG
-                    print("⚙️ SettingsView: Biometric lock toggled: \(newValue)")
-                    #endif
+            // Biometric Authentication
+            Toggle("Use Face ID / Touch ID", isOn: .init(
+                get: { viewModel.biometricEnabled },
+                set: { _ in
+                    handleBiometricToggle()
                 }
+            ))
+            .onChange(of: viewModel.biometricEnabled) { newValue in
+                #if DEBUG
+                print("⚙️ SettingsView: Biometric setting changed to: \(newValue)")
+                #endif
+            }
             
+            // Data Collection & Privacy Settings
             NavigationLink {
-                Text("Privacy Settings")
+                PrivacySettingsView(context: viewContext)
             } label: {
                 SettingsRow(
                     icon: "hand.raised.fill",
@@ -495,16 +534,8 @@ struct SettingsView: View {
                 )
             }
             
-            Button {
-                viewModel.showingPrivacyPolicy = true
-            } label: {
-                SettingsRow(
-                    icon: "doc.text.fill",
-                    title: "Privacy Policy",
-                    color: Theme.Colors.primary,
-                    showDivider: false
-                )
-            }
+            // Legal Links
+            LegalSection()
         }
     }
     
@@ -529,20 +560,26 @@ struct SettingsView: View {
         }
     }
     
-    private var versionFooter: some View {
-        VStack(spacing: Theme.Spacing.xs) {
-            Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0")")
-                .font(Theme.Typography.caption)
-                .foregroundColor(Theme.Colors.secondaryText)
-            
-            Text("© 2024 SwiftNote AI")
-                .font(Theme.Typography.small)
-                .foregroundColor(Theme.Colors.tertiaryText)
+    // MARK: - Helper Methods
+    private func handleBiometricToggle() {
+        Task {
+            do {
+                try await viewModel.toggleBiometric()
+                toastManager.show(
+                    viewModel.biometricEnabled ?
+                    "Biometric authentication enabled" :
+                    "Biometric authentication disabled",
+                    type: .success
+                )
+            } catch {
+                #if DEBUG
+                print("⚙️ SettingsView: Biometric toggle failed - \(error)")
+                #endif
+                toastManager.show(error.localizedDescription, type: .error)
+            }
         }
-        .padding(.top, Theme.Spacing.xl)
     }
     
-    // MARK: - Helper Methods
     private func handleLogout() {
         Task {
             do {
@@ -591,6 +628,143 @@ struct SettingsView: View {
     }
 }
 
+// MARK: - Web Link Handler
+struct WebViewLink: View {
+    let url: URL
+    let title: String
+    @State private var isShowingSafari = false
+    @Environment(\.toastManager) private var toastManager
+    
+    var body: some View {
+        Button(action: {
+            #if DEBUG
+            print("🌐 WebViewLink: Opening URL: \(url)")
+            #endif
+            isShowingSafari = true
+        }) {
+            HStack {
+                Text(title)
+                    .foregroundColor(Theme.Colors.text)
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.caption)
+                    .foregroundColor(Theme.Colors.secondaryText)
+            }
+        }
+        .sheet(isPresented: $isShowingSafari) {
+            SafariView(url: url)
+                .ignoresSafeArea()
+                .onDisappear {
+                    #if DEBUG
+                    print("🌐 WebViewLink: Safari view disappeared")
+                    #endif
+                }
+        }
+    }
+}
+
+// MARK: - Safari View
+struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+    
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        #if DEBUG
+        print("🌐 SafariView: Creating Safari controller for URL: \(url)")
+        #endif
+        return SFSafariViewController(url: url)
+    }
+    
+    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
+}
+
+// MARK: - Legal Section
+struct LegalSection: View {
+    private let privacyPolicyURL = URL(string: "https://example.com/privacy")!
+    private let termsOfUseURL = URL(string: "https://example.com/terms")!
+    
+    var body: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            // Privacy Policy Row
+            SettingsRow(
+                icon: "doc.text.fill",
+                title: "Privacy Policy",
+                color: Theme.Colors.primary,
+                rightContent: {
+                    AnyView(
+                        Link(destination: privacyPolicyURL) {
+                            HStack {
+                                Text("View")
+                                    .font(Theme.Typography.caption)
+                                    .foregroundColor(Theme.Colors.secondaryText)
+                                Image(systemName: "arrow.up.right")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.Colors.secondaryText)
+                            }
+                        }
+                    )
+                }
+            )
+            
+            // Terms of Use Row
+            SettingsRow(
+                icon: "doc.text.fill",
+                title: "Terms of Use",
+                color: Theme.Colors.primary,
+                showDivider: false,
+                rightContent: {
+                    AnyView(
+                        Link(destination: termsOfUseURL) {
+                            HStack {
+                                Text("View")
+                                    .font(Theme.Typography.caption)
+                                    .foregroundColor(Theme.Colors.secondaryText)
+                                Image(systemName: "arrow.up.right")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.Colors.secondaryText)
+                            }
+                        }
+                    )
+                }
+            )
+        }
+    }
+}
+
+// MARK: - About Section
+struct AboutSection: View {
+    var body: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            SettingsRow(
+                icon: "info.circle.fill",
+                title: "App Version",
+                color: Theme.Colors.primary,
+                rightContent: {
+                    AnyView(
+                        Text(Bundle.main.appVersion)
+                            .font(Theme.Typography.caption)
+                            .foregroundColor(Theme.Colors.secondaryText)
+                    )
+                }
+            )
+            
+            SettingsRow(
+                icon: "doc.text.fill",
+                title: "Acknowledgments",
+                color: Theme.Colors.primary
+            )
+        }
+    }
+}
+
+// MARK: - Bundle Extension
+extension Bundle {
+    var appVersion: String {
+        let version = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        let build = object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+        return "\(version) (\(build))"
+    }
+}
+
 // MARK: - Supporting Views
 struct SettingsRow: View {
     @EnvironmentObject private var themeManager: ThemeManager
@@ -600,6 +774,26 @@ struct SettingsRow: View {
     let title: String
     let color: Color
     var showDivider: Bool = true
+    
+    var rightContent: (() -> AnyView)? = nil
+    
+    init(
+        icon: String,
+        title: String,
+        color: Color,
+        showDivider: Bool = true,
+        rightContent: (() -> AnyView)? = nil
+    ) {
+        self.icon = icon
+        self.title = title
+        self.color = color
+        self.showDivider = showDivider
+        self.rightContent = rightContent
+        
+        #if DEBUG
+        print("⚙️ SettingsRow: Initializing row with title: \(title)")
+        #endif
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -613,9 +807,13 @@ struct SettingsRow: View {
                 
                 Spacer()
                 
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(Theme.Colors.secondaryText)
+                if let rightContent = rightContent {
+                    rightContent()
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(Theme.Colors.secondaryText)
+                }
             }
             .padding(.vertical, Theme.Spacing.xs)
             
@@ -693,6 +891,7 @@ struct SettingsView_Previews: PreviewProvider {
         NavigationView {
             SettingsView()
                 .environmentObject(ThemeManager())
+                .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
         }
         .previewDisplayName("Settings View")
         
@@ -703,6 +902,7 @@ struct SettingsView_Previews: PreviewProvider {
                 title: "Edit Profile",
                 color: Theme.Colors.primary
             )
+            .environmentObject(ThemeManager())
             .padding()
             .previewLayout(.sizeThatFits)
             .previewDisplayName("Settings Row")
@@ -712,6 +912,7 @@ struct SettingsView_Previews: PreviewProvider {
                 usedText: "3.5 GB",
                 totalText: "5 GB"
             )
+            .environmentObject(ThemeManager())
             .padding()
             .previewLayout(.sizeThatFits)
             .previewDisplayName("Storage Progress Bar")

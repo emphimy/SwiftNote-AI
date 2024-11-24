@@ -223,6 +223,12 @@ enum Theme {
                 title: "Help & Support",
                 icon: "questionmark.circle.fill",
                 color: Colors.success
+            ),
+            .init(
+                id: "about",
+                title: "About",
+                icon: "info.circle.fill",
+                color: Colors.primary
             )
         ]
     }
