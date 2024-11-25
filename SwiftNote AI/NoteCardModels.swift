@@ -20,12 +20,12 @@ struct NoteCardConfiguration: Identifiable, Equatable {
         }
     }
     
+    private var folder: Folder?
+
     var folderName: String? {
         folder?.name
     }
-    
-    private var folder: Folder?
-    
+
     var folderColor: Color? {
         guard let colorName = folder?.color else { return nil }
         return Color(colorName)
@@ -39,9 +39,9 @@ struct NoteCardConfiguration: Identifiable, Equatable {
         lhs.sourceType == rhs.sourceType &&
         lhs.isFavorite == rhs.isFavorite &&
         lhs.tags == rhs.tags &&
-        lhs.audioURL == rhs.audioURL
+        lhs.audioURL == rhs.audioURL &&
+        lhs.folder?.objectID == rhs.folder?.objectID 
     }
-    
     // MARK: - Initialization
     init(
         title: String,
@@ -66,9 +66,11 @@ struct NoteCardConfiguration: Identifiable, Equatable {
         - Title: \(title)
         - Source Type: \(sourceType)
         - Tags Count: \(tags.count)
+        - Folder: \(folder?.name ?? "nil")
         """)
         #endif
     }
+
     
     // MARK: - Debug Description
     var debugDescription: String {
@@ -250,13 +252,21 @@ struct NoteCardConfiguration: Identifiable, Equatable {
 
 // MARK: - Note Source Type
 enum NoteSourceType: String {
-    case audio = "mic.fill"
-    case text = "doc.text.fill"
-    case video = "video.fill"
-    case upload = "arrow.up.circle.fill"
+    case audio = "audio"
+    case text = "text"
+    case video = "video"
+    case upload = "upload"
     
     var icon: Image {
-        Image(systemName: self.rawValue)
+        let iconName: String = {
+            switch self {
+            case .audio: return "mic.fill"
+            case .text: return "doc.text.fill"
+            case .video: return "video.fill"
+            case .upload: return "arrow.up.circle.fill"
+            }
+        }()
+        return Image(systemName: iconName)
     }
     
     var color: Color {

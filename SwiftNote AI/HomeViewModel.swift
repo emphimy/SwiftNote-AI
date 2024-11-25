@@ -31,16 +31,55 @@ final class HomeViewModel: ObservableObject {
         case dropbox
     }
     
+    // MARK: - Folder Navigation
     @Published var currentFolder: Folder? {
         didSet {
             #if DEBUG
-            print("🏠 HomeViewModel: Current folder changed to: \(currentFolder?.name ?? "All")")
+            print("""
+            📁 HomeViewModel: currentFolder changed
+            - Old Value: \(oldValue?.name ?? "nil")
+            - New Value: \(currentFolder?.name ?? "nil")
+            - Old ID: \(oldValue?.id?.uuidString ?? "nil")
+            - New ID: \(currentFolder?.id?.uuidString ?? "nil")
+            """)
             #endif
-            fetchNotes()
+        }
+    }
+    
+    var currentFolderId: UUID? {
+        didSet {
+            Task { @MainActor in
+                #if DEBUG
+                print("""
+                📁 HomeViewModel: currentFolderId changed
+                - Old: \(oldValue?.uuidString ?? "nil")
+                - New: \(currentFolderId?.uuidString ?? "nil")
+                """)
+                #endif
+                await self.fetchNotes()
+            }
         }
     }
     
     private let viewContext: NSManagedObjectContext
+    
+    private func persistSelectedFolder(_ folder: Folder?) {
+        #if DEBUG
+        print("""
+        📁 HomeViewModel: Persisting folder selection
+        - Folder: \(folder?.name ?? "nil")
+        - Notes Count: \(folder?.notes?.count ?? 0)
+        """)
+        #endif
+        
+        // Update current folder
+        currentFolder = folder
+        
+        // Force notes refresh
+        Task { @MainActor in
+            await self.fetchNotes()
+        }
+    }
     
     init(context: NSManagedObjectContext) {
         self.viewContext = context
@@ -58,21 +97,78 @@ final class HomeViewModel: ObservableObject {
             .store(in: &cancellables)
     }
     
+    // MARK: - SQL Debug Logging
+    private let sqlDebugEnabled = true
+    private func logSQLQuery(_ request: NSFetchRequest<Note>) {
+        guard sqlDebugEnabled else { return }
+        #if DEBUG
+        print("""
+        🔍 SQL Debug:
+        - Entity: \(request.entityName ?? "Unknown")
+        - Predicate: \(String(describing: request.predicate))
+        - Sort Descriptors: \(String(describing: request.sortDescriptors))
+        - Relationship Key Paths: \(String(describing: request.relationshipKeyPathsForPrefetching))
+        """)
+        
+        if let folder = currentFolder {
+            print("""
+            - Current Folder Stats:
+              - ID: \(folder.id?.uuidString ?? "nil")
+              - Name: \(folder.name ?? "nil")
+              - Notes Count: \(folder.notes?.count ?? 0)
+              - Notes: \(folder.notes?.allObjects.map { ($0 as? Note)?.title ?? "unknown" } ?? [])
+            """)
+        }
+        #endif
+    }
+    
     // MARK: - Core Data Operations
     func fetchNotes() {
         #if DEBUG
-        print("🏠 HomeViewModel: Fetching notes")
+        print("""
+        🏠 HomeViewModel: Starting fetch
+        - Current folder: \(currentFolder?.name ?? "All")
+        - Folder ID: \(currentFolder?.id?.uuidString ?? "nil")
+        """)
         #endif
         
         isLoading = true
         
         let request = NSFetchRequest<Note>(entityName: "Note")
         
-        // Add folder filter if selected
-        if let folder = currentFolder {
-            request.predicate = NSPredicate(format: "folder == %@", folder)
-        }
+        // Add folder predicate
+        if let folderId = currentFolderId {
+                request.predicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+                
+                #if DEBUG
+                print("""
+                🏠 HomeViewModel: Fetching notes for folder
+                - FolderID: \(folderId)
+                - Predicate: \(String(describing: request.predicate))
+                """)
+                #endif
+            }
         
+        // Add search predicate if needed
+        if !searchText.isEmpty {
+            let searchPredicate = NSPredicate(
+                format: "title CONTAINS[cd] %@ OR content CONTAINS[cd] %@ OR tags CONTAINS[cd] %@",
+                searchText, searchText, searchText
+            )
+            
+            // Combine with folder predicate if exists
+            if let existingPredicate = request.predicate {
+                request.predicate = NSCompoundPredicate(
+                    type: .and,
+                    subpredicates: [existingPredicate, searchPredicate]
+                )
+            } else {
+                request.predicate = searchPredicate
+            }
+        }
+
+        logSQLQuery(request)
+
         do {
             let results = try viewContext.fetch(request)
             self.notes = results.compactMap { note in
@@ -80,9 +176,6 @@ final class HomeViewModel: ObservableObject {
                       let timestamp = note.timestamp,
                       let content = note.content,
                       let sourceTypeStr = note.sourceType else {
-                    #if DEBUG
-                    print("🏠 HomeViewModel: Failed to parse note: \(note)")
-                    #endif
                     return nil
                 }
                 
@@ -92,12 +185,13 @@ final class HomeViewModel: ObservableObject {
                     preview: content,
                     sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
                     isFavorite: note.isFavorite,
-                    tags: note.tags?.components(separatedBy: ",").filter { !$0.isEmpty } ?? []
+                    tags: note.tags?.components(separatedBy: ",").filter { !$0.isEmpty } ?? [],
+                    folder: note.folder
                 )
             }
             
             #if DEBUG
-            print("🏠 HomeViewModel: Successfully fetched \(self.notes.count) notes")
+            print("🏠 HomeViewModel: Fetched \(self.notes.count) notes for folder: \(currentFolder?.name ?? "All")")
             #endif
         } catch {
             #if DEBUG

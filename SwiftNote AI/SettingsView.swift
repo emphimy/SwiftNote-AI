@@ -235,7 +235,7 @@ struct SettingsView: View {
     // MARK: - Content Views
     @ViewBuilder
     private var settingsContent: some View {
-        VStack(spacing: Theme.Spacing.lg) {
+        VStack {
             LazyVStack(spacing: Theme.Spacing.lg) {
                 ForEach(Theme.Settings.sections) { section in
                     sectionView(for: section)

@@ -11,18 +11,22 @@ final class FolderListViewModel: ObservableObject {
     @Published var selectedColor: String = "blue"
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
+    @Published var errorState: LoadingState = .idle
+    
     
     // MARK: - Private Properties
     private let viewContext: NSManagedObjectContext
     
     // MARK: - Color Options
     let colorOptions = ["FolderBlue", "FolderGreen", "FolderRed", "FolderPurple", "FolderOrange"]
-    
+
     init(context: NSManagedObjectContext) {
         self.viewContext = context
+        self.selectedColor = "FolderBlue"
         
         #if DEBUG
         print("📁 FolderListViewModel: Initializing with context")
+        print("📁 FolderListViewModel: Setting initial color to: FolderBlue")
         #endif
         
         fetchFolders()
@@ -50,88 +54,159 @@ final class FolderListViewModel: ObservableObject {
     }
     
     func fetchFolders() {
+        #if DEBUG
+        print("📁 FolderListViewModel: Fetching folders")
+        #endif
+        
+        isLoading = true
+        
+        let request = NSFetchRequest<Folder>(entityName: "Folder")
+        request.sortDescriptors = [
+            NSSortDescriptor(keyPath: \Folder.sortOrder, ascending: true),
+            NSSortDescriptor(keyPath: \Folder.timestamp, ascending: false)
+        ]
+        
+        do {
+            folders = try viewContext.fetch(request)
             #if DEBUG
-            print("📁 FolderListViewModel: Starting folder fetch")
+            print("📁 FolderListViewModel: Fetched \(folders.count) folders")
             #endif
+        } catch {
+            #if DEBUG
+            print("📁 FolderListViewModel: Error fetching folders - \(error)")
+            #endif
+            errorMessage = "Failed to load folders: \(error.localizedDescription)"
+        }
+        
+        isLoading = false
+    }
+    
+    func createFolder(name: String, color: String) throws {
+        #if DEBUG
+        print("📁 FolderListViewModel: Creating folder - Name: \(name), Color: \(color)")
+        #endif
+        
+        guard !name.isEmpty else {
+            throw NSError(domain: "Folder", code: -1,
+                         userInfo: [NSLocalizedDescriptionKey: "Folder name cannot be empty"])
+        }
+        
+        viewContext.performAndWait { [weak self] in
+            guard let self = self else { return }
             
-            isLoading = true
-            defer { isLoading = false }
-            
-            let request = NSFetchRequest<Folder>(entityName: "Folder")
-            request.sortDescriptors = [NSSortDescriptor(keyPath: \Folder.timestamp, ascending: false)]
+            let folder = Folder(context: self.viewContext)
+            folder.id = UUID()
+            folder.name = name
+            folder.color = color
+            folder.timestamp = Date()
             
             do {
-                folders = try viewContext.fetch(request)
+                try self.viewContext.save()
+                self.fetchFolders()
                 #if DEBUG
-                print("""
-                📁 FolderListViewModel: Folders fetched successfully
-                - Count: \(folders.count)
-                - Folders: \(folders.map { "Name: \($0.name ?? "Untitled"), Color: \($0.color ?? "blue")" })
-                """)
+                print("📁 FolderListViewModel: Folder created successfully")
                 #endif
             } catch {
                 #if DEBUG
-                print("📁 FolderListViewModel: Error fetching folders - \(error)")
+                print("📁 FolderListViewModel: Failed to create folder - \(error)")
                 #endif
-                errorMessage = "Failed to load folders: \(error.localizedDescription)"
             }
-        }
-    
-    func createFolder() {
-        guard !newFolderName.isEmpty else {
-            #if DEBUG
-            print("📁 FolderListViewModel: Attempted to create folder with empty name")
-            #endif
-            errorMessage = "Folder name cannot be empty"
-            return
-        }
-        
-        #if DEBUG
-        print("📁 FolderListViewModel: Creating new folder: \(newFolderName)")
-        #endif
-        
-        let folder = Folder(context: viewContext)
-        folder.id = UUID()
-        folder.name = newFolderName
-        folder.color = selectedColor
-        folder.timestamp = Date()
-        
-        do {
-            try viewContext.save()
-            fetchFolders()
-            newFolderName = ""
-            isAddingFolder = false
-            
-            #if DEBUG
-            print("📁 FolderListViewModel: Successfully created folder")
-            #endif
-        } catch {
-            #if DEBUG
-            print("📁 FolderListViewModel: Error creating folder - \(error)")
-            #endif
-            errorMessage = "Failed to create folder: \(error.localizedDescription)"
         }
     }
     
-    func deleteFolder(_ folder: Folder) {
+    func updateFolder(_ folder: Folder, name: String?, color: String?) throws {
         #if DEBUG
-        print("📁 FolderListViewModel: Deleting folder: \(folder.name ?? "")")
+        print("📁 FolderListViewModel: Updating folder \(folder.id?.uuidString ?? "")")
         #endif
         
-        viewContext.delete(folder)
-        
-        do {
-            try viewContext.save()
-            fetchFolders()
+        viewContext.performAndWait { [weak self] in
+            guard let self = self else { return }
             
-            #if DEBUG
-            print("📁 FolderListViewModel: Successfully deleted folder")
-            #endif
-        } catch {
-            #if DEBUG
-            print("📁 FolderListViewModel: Error deleting folder - \(error)")
-            #endif
-            errorMessage = "Failed to delete folder: \(error.localizedDescription)"
+            if let name = name {
+                folder.name = name
+            }
+            if let color = color {
+                folder.color = color
+            }
+            
+            do {
+                try self.viewContext.save()
+                self.fetchFolders()
+                #if DEBUG
+                print("📁 FolderListViewModel: Folder updated successfully")
+                #endif
+            } catch {
+                #if DEBUG
+                print("📁 FolderListViewModel: Failed to update folder - \(error)")
+                #endif
+            }
+        }
+    }
+    
+    func deleteFolder(_ folder: Folder, deleteContents: Bool = false) throws {
+        #if DEBUG
+        print("📁 FolderListViewModel: Deleting folder \(folder.id?.uuidString ?? "") with contents: \(deleteContents)")
+        #endif
+        
+        viewContext.performAndWait { [weak self] in
+            guard let self = self else { return }
+            
+            if let notes = folder.notes?.allObjects as? [Note] {
+                if deleteContents {
+                    notes.forEach { self.viewContext.delete($0) }
+                    #if DEBUG
+                    print("📁 FolderListViewModel: Deleted \(notes.count) notes from folder")
+                    #endif
+                } else {
+                    notes.forEach { $0.folder = nil }
+                    #if DEBUG
+                    print("📁 FolderListViewModel: Moved \(notes.count) notes to root")
+                    #endif
+                }
+            }
+            
+            self.viewContext.delete(folder)
+            
+            do {
+                try self.viewContext.save()
+                self.fetchFolders()
+                #if DEBUG
+                print("📁 FolderListViewModel: Folder deleted successfully")
+                #endif
+            } catch {
+                #if DEBUG
+                print("📁 FolderListViewModel: Failed to delete folder - \(error)")
+                #endif
+            }
+        }
+    }
+    
+    func reorderFolders(from source: IndexSet, to destination: Int) throws {
+        #if DEBUG
+        print("📁 FolderListViewModel: Reordering folders from \(source) to \(destination)")
+        #endif
+        
+        viewContext.performAndWait { [weak self] in
+            guard let self = self else { return }
+            
+            var updatedFolders = self.folders
+            updatedFolders.move(fromOffsets: source, toOffset: destination)
+            
+            for (index, folder) in updatedFolders.enumerated() {
+                folder.sortOrder = Int32(index)
+            }
+            
+            do {
+                try self.viewContext.save()
+                self.fetchFolders()
+                #if DEBUG
+                print("📁 FolderListViewModel: Folders reordered successfully")
+                #endif
+            } catch {
+                #if DEBUG
+                print("📁 FolderListViewModel: Failed to reorder folders - \(error)")
+                #endif
+            }
         }
     }
 }
@@ -142,6 +217,8 @@ struct FolderListView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var viewModel: FolderListViewModel
     @Binding var selectedFolder: Folder?
+    @State private var showError = false
+    @State private var errorMessage: String?
     
     init(selectedFolder: Binding<Folder?>) {
         self._selectedFolder = selectedFolder
@@ -160,7 +237,13 @@ struct FolderListView: View {
                         message: "Create your first folder to organize your notes",
                         actionTitle: "Create Folder"
                     ) {
-                        viewModel.isAddingFolder = true
+                        #if DEBUG
+                        print("📁 FolderListView: Show new folder sheet requested")
+                        #endif
+                        // Convert async action to sync by wrapping in Task
+                        Task { @MainActor in
+                            viewModel.isAddingFolder = true
+                        }
                     }
                 } else {
                     folderList
@@ -176,6 +259,10 @@ struct FolderListView: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
+                        #if DEBUG
+                        print("📁 FolderListView: Show new folder sheet requested")
+                        #endif
+                        // Show the new folder sheet
                         viewModel.isAddingFolder = true
                     }) {
                         Image(systemName: "folder.badge.plus")
@@ -185,6 +272,11 @@ struct FolderListView: View {
             .sheet(isPresented: $viewModel.isAddingFolder) {
                 NewFolderSheet(viewModel: viewModel)
             }
+            .alert("Error", isPresented: $showError, presenting: errorMessage) { _ in
+                Button("OK") {}
+            } message: { error in
+                Text(error)
+            }
         }
     }
     
@@ -192,16 +284,19 @@ struct FolderListView: View {
     private var folderList: some View {
         List {
             ForEach(viewModel.folders) { folder in
-                FolderRow(folder: folder,
-                         onSelect: {
-                             selectedFolder = folder
-                             dismiss()
-                         },
-                         viewModel: viewModel)
+                NavigationLink(destination: FolderDetailView(folder: folder)) {
+                    FolderRow(folder: folder, viewModel: viewModel)
+                }
             }
             .onDelete { indexSet in
-                indexSet.forEach { index in
-                    viewModel.deleteFolder(viewModel.folders[index])
+                do {
+                    for index in indexSet {
+                        try viewModel.deleteFolder(viewModel.folders[index])
+                    }
+                } catch {
+                    #if DEBUG
+                    print("📁 FolderListView: Error deleting folders - \(error)")
+                    #endif
                 }
             }
         }
@@ -211,11 +306,9 @@ struct FolderListView: View {
 // MARK: - Folder Row
 private struct FolderRow: View {
     let folder: Folder
-    let onSelect: () -> Void
     let viewModel: FolderListViewModel
     
     var body: some View {
-        Button(action: onSelect) {
             HStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: "folder.fill")
                     .font(.system(size: 20, weight: .medium))
@@ -242,15 +335,9 @@ private struct FolderRow: View {
                             .foregroundColor(Theme.Colors.secondaryText)
                     }
                 }
-                
                 Spacer()
-                
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(Theme.Colors.secondaryText)
             }
             .padding(.vertical, Theme.Spacing.xs)
-        }
         .onDrop(of: [.text],
                 delegate: NoteFolderDropDelegate(folder: folder,
                                                viewModel: viewModel))
@@ -296,7 +383,14 @@ private struct NewFolderSheet: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Create") {
-                        viewModel.createFolder()
+                        do {
+                            try viewModel.createFolder(name: viewModel.newFolderName, color: viewModel.selectedColor)
+                            dismiss()
+                        } catch {
+                            #if DEBUG
+                            print("📁 NewFolderSheet: Error creating folder - \(error)")
+                            #endif
+                        }
                     }
                     .disabled(viewModel.newFolderName.isEmpty)
                 }

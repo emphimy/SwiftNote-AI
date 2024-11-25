@@ -110,21 +110,17 @@ struct CustomTextField: View {
 // MARK: - Search Bar
 struct SearchBar: View {
     @Binding var text: String
-    let placeholder: String
-    let onCancel: (() -> Void)?
-    @State private var isEditing = false
+    var placeholder: String
+    var onCancel: (() -> Void)? = nil
+    @FocusState private var isFocused: Bool
     
-    init(
-        text: Binding<String>,
-        placeholder: String = "Search",
-        onCancel: (() -> Void)? = nil
-    ) {
+    init(text: Binding<String>, placeholder: String = "Search", onCancel: (() -> Void)? = nil) {
         self._text = text
         self.placeholder = placeholder
         self.onCancel = onCancel
         
         #if DEBUG
-        print("🔍 SearchBar: Creating search bar with placeholder: \(placeholder)")
+        print("🔍 SearchBar: Initializing with placeholder: \(placeholder)")
         #endif
     }
     
@@ -135,6 +131,7 @@ struct SearchBar: View {
                     .foregroundColor(Theme.Colors.secondaryText)
                 
                 TextField(placeholder, text: $text)
+                    .focused($isFocused)
                     .onChange(of: text) { newValue in
                         #if DEBUG
                         print("🔍 SearchBar: Search text changed to: \(newValue)")
@@ -157,28 +154,22 @@ struct SearchBar: View {
             .background(Theme.Colors.secondaryBackground)
             .cornerRadius(Theme.Layout.cornerRadius)
             
-            if isEditing {
+            if isFocused {
                 Button("Cancel") {
                     #if DEBUG
                     print("🔍 SearchBar: Cancel button tapped")
                     #endif
                     
                     withAnimation {
-                        isEditing = false
+                        isFocused = false
                         text = ""
                         onCancel?()
-                        
                         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
                                                       to: nil, from: nil, for: nil)
                     }
                 }
                 .foregroundColor(Theme.Colors.primary)
                 .transition(.move(edge: .trailing))
-            }
-        }
-        .onTapGesture {
-            withAnimation {
-                isEditing = true
             }
         }
     }
@@ -211,12 +202,22 @@ struct CustomInput_Previews: PreviewProvider {
             
             SearchBar(
                 text: .constant(""),
-                placeholder: "Search" // Add this missing parameter
-            )
-            
+                placeholder: "Search",
+                onCancel: {
+                    #if DEBUG
+                    print("🔍 Preview: Search cancelled")
+                    #endif
+                }
+            );
+
             SearchBar(
                 text: .constant("Search term"),
-                placeholder: "Search" // Add this missing parameter
+                placeholder: "Search",
+                onCancel: {
+                    #if DEBUG
+                    print("🔍 Preview: Search cancelled")
+                    #endif
+                }
             )
         }
         .padding()
