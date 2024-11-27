@@ -60,17 +60,28 @@ final class YouTubeService {
                 "part": "snippet"
             ])
 
+        #if DEBUG
+        print("📺 YouTubeService: Captions URL: \(captionsURL)")
+        #endif
+
         let (captionsData, response) = try await session.data(from: captionsURL)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw YouTubeError.invalidResponse
         }
+        
+        #if DEBUG
+        print("📺 YouTubeService: Captions response status: \(httpResponse.statusCode)")
+        if let jsonString = String(data: captionsData, encoding: .utf8) {
+            print("📺 YouTubeService: Raw captions response: \(jsonString)")
+        }
+        #endif
 
         switch httpResponse.statusCode {
         case 200:
             let captionsResponse = try JSONDecoder().decode(CaptionsResponse.self, from: captionsData)
             
-            // Priority: Manual captions in any language > Auto-generated captions
+            // Priority: Standard captions > Auto-generated captions
             let caption = captionsResponse.items.first { caption in
                 caption.snippet.trackKind == "standard"
             } ?? captionsResponse.items.first
@@ -83,12 +94,21 @@ final class YouTubeService {
             }
             
             #if DEBUG
-            print("📺 YouTubeService: Selected caption - Language: \(selectedCaption.snippet.language), Type: \(selectedCaption.snippet.trackKind)")
+            print("""
+            📺 YouTubeService: Selected caption:
+            - ID: \(selectedCaption.id)
+            - Language: \(selectedCaption.snippet.language)
+            - Track Kind: \(selectedCaption.snippet.trackKind)
+            - Status: \(selectedCaption.snippet.status)
+            """)
             #endif
 
             // Download selected transcript
             let transcriptURL = URL(string: "\(YouTubeConfig.apiBaseURL)/captions/\(selectedCaption.id)")!
-                .appendingQueryItems(["key": apiKey])
+                .appendingQueryItems([
+                    "key": apiKey,
+                    "tfmt": "srt"  // Request SRT format for better parsing
+                ])
 
             let (transcriptData, transcriptResponse) = try await session.data(from: transcriptURL)
             
@@ -96,9 +116,18 @@ final class YouTubeService {
                 throw YouTubeError.invalidResponse
             }
 
+            #if DEBUG
+            print("📺 YouTubeService: Transcript response status: \(transcriptHTTPResponse.statusCode)")
+            if let transcriptString = String(data: transcriptData, encoding: .utf8) {
+                print("📺 YouTubeService: Raw transcript response: \(transcriptString)")
+            }
+            #endif
+
             switch transcriptHTTPResponse.statusCode {
             case 200:
                 return String(decoding: transcriptData, as: UTF8.self)
+            case 403:
+                throw YouTubeError.apiError(YouTubeConfig.errorMessages["invalidAPIKey"] ?? "API Error")
             case 429:
                 throw YouTubeError.rateLimitExceeded
             default:
@@ -293,6 +322,9 @@ private extension YouTubeService {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             do {
                 items = try container.decode([Caption].self, forKey: .items)
+                #if DEBUG
+                print("📺 YouTubeService: Successfully decoded \(items.count) captions")
+                #endif
             } catch {
                 #if DEBUG
                 print("📺 YouTubeService: Error decoding items - \(error)")
@@ -307,25 +339,39 @@ private extension YouTubeService {
         let id: String
         let snippet: CaptionSnippet
         
-        // Add custom decoding
-        init(from decoder: Decoder) throws {
-            #if DEBUG
-            print("📺 YouTubeService: Decoding Caption")
-            #endif
-            
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            id = try container.decode(String.self, forKey: .id)
-            snippet = try container.decode(CaptionSnippet.self, forKey: .snippet)
+        enum CodingKeys: String, CodingKey {
+            case id
+            case snippet
         }
     }
     
     struct CaptionSnippet: Codable {
+        let videoId: String
         let language: String
+        let name: String
         let trackKind: String
+        let lastUpdated: String
+        let audioTrackType: String
+        let isCC: Bool
+        let isLarge: Bool
+        let isEasyReader: Bool
+        let isDraft: Bool
+        let isAutoSynced: Bool
+        let status: String
         
         enum CodingKeys: String, CodingKey {
+            case videoId
             case language
-            case trackKind = "kind"
+            case name
+            case trackKind
+            case lastUpdated
+            case audioTrackType
+            case isCC
+            case isLarge
+            case isEasyReader
+            case isDraft
+            case isAutoSynced
+            case status
         }
     }
 }
