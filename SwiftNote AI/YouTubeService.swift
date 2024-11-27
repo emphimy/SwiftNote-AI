@@ -137,6 +137,7 @@ final class YouTubeService {
         
         #if DEBUG
         print("📺 YouTubeService: Fetching metadata for video: \(videoId)")
+        print("📺 YouTubeService: URL: \(metadataURL)")
         #endif
         
         let (data, response) = try await session.data(from: metadataURL)
@@ -145,11 +146,43 @@ final class YouTubeService {
             throw YouTubeError.invalidResponse
         }
         
+        #if DEBUG
+        print("📺 YouTubeService: Response status code: \(httpResponse.statusCode)")
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("📺 YouTubeService: Raw JSON response: \(jsonString)")
+        }
+        #endif
+        
         switch httpResponse.statusCode {
         case 200:
-            let metadata = try JSONDecoder().decode(YouTubeConfig.VideoMetadata.self, from: data)
-            YouTubeCacheManager.shared.setCachedResponse(data, for: videoId)
-            return metadata
+            do {
+                let decoder = JSONDecoder()
+                let response = try decoder.decode(VideoListResponse.self, from: data)
+                guard let metadata = response.items.first else {
+                    throw YouTubeError.invalidVideoId
+                }
+                YouTubeCacheManager.shared.setCachedResponse(data, for: videoId)
+                return metadata
+            } catch {
+                #if DEBUG
+                print("📺 YouTubeService: Decoding error - \(error)")
+                if let decodingError = error as? DecodingError {
+                    switch decodingError {
+                    case .keyNotFound(let key, let context):
+                        print("📺 YouTubeService: Key '\(key)' not found: \(context.debugDescription)")
+                    case .valueNotFound(let type, let context):
+                        print("📺 YouTubeService: Value of type '\(type)' not found: \(context.debugDescription)")
+                    case .typeMismatch(let type, let context):
+                        print("📺 YouTubeService: Type '\(type)' mismatch: \(context.debugDescription)")
+                    case .dataCorrupted(let context):
+                        print("📺 YouTubeService: Data corrupted: \(context.debugDescription)")
+                    @unknown default:
+                        print("📺 YouTubeService: Unknown decoding error: \(error)")
+                    }
+                }
+                #endif
+                throw YouTubeError.apiError("Failed to decode video metadata")
+            }
             
         case 403:
             #if DEBUG
@@ -244,6 +277,10 @@ final class YouTubeService {
 
 // MARK: - Response Models
 private extension YouTubeService {
+    struct VideoListResponse: Codable {
+        let items: [YouTubeConfig.VideoMetadata]
+    }
+
     struct CaptionsResponse: Codable {
         let items: [Caption]
         

@@ -31,13 +31,84 @@ enum YouTubeConfig {
         let duration: String?
         let thumbnailURL: String?
         
-        var videoID: String { id } 
+        var videoID: String { id }
         
         enum CodingKeys: String, CodingKey {
             case id
-            case title = "snippet"
-            case duration = "contentDetails"
-            case thumbnailURL = "thumbnails"
+            case snippet
+            case contentDetails
+        }
+        
+        enum SnippetKeys: String, CodingKey {
+            case title
+            case thumbnails
+        }
+        
+        enum ThumbnailKeys: String, CodingKey {
+            case standard
+            case high
+            case maxres
+        }
+        
+        enum ThumbnailDetailKeys: String, CodingKey {
+            case url
+        }
+        
+        enum ContentDetailsKeys: String, CodingKey {
+            case duration
+        }
+        
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decode(String.self, forKey: .id)
+            
+            // Decode snippet
+            let snippet = try container.nestedContainer(keyedBy: SnippetKeys.self, forKey: .snippet)
+            title = try snippet.decode(String.self, forKey: .title)
+            
+            // Decode thumbnails (optional)
+            if let thumbnails = try? snippet.nestedContainer(keyedBy: ThumbnailKeys.self, forKey: .thumbnails) {
+                if let maxres = try? thumbnails.nestedContainer(keyedBy: ThumbnailDetailKeys.self, forKey: .maxres) {
+                    thumbnailURL = try maxres.decode(String.self, forKey: .url)
+                } else if let high = try? thumbnails.nestedContainer(keyedBy: ThumbnailDetailKeys.self, forKey: .high) {
+                    thumbnailURL = try high.decode(String.self, forKey: .url)
+                } else if let standard = try? thumbnails.nestedContainer(keyedBy: ThumbnailDetailKeys.self, forKey: .standard) {
+                    thumbnailURL = try standard.decode(String.self, forKey: .url)
+                } else {
+                    thumbnailURL = nil
+                }
+            } else {
+                thumbnailURL = nil
+            }
+            
+            // Decode content details (optional)
+            if let contentDetails = try? container.nestedContainer(keyedBy: ContentDetailsKeys.self, forKey: .contentDetails) {
+                duration = try contentDetails.decode(String.self, forKey: .duration)
+            } else {
+                duration = nil
+            }
+        }
+        
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(id, forKey: .id)
+            
+            // Encode snippet
+            var snippet = container.nestedContainer(keyedBy: SnippetKeys.self, forKey: .snippet)
+            try snippet.encode(title, forKey: .title)
+            
+            // Encode thumbnails (if available)
+            if let thumbnailURL = thumbnailURL {
+                var thumbnails = snippet.nestedContainer(keyedBy: ThumbnailKeys.self, forKey: .thumbnails)
+                var standard = thumbnails.nestedContainer(keyedBy: ThumbnailDetailKeys.self, forKey: .standard)
+                try standard.encode(thumbnailURL, forKey: .url)
+            }
+            
+            // Encode content details (if available)
+            if let duration = duration {
+                var contentDetails = container.nestedContainer(keyedBy: ContentDetailsKeys.self, forKey: .contentDetails)
+                try contentDetails.encode(duration, forKey: .duration)
+            }
         }
     }
 }
