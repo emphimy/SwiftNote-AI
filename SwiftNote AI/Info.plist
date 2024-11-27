@@ -156,5 +156,44 @@
     <!-- Minimum iOS Version -->
     <key>MinimumOSVersion</key>
     <string>16.6</string>
+    
+    <!-- YouTube API Configuration -->
+    <key>YouTubeAPIKey</key>
+    <string>AIzaSyDUfnDljPQp_vzo1CFaKRBZzQu6DgV7PeQ</string>
+
+    <!-- URL Schemes for YouTube -->
+    <key>LSApplicationQueriesSchemes</key>
+    <array>
+        <string>youtube</string>
+        <string>youtube-x-callback</string>
+    </array>
+
+    <!-- YouTube API Access -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+        <key>NSExceptionDomains</key>
+        <dict>
+            <key>youtube.com</key>
+            <dict>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+                <key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
+                <false/>
+                <key>NSTemporaryExceptionMinimumTLSVersion</key>
+                <string>TLSv1.2</string>
+            </dict>
+            <key>googleapis.com</key>
+            <dict>
+                <key>NSIncludesSubdomains</key>
+                <true/>
+                <key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
+                <false/>
+                <key>NSTemporaryExceptionMinimumTLSVersion</key>
+                <string>TLSv1.2</string>
+            </dict>
+        </dict>
+    </dict>
 </dict>
 </plist>

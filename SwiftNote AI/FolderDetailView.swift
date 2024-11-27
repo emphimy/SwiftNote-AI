@@ -73,7 +73,7 @@ final class FolderDetailViewModel: ObservableObject {
             notes = fetchedNotes.compactMap { note in
                 guard let title = note.title,
                       let timestamp = note.timestamp,
-                      let content = note.content,
+                      let content = note.originalContent,
                       let sourceTypeStr = note.sourceType else {
                     return nil
                 }
@@ -81,7 +81,7 @@ final class FolderDetailViewModel: ObservableObject {
                 return NoteCardConfiguration(
                     title: title,
                     date: timestamp,
-                    preview: content,
+                    preview: String(decoding: content, as: UTF8.self),
                     sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
                     isFavorite: note.isFavorite,
                     tags: note.tags?.components(separatedBy: ",") ?? [],

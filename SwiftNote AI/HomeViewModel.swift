@@ -174,7 +174,7 @@ final class HomeViewModel: ObservableObject {
             self.notes = results.compactMap { note in
                 guard let title = note.title,
                       let timestamp = note.timestamp,
-                      let content = note.content,
+                      let content = note.originalContent, // Changed from content
                       let sourceTypeStr = note.sourceType else {
                     return nil
                 }
@@ -182,7 +182,7 @@ final class HomeViewModel: ObservableObject {
                 return NoteCardConfiguration(
                     title: title,
                     date: timestamp,
-                    preview: content,
+                    preview: String(decoding: content, as: UTF8.self), // Convert Data to String
                     sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
                     isFavorite: note.isFavorite,
                     tags: note.tags?.components(separatedBy: ",").filter { !$0.isEmpty } ?? [],
@@ -212,7 +212,7 @@ final class HomeViewModel: ObservableObject {
         viewContext.performAndWait {
             let note = Note(context: self.viewContext)
             note.title = title
-            note.content = content
+            note.originalContent = content.data(using: .utf8)
             note.sourceType = sourceType.rawValue
             note.timestamp = Date()
             note.folder = folder
@@ -251,7 +251,7 @@ final class HomeViewModel: ObservableObject {
                 }
                 
                 if let newContent = newContent {
-                    existingNote.content = newContent
+                    existingNote.originalContent = newContent.data(using: .utf8)
                 }
                 existingNote.lastModified = Date()
                 
@@ -342,7 +342,7 @@ final class HomeViewModel: ObservableObject {
             self.notes = results.compactMap { note in
                 guard let title = note.title,
                       let timestamp = note.timestamp,
-                      let content = note.content,
+                      let content = note.originalContent,
                       let sourceTypeStr = note.sourceType else {
                     return nil
                 }
@@ -350,7 +350,7 @@ final class HomeViewModel: ObservableObject {
                 return NoteCardConfiguration(
                     title: title,
                     date: timestamp,
-                    preview: content,
+                    preview: String(decoding: content, as: UTF8.self),
                     sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
                     isFavorite: note.isFavorite,
                     tags: note.tags?.components(separatedBy: ",") ?? [],

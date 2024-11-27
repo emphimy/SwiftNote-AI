@@ -37,15 +37,20 @@ struct YouTubeMetadata: Codable {
 final class YouTubeInputViewModel: ObservableObject {
     // MARK: - Published Properties
     @Published var urlInput: String = ""
-    @Published var metadata: YouTubeMetadata?
+    @Published var metadata: YouTubeConfig.VideoMetadata?
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var extractionProgress: Double = 0
     @Published var saveLocally = false
     @Published var isExtracting = false
     @Published private(set) var loadingState: LoadingState = .idle
+    @Published var transcript: String?
+    @Published var selectedLanguage: String = "en" // Default to English
+    @Published var availableLanguages: [String] = []
+
     
     // MARK: - Private Properties
+    private let youtubeService: YouTubeService
     private let viewContext: NSManagedObjectContext
     private var extractionTask: Task<Void, Never>?
     private let cleanupManager = AudioCleanupManager.shared
@@ -53,50 +58,67 @@ final class YouTubeInputViewModel: ObservableObject {
     
     init(context: NSManagedObjectContext) {
         self.viewContext = context
-        
-        #if DEBUG
-        print("📺 YouTubeInputVM: Initializing")
-        #endif
+        self.youtubeService = YouTubeService()
     }
     
     // MARK: - URL Validation
     func validateAndFetchMetadata() async throws {
         guard let url = URL(string: urlInput),
-              let videoID = extractVideoID(from: url) else {
-            #if DEBUG
-            print("📺 YouTubeInputVM: Invalid URL format")
-            #endif
+              let videoId = extractVideoID(from: url) else {
+            throw YouTubeInputError.invalidURL
+        }
+        
+        loadingState = .loading(message: "Fetching video transcript...")
+        
+        do {
+            let transcript = try await youtubeService.getTranscript(videoId: videoId)
+            
+            await MainActor.run {
+                let note = Note(context: viewContext)
+                note.id = UUID()
+                note.title = "YouTube Transcript: \(videoId)"
+                note.timestamp = Date()
+                note.sourceType = "text"
+                note.originalContent = transcript.data(using: .utf8)
+                
+                try? viewContext.save()
+                loadingState = .success(message: "Transcript extracted")
+            }
+        } catch {
+            loadingState = .error(message: error.localizedDescription)
+            throw error
+        }
+    }
+    
+    func fetchMetadataAndTranscript() async throws {
+        guard let url = URL(string: urlInput),
+              let videoId = extractVideoID(from: url) else {
             throw YouTubeInputError.invalidURL
         }
         
         loadingState = .loading(message: "Fetching video information...")
         
         do {
-            // Simulate metadata fetch for now
-            // In production, this would call actual YouTube API
-            try await Task.sleep(nanoseconds: 1_000_000_000)
+            // Fetch metadata first
+            metadata = try await youtubeService.getVideoMetadata(videoId: videoId)
             
-            let metadata = YouTubeMetadata(
-                title: "Sample Video",
-                duration: 180,
-                thumbnailURL: URL(string: "https://example.com/thumbnail.jpg"),
-                videoID: videoID
-            )
+            // Fetch transcript
+            loadingState = .loading(message: "Fetching transcript...")
+            transcript = try await youtubeService.getTranscript(videoId: videoId)
             
-            await MainActor.run {
-                self.metadata = metadata
-                self.loadingState = .success(message: "Video found")
-            }
+            loadingState = .success(message: "Video information loaded")
             
             #if DEBUG
-            print("📺 YouTubeInputVM: Metadata fetched successfully for video: \(videoID)")
+            print("""
+            📺 YouTubeInputVM: Fetch completed
+            - Title: \(metadata?.title ?? "nil")
+            - Duration: \(metadata?.duration ?? "nil")
+            - Transcript length: \(transcript?.count ?? 0)
+            """)
             #endif
         } catch {
-            #if DEBUG
-            print("📺 YouTubeInputVM: Error fetching metadata - \(error)")
-            #endif
             loadingState = .error(message: error.localizedDescription)
-            throw YouTubeInputError.metadataFetchFailed
+            throw error
         }
     }
     
@@ -227,7 +249,7 @@ struct YouTubeInputView: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack {
+                VStack(spacing: Theme.Spacing.lg) {
                     Spacer(minLength: 160)
                     
                     VStack(spacing: Theme.Spacing.lg) {
@@ -267,13 +289,20 @@ struct YouTubeInputView: View {
                             }
                             
                             // Validate URL Button
-                            Button("Validate URL") {
-                                validateURL()
+                            Button("Fetch Video") {
+                                Task {
+                                    do {
+                                        try await viewModel.fetchMetadataAndTranscript()
+                                    } catch {
+                                        toastManager.show(error.localizedDescription, type: .error)
+                                    }
+                                }
                             }
                             .buttonStyle(PrimaryButtonStyle())
+                            .disabled(viewModel.urlInput.isEmpty)
                         }
                         
-                        // Metadata Preview
+                        // MARK: - Metadata Preview
                         if let metadata = viewModel.metadata {
                             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                                 Text("Video Details")
@@ -282,81 +311,74 @@ struct YouTubeInputView: View {
                                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                                     Text(metadata.title)
                                         .font(Theme.Typography.body)
+                                        .lineLimit(2)
                                     
-                                    Text(formatDuration(metadata.duration))
-                                        .font(Theme.Typography.caption)
-                                        .foregroundColor(Theme.Colors.secondaryText)
+                                    if let duration = metadata.duration {
+                                        Text("Duration: \(duration)")
+                                            .font(Theme.Typography.caption)
+                                            .foregroundColor(Theme.Colors.secondaryText)
+                                    }
                                 }
                                 .padding()
                                 .background(Theme.Colors.secondaryBackground)
                                 .cornerRadius(Theme.Layout.cornerRadius)
                             }
-                            
-                            // Local Storage Toggle
-                            Toggle("Save audio file locally", isOn: $viewModel.saveLocally)
-                                .padding()
-                                .background(Theme.Colors.secondaryBackground)
-                                .cornerRadius(Theme.Layout.cornerRadius)
                         }
-                        
-                        // Extract Button
-                        if !viewModel.isExtracting {
-                            Button("Extract Audio") {
-                                extractAudio()
-                            }
-                            .buttonStyle(PrimaryButtonStyle())
-                            .disabled(viewModel.urlInput.isEmpty)
-                        }
-                        
-                        // Progress Indicator
-                        if viewModel.isExtracting {
-                            VStack(spacing: Theme.Spacing.md) {
-                                ProgressView(value: viewModel.extractionProgress)
-                                    .tint(Theme.Colors.primary)
+
+                        // MARK: - Transcript Preview
+                        if let transcript = viewModel.transcript {
+                            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                                Text("Transcript Preview")
+                                    .font(Theme.Typography.h3)
                                 
-                                Text("Extracting audio...")
-                                    .font(Theme.Typography.caption)
-                                    .foregroundColor(Theme.Colors.secondaryText)
-                            }
-                            .padding()
-                        }
-                        // YouTube App Button
-                        Button(action: {
-                            #if DEBUG
-                            print("📺 YouTubeInputView: Attempting to open YouTube app")
-                            #endif
-                            
-                            // YouTube app URL scheme
-                            if let youtubeURL = URL(string: "youtube://") {
-                                UIApplication.shared.open(youtubeURL) { success in
-                                    #if DEBUG
-                                    print("📺 YouTubeInputView: YouTube app open attempt success: \(success)")
-                                    #endif
+                                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                                    Text(transcript)
+                                        .font(Theme.Typography.body)
+                                        .lineLimit(5)
+                                        .padding()
+                                        .background(Theme.Colors.secondaryBackground)
+                                        .cornerRadius(Theme.Layout.cornerRadius)
                                     
-                                    if !success {
-                                        // Fallback to App Store if YouTube app is not installed
-                                        if let appStoreURL = URL(string: "https://apps.apple.com/app/youtube/id544007664") {
-                                            #if DEBUG
-                                            print("📺 YouTubeInputView: YouTube app not installed, opening App Store")
-                                            #endif
-                                            UIApplication.shared.open(appStoreURL)
-                                        } else {
-                                            toastManager.show("Could not open YouTube app", type: .error)
+                                    HStack {
+                                        Image(systemName: "globe")
+                                            .foregroundColor(Theme.Colors.primary)
+                                        Text("Language: \(viewModel.selectedLanguage.uppercased())")
+                                            .font(Theme.Typography.caption)
+                                            .foregroundColor(Theme.Colors.secondaryText)
+                                    }
+                                    .padding(.horizontal, Theme.Spacing.sm)
+                                }
+                            }
+                        }
+
+                        // MARK: - Save Controls
+                        if viewModel.metadata != nil {
+                            VStack(spacing: Theme.Spacing.md) {
+                                // Local Storage Toggle
+                                Toggle("Save video information", isOn: $viewModel.saveLocally)
+                                    .padding()
+                                    .background(Theme.Colors.secondaryBackground)
+                                    .cornerRadius(Theme.Layout.cornerRadius)
+                                
+                                Button("Import Video") {
+                                    Task {
+                                        do {
+                                            try await viewModel.validateAndFetchMetadata()
+                                            dismiss()
+                                            toastManager.show("Video imported successfully", type: .success)
+                                        } catch {
+                                            toastManager.show(error.localizedDescription, type: .error)
                                         }
                                     }
                                 }
+                                .buttonStyle(PrimaryButtonStyle())
                             }
-                        }) {
-                            HStack {
-                                Image(systemName: "play.rectangle.fill")
-                                    .font(.title3)
-                                Text("Open YouTube App")
-                            }
-                            .foregroundColor(Theme.Colors.primary)
                         }
-                        .buttonStyle(SecondaryButtonStyle())
-                        .padding(.vertical, Theme.Spacing.sm)
-
+                        
+                        // Loading States
+                        if case .loading(let message) = viewModel.loadingState {
+                            LoadingIndicator(message: message)
+                        }
                     }
                     .padding()
                     
@@ -369,7 +391,7 @@ struct YouTubeInputView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
                         #if DEBUG
-                        print("📺 YouTubeInputView: Canceling extraction")
+                        print("📺 YouTubeInputView: Canceling import")
                         #endif
                         Task {
                             await viewModel.cleanup()
@@ -378,13 +400,13 @@ struct YouTubeInputView: View {
                     }
                 }
             }
-        }
-        .onChange(of: scenePhase) { newPhase in
-            #if DEBUG
-            print("📺 YouTubeInputView: Scene phase changed to \(newPhase)")
-            #endif
-            if newPhase == .active {
-                checkClipboard()
+            .onChange(of: scenePhase) { newPhase in
+                #if DEBUG
+                print("📺 YouTubeInputView: Scene phase changed to \(newPhase)")
+                #endif
+                if newPhase == .active {
+                    checkClipboard()
+                }
             }
         }
     }
@@ -431,6 +453,102 @@ struct YouTubeInputView: View {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+    
+    private var urlInputSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text("YouTube URL")
+                .font(Theme.Typography.h3)
+            
+            HStack {
+                CustomTextField(
+                    placeholder: "https://youtube.com/watch?v=...",
+                    text: $viewModel.urlInput,
+                    keyboardType: .URL
+                )
+                
+                Button(action: {
+                    if let clipboardString = UIPasteboard.general.string {
+                        viewModel.urlInput = clipboardString
+                    }
+                }) {
+                    Image(systemName: "doc.on.clipboard")
+                        .foregroundColor(Theme.Colors.primary)
+                }
+                .padding(.horizontal, Theme.Spacing.sm)
+            }
+            
+            Button("Fetch Video") {
+                Task {
+                    do {
+                        try await viewModel.fetchMetadataAndTranscript()
+                    } catch {
+                        toastManager.show(error.localizedDescription, type: .error)
+                    }
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(viewModel.urlInput.isEmpty)
+        }
+    }
+    
+    private func videoPreviewSection(_ metadata: YouTubeConfig.VideoMetadata) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            Text("Video Details")
+                .font(Theme.Typography.h3)
+            
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text(metadata.title)
+                    .font(Theme.Typography.body)
+                    .lineLimit(2)
+                
+                // Update duration check
+                Text("Duration: \(metadata.duration)")
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.secondaryText)
+            }
+            .padding()
+            .background(Theme.Colors.secondaryBackground)
+            .cornerRadius(Theme.Layout.cornerRadius)
+        }
+    }
+    
+    private func transcriptPreviewSection(_ transcript: String?) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            Text("Transcript Preview")
+                .font(Theme.Typography.h3)
+            
+            if let transcriptText = transcript {
+                Text(transcriptText)
+                    .font(Theme.Typography.body)
+                    .lineLimit(5)
+                    .padding()
+                    .background(Theme.Colors.secondaryBackground)
+                    .cornerRadius(Theme.Layout.cornerRadius)
+            }
+        }
+    }
+    
+    private var saveControlsSection: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            Toggle("Save video information", isOn: $viewModel.saveLocally)
+                .padding()
+                .background(Theme.Colors.secondaryBackground)
+                .cornerRadius(Theme.Layout.cornerRadius)
+            
+            Button("Import Video") {
+                Task {
+                    do {
+                        try await viewModel.validateAndFetchMetadata()
+                        dismiss()
+                        toastManager.show("Video imported successfully", type: .success)
+                    } catch {
+                        toastManager.show(error.localizedDescription, type: .error)
+                    }
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+        }
     }
 }
 

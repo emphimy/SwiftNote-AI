@@ -17,7 +17,7 @@ final class PersistenceController: NSObject {
         let sampleNote = Note(context: viewContext)
         sampleNote.timestamp = Date()
         sampleNote.title = "Sample Note"
-        sampleNote.content = "This is a sample note"
+        sampleNote.originalContent = "This is a sample note".data(using: .utf8)
         sampleNote.sourceType = "text"
         
         let sampleFolder = Folder(context: viewContext)
@@ -222,7 +222,7 @@ extension PersistenceController {
         
         let note = Note(context: context)
         note.title = title
-        note.content = content
+        note.originalContent = content.data(using: .utf8) // Convert String to Data
         note.sourceType = sourceType
         note.timestamp = Date()
         note.lastModified = Date()
@@ -249,7 +249,6 @@ extension PersistenceController {
         return try context.fetch(request)
     }
     
-    // Update
     func updateNote(_ note: Note, title: String? = nil, content: String? = nil) throws {
         let context = container.viewContext
         
@@ -261,7 +260,7 @@ extension PersistenceController {
             note.title = title
         }
         if let content = content {
-            note.content = content
+            note.originalContent = content.data(using: .utf8)
         }
         note.lastModified = Date()
         
