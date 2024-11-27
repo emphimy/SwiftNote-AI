@@ -314,7 +314,7 @@ struct YouTubeInputView: View {
                                         .lineLimit(2)
                                     
                                     if let duration = metadata.duration {
-                                        Text("Duration: \(duration)")
+                                        Text("Duration: \(String(describing: duration))")
                                             .font(Theme.Typography.caption)
                                             .foregroundColor(Theme.Colors.secondaryText)
                                     }
@@ -503,7 +503,7 @@ struct YouTubeInputView: View {
                     .lineLimit(2)
                 
                 // Update duration check
-                Text("Duration: \(metadata.duration)")
+                Text("Duration: \(String(describing: metadata.duration))")
                     .font(Theme.Typography.caption)
                     .foregroundColor(Theme.Colors.secondaryText)
             }

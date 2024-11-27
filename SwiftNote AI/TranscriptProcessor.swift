@@ -2,7 +2,9 @@ import SwiftUI
 
 // MARK: - Transcript Models
 struct TranscriptEntry: Codable, Identifiable {
-    let id = UUID()
+    var id: UUID {
+        UUID()
+    }
     let text: String
     let start: TimeInterval
     let duration: TimeInterval

@@ -259,7 +259,7 @@ private extension YouTubeService {
             } catch {
                 #if DEBUG
                 print("📺 YouTubeService: Error decoding items - \(error)")
-                print("📺 YouTubeService: Raw JSON: \(String(describing: try? decoder.singleValueContainer().decode([String: Any].self)))")
+                print("📺 YouTubeService: Failed to decode captions response")
                 #endif
                 items = []
             }
@@ -279,6 +279,16 @@ private extension YouTubeService {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             id = try container.decode(String.self, forKey: .id)
             snippet = try container.decode(CaptionSnippet.self, forKey: .snippet)
+        }
+    }
+    
+    struct CaptionSnippet: Codable {
+        let language: String
+        let trackKind: String
+        
+        enum CodingKeys: String, CodingKey {
+            case language
+            case trackKind = "kind"
         }
     }
 }
