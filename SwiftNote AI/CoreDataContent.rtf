@@ -8,24 +8,47 @@
 \f0\fs24 \cf0 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>\
 <model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23507" systemVersion="23F79" minimumToolsVersion="Xcode 15.0" sourceLanguage="Swift" usedWithCloudKit="YES" userDefinedModelVersionIdentifier="">\
 \
-    <!-- Note Entity - Enhanced -->\
+    <!-- Note Entity - Enhanced for AI Processing -->\
     <entity name="Note" representedClassName="Note" syncable="YES" codeGenerationType="class">\
-        <attribute name="content" optional="YES" attributeType="String"/>\
-        <attribute name="isFavorite" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>\
-        <attribute name="sourceType" attributeType="String" defaultValueString="text"/>\
-        <attribute name="tags" optional="YES" attributeType="String"/>\
-        <attribute name="timestamp" attributeType="Date" defaultDateTimeInterval="0" usesScalarValueType="NO"/>\
+        <!-- Basic Information -->\
+        <attribute name="id" attributeType="UUID" defaultValueString="00000000-0000-0000-0000-000000000000"/>\
         <attribute name="title" attributeType="String" defaultValueString="Untitled Note"/>\
-        <!-- New attributes -->\
-        <attribute name="audioURL" optional="YES" attributeType="URI"/>\
-        <attribute name="duration" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>\
-        <attribute name="transcriptStatus" attributeType="String" defaultValueString="pending"/>\
+        <attribute name="timestamp" attributeType="Date" defaultDateTimeInterval="0" usesScalarValueType="NO"/>\
         <attribute name="lastModified" attributeType="Date" defaultDateTimeInterval="0" usesScalarValueType="NO"/>\
+        <attribute name="isFavorite" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>\
+        <attribute name="tags" optional="YES" attributeType="String"/>\
         \
+        <!-- Source Information -->\
+        <attribute name="sourceType" attributeType="String" defaultValueString="text"/>\
+        <attribute name="sourceURL" optional="YES" attributeType="URI"/>\
+        <attribute name="duration" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>\
+        \
+        <!-- Processing Status -->\
+        <attribute name="processingStatus" attributeType="String" defaultValueString="pending"/>\
+        <attribute name="processingError" optional="YES" attributeType="String"/>\
+        <attribute name="lastProcessingAttempt" optional="YES" attributeType="Date"/>\
+        \
+        <!-- Content -->\
+        <attribute name="originalContent" optional="YES" attributeType="Binary" allowsExternalBinaryDataStorage="YES"/>\
+        <attribute name="transcript" optional="YES" attributeType="String"/>\
+        <attribute name="aiGeneratedContent" optional="YES" attributeType="Binary"/>\
+        <attribute name="supplementaryMaterials" optional="YES" attributeType="Binary"/>\
+        \
+        <!-- Study Materials -->\
+        <attribute name="sections" optional="YES" attributeType="Binary"/>\
+        <attribute name="mindMap" optional="YES" attributeType="Binary"/>\
+        <attribute name="keyPoints" optional="YES" attributeType="String"/>\
+        <attribute name="citations" optional="YES" attributeType="String"/>\
+        \
+        <!-- Relationships -->\
         <relationship name="folder" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Folder" inverseName="notes" inverseEntity="Folder"/>\
         <relationship name="quizProgress" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="QuizProgress" inverseName="note" inverseEntity="QuizProgress"/>\
         <relationship name="analytics" optional="YES" maxCount="1" deletionRule="Cascade" destinationEntity="QuizAnalytics" inverseName="note" inverseEntity="QuizAnalytics"/>\
         \
+        <!-- Indexes -->\
+        <fetchIndex name="byIdIndex">\
+            <fetchIndexElement property="id" type="Binary"/>\
+        </fetchIndex>\
         <fetchIndex name="byTitleIndex">\
             <fetchIndexElement property="title" type="Binary"/>\
         </fetchIndex>\
@@ -35,9 +58,12 @@
         <fetchIndex name="bySourceTypeIndex">\
             <fetchIndexElement property="sourceType" type="Binary"/>\
         </fetchIndex>\
+        <fetchIndex name="byProcessingStatusIndex">\
+            <fetchIndexElement property="processingStatus" type="Binary"/>\
+        </fetchIndex>\
     </entity>\
 \
-    <!-- QuizAnalytics Entity - Enhanced -->\
+    <!-- QuizAnalytics Entity - Unchanged -->\
     <entity name="QuizAnalytics" representedClassName="QuizAnalytics" syncable="YES" codeGenerationType="class">\
         <attribute name="averageScore" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>\
         <attribute name="completedQuizzes" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>\
@@ -49,7 +75,7 @@
         <relationship name="note" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Note" inverseName="analytics" inverseEntity="Note"/>\
     </entity>\
 \
-    <!-- QuizProgress Entity - Enhanced -->\
+    <!-- QuizProgress Entity - Unchanged -->\
     <entity name="QuizProgress" representedClassName="QuizProgress" syncable="YES" codeGenerationType="class">\
         <attribute name="answers" optional="YES" attributeType="Binary"/>\
         <attribute name="id" attributeType="UUID" defaultValueString="00000000-0000-0000-0000-000000000000"/>\
@@ -59,7 +85,7 @@
         <relationship name="note" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Note" inverseName="quizProgress" inverseEntity="Note"/>\
     </entity>\
 \
-    <!-- Folder Entity - Enhanced -->\
+    <!-- Folder Entity - Unchanged -->\
     <entity name="Folder" representedClassName="Folder" syncable="YES" codeGenerationType="class">\
         <attribute name="id" attributeType="UUID" defaultValueString="00000000-0000-0000-0000-000000000000"/>\
         <attribute name="name" attributeType="String" defaultValueString="Untitled Folder"/>\
@@ -73,7 +99,7 @@
         </fetchIndex>\
     </entity>\
 \
-    <!-- User Settings Entity - New -->\
+    <!-- UserSettings Entity - Unchanged -->\
     <entity name="UserSettings" representedClassName="UserSettings" syncable="YES" codeGenerationType="class">\
         <attribute name="id" attributeType="UUID" defaultValueString="00000000-0000-0000-0000-000000000000"/>\
         <attribute name="lastSync" optional="YES" attributeType="Date"/>\
