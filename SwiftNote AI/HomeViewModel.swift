@@ -56,7 +56,7 @@ final class HomeViewModel: ObservableObject {
                 - New: \(currentFolderId?.uuidString ?? "nil")
                 """)
                 #endif
-                await self.fetchNotes()
+                self.fetchNotes()
             }
         }
     }
@@ -77,7 +77,7 @@ final class HomeViewModel: ObservableObject {
         
         // Force notes refresh
         Task { @MainActor in
-            await self.fetchNotes()
+            self.fetchNotes()
         }
     }
     

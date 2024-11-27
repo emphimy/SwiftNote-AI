@@ -559,7 +559,11 @@ struct ContentView_Previews: PreviewProvider {
                 // Clear any existing notes for empty state
                 let fetchRequest: NSFetchRequest<NSFetchRequestResult> = Note.fetchRequest()
                 let deleteRequest = NSBatchDeleteRequest(fetchRequest: fetchRequest)
-                try? context.execute(deleteRequest)
+                do {
+                    try context.execute(deleteRequest)
+                } catch {
+                    print("Preview Error: Failed to clear notes - \(error)")
+                }
                 return context
             }())
             .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
