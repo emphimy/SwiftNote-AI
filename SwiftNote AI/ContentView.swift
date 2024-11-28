@@ -4,7 +4,6 @@ import SwiftUI
 import CoreData
 import AVFoundation
 import Speech
-import GoogleSignIn
 import Combine
 
 // MARK: - Navigation Bar

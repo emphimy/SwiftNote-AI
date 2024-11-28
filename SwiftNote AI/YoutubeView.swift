@@ -9,15 +9,32 @@ struct TextView: UIViewRepresentable {
         textView.isEditable = false
         textView.isSelectable = true
         textView.font = .preferredFont(forTextStyle: .body)
-        textView.backgroundColor = .clear
-        textView.textColor = .label
+        textView.backgroundColor = .white
+        textView.textColor = .black
         textView.textContainer.lineFragmentPadding = 0
         textView.textContainerInset = .zero
+        
+        // Force layout attributes
+        let attributes: [NSAttributedString.Key: Any] = [
+            .foregroundColor: UIColor.black,
+            .backgroundColor: UIColor.white,
+            .font: UIFont.preferredFont(forTextStyle: .body)
+        ]
+        let attributedText = NSAttributedString(string: text, attributes: attributes)
+        textView.attributedText = attributedText
+        
         return textView
     }
     
     func updateUIView(_ uiView: UITextView, context: Context) {
-        uiView.text = text
+        // Update with attributed text to maintain formatting
+        let attributes: [NSAttributedString.Key: Any] = [
+            .foregroundColor: UIColor.black,
+            .backgroundColor: UIColor.white,
+            .font: UIFont.preferredFont(forTextStyle: .body)
+        ]
+        let attributedText = NSAttributedString(string: text, attributes: attributes)
+        uiView.attributedText = attributedText
     }
 }
 
