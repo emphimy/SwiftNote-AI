@@ -108,7 +108,16 @@ final class YouTubeService {
             throw YouTubeError.apiError("No window scene available")
         }
         
-        let gidSignInResult = try await GIDSignIn.sharedInstance.signIn(withPresenting: window.rootViewController!)
+        let configuration = GIDConfiguration(clientID: "17364962360-qjgkqlj8vs1les209p8j0pkfskl8ido8.apps.googleusercontent.com")
+        GIDSignIn.sharedInstance.configuration = configuration
+        
+        // Define required scopes for YouTube API
+        let scopes = [
+            "https://www.googleapis.com/auth/youtube.force-ssl",
+            "https://www.googleapis.com/auth/youtube.readonly"
+        ]
+        
+        let gidSignInResult = try await GIDSignIn.sharedInstance.signIn(withPresenting: window.rootViewController!, hint: nil, additionalScopes: scopes)
         self.currentUser = gidSignInResult.user
         
         // Configure the YouTube service with the user's authentication
@@ -193,14 +202,36 @@ final class YouTubeService {
                         return
                     }
                     
-                    guard let data = data,
-                          let transcript = String(data: data, encoding: .utf8) else {
+                    if let httpResponse = response as? HTTPURLResponse {
+#if DEBUG
+                        print("📺 YouTubeService: Response status code: \(httpResponse.statusCode)")
+                        print("📺 YouTubeService: Response headers: \(httpResponse.allHeaderFields)")
+#endif
+                        if httpResponse.statusCode != 200 {
+                            continuation.resume(throwing: YouTubeError.apiError("Server returned status code: \(httpResponse.statusCode)"))
+                            return
+                        }
+                    }
+                    
+                    guard let data = data else {
                         continuation.resume(throwing: YouTubeError.invalidResponse)
                         return
                     }
                     
 #if DEBUG
-                    print("📺 YouTubeService: Successfully downloaded caption data")
+                    print("📺 YouTubeService: Received data of size: \(data.count) bytes")
+                    if let dataString = String(data: data, encoding: .utf8) {
+                        print("📺 YouTubeService: First 200 characters of response: \(String(dataString.prefix(200)))")
+                    }
+#endif
+                    
+                    guard let transcript = String(data: data, encoding: .utf8) else {
+                        continuation.resume(throwing: YouTubeError.invalidResponse)
+                        return
+                    }
+                    
+#if DEBUG
+                    print("📺 YouTubeService: Successfully downloaded caption data with length: \(transcript.count)")
 #endif
                     
                     continuation.resume(returning: transcript)

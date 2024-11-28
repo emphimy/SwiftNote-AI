@@ -47,7 +47,7 @@ final class YouTubeInputViewModel: ObservableObject {
     @Published var transcript: String?
     @Published var selectedLanguage: String = "en" // Default to English
     @Published var availableLanguages: [String] = []
-
+    @Published var isSignedIn: Bool = false
     
     // MARK: - Private Properties
     private let youtubeService: YouTubeService
@@ -59,6 +59,7 @@ final class YouTubeInputViewModel: ObservableObject {
     init(context: NSManagedObjectContext) {
         self.viewContext = context
         self.youtubeService = YouTubeService()
+        checkSignInStatus()
     }
     
     // MARK: - URL Validation
@@ -207,6 +208,23 @@ final class YouTubeInputViewModel: ObservableObject {
         return nil
     }
     
+    private func checkSignInStatus() {
+        isSignedIn = youtubeService.isSignedIn()
+    }
+    
+    func signIn() async {
+        do {
+            try await youtubeService.signIn()
+            await MainActor.run {
+                isSignedIn = true
+            }
+        } catch {
+            await MainActor.run {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+    
     // MARK: - Cleanup
     func cleanup() async {
         #if DEBUG
@@ -253,6 +271,17 @@ struct YouTubeInputView: View {
                     Spacer(minLength: 160)
                     
                     VStack(spacing: Theme.Spacing.lg) {
+                        if !viewModel.isSignedIn {
+                            // Sign In Button
+                            Button("Sign in with Google") {
+                                Task {
+                                    await viewModel.signIn()
+                                }
+                            }
+                            .buttonStyle(PrimaryButtonStyle())
+                            .padding(.bottom, Theme.Spacing.md)
+                        }
+                        
                         // URL Input Section
                         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                             Text("YouTube URL")
