@@ -28,226 +28,125 @@ final class YouTubeService {
     // MARK: - Private Properties
     private let service: GTLRYouTubeService
     private let session: URLSession
-    private let transcriptProcessor: TranscriptProcessor
+    private let transcriptService: YouTubeTranscriptService
+    private static let scopes = [
+        "https://www.googleapis.com/auth/youtube.readonly",
+        "https://www.googleapis.com/auth/youtube.force-ssl",
+        "https://www.googleapis.com/auth/youtubepartner"
+    ]
     private var currentUser: GIDGoogleUser?
     
     // MARK: - Initialization
     init() {
         self.service = GTLRYouTubeService()
         self.session = URLSession.shared
-        self.transcriptProcessor = TranscriptProcessor()
+        self.transcriptService = YouTubeTranscriptService()
         
-#if DEBUG
-        print("📺 YouTubeService: Initialized with Google Sign-In")
-#endif
+        // Try to restore previous sign-in
+        if let previousUser = GIDSignIn.sharedInstance.currentUser {
+            self.currentUser = previousUser
+            self.service.authorizer = previousUser.fetcherAuthorizer
+        }
     }
     
     // MARK: - Public Methods
+    func signIn() async throws {
+        let scenes = UIApplication.shared.connectedScenes
+        let windowScene = scenes.first as? UIWindowScene
+        guard let rootViewController = windowScene?.windows.first?.rootViewController else {
+            throw YouTubeError.apiError("No root view controller found")
+        }
+        
+        let result = try await GIDSignIn.sharedInstance.signIn(
+            withPresenting: rootViewController,
+            hint: nil,
+            additionalScopes: Self.scopes
+        )
+        
+        self.currentUser = result.user
+        self.service.authorizer = result.user.fetcherAuthorizer
+        UserDefaults.standard.set(true, forKey: "isSignedInToGoogle")
+    }
+    
+    func signOut() {
+        GIDSignIn.sharedInstance.signOut()
+        self.currentUser = nil
+        self.service.authorizer = nil
+        UserDefaults.standard.removeObject(forKey: "isSignedInToGoogle")
+    }
+    
+    var isSignedIn: Bool {
+        return currentUser != nil
+    }
+    
     func getTranscript(videoId: String) async throws -> String {
         guard !videoId.isEmpty else {
             throw YouTubeError.invalidVideoId
         }
         
-#if DEBUG
-        print("📺 YouTubeService: Fetching transcript for video: \(videoId)")
-#endif
+        // First get video details to ensure we have access
+        let query = GTLRYouTubeQuery_VideosList.query(withPart: ["snippet"])
+        query.identifier = [videoId]
         
-        return try await fetchRawTranscript(videoId: videoId)
+        let response: GTLRYouTube_VideoListResponse = try await withCheckedThrowingContinuation { continuation in
+            service.executeQuery(query) { (ticket: GTLRServiceTicket, response: Any?, error: Error?) in
+                if let error = error {
+                    continuation.resume(throwing: YouTubeError.apiError(error.localizedDescription))
+                    return
+                }
+                
+                guard let response = response as? GTLRYouTube_VideoListResponse else {
+                    continuation.resume(throwing: YouTubeError.invalidResponse)
+                    return
+                }
+                
+                continuation.resume(returning: response)
+            }
+        }
+        
+        guard let _ = response.items?.first else {
+            throw YouTubeError.invalidResponse
+        }
+        
+        // Use the transcript service to get the actual transcript
+        return try await transcriptService.getTranscript(videoId: videoId)
     }
     
     func getVideoMetadata(videoId: String) async throws -> YouTubeConfig.VideoMetadata {
         guard !videoId.isEmpty else {
-#if DEBUG
-            print("📺 YouTubeService: Invalid video ID provided")
-#endif
             throw YouTubeError.invalidVideoId
         }
         
-        guard isSignedIn() else {
-            throw YouTubeError.apiError("Not signed in with Google")
-        }
-        
-        let parts = ["snippet", "contentDetails"]
-        let query = GTLRYouTubeQuery_VideosList.query(withPart: parts)
+        let query = GTLRYouTubeQuery_VideosList.query(withPart: ["snippet", "contentDetails"])
         query.identifier = [videoId]
         
-        let result = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<YouTubeConfig.VideoMetadata, Error>) in
-            
-            service.executeQuery(query) { (ticket, response, error) in
+        let response: GTLRYouTube_VideoListResponse = try await withCheckedThrowingContinuation { continuation in
+            service.executeQuery(query) { (ticket: GTLRServiceTicket, response: Any?, error: Error?) in
                 if let error = error {
                     continuation.resume(throwing: YouTubeError.apiError(error.localizedDescription))
                     return
                 }
                 
-                // Cast response to GTLRYouTube_VideoListResponse
-                guard let videoList = response as? GTLRYouTube_VideoListResponse,
-                      let video = videoList.items?.first else {
-                    continuation.resume(throwing: YouTubeError.invalidVideoId)
+                guard let response = response as? GTLRYouTube_VideoListResponse else {
+                    continuation.resume(throwing: YouTubeError.invalidResponse)
                     return
                 }
                 
-                let metadata = YouTubeConfig.VideoMetadata(
-                    id: video.identifier ?? "",
-                    title: video.snippet?.title ?? "",
-                    duration: video.contentDetails?.duration,
-                    thumbnailURL: video.snippet?.thumbnails?.high?.url,
-                    description: video.snippet?.descriptionProperty
-                )
-                
-                continuation.resume(returning: metadata)
+                continuation.resume(returning: response)
             }
         }
         
-        return result
-    }
-    
-    // MARK: - Authentication Methods
-    func signIn() async throws {
-        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-              let window = windowScene.windows.first else {
-            throw YouTubeError.apiError("No window scene available")
+        guard let video = response.items?.first,
+              let snippet = video.snippet else {
+            throw YouTubeError.invalidResponse
         }
         
-        let configuration = GIDConfiguration(clientID: "17364962360-qjgkqlj8vs1les209p8j0pkfskl8ido8.apps.googleusercontent.com")
-        GIDSignIn.sharedInstance.configuration = configuration
-        
-        // Define required scopes for YouTube API
-        let scopes = [
-            "https://www.googleapis.com/auth/youtube.force-ssl",
-            "https://www.googleapis.com/auth/youtube.readonly"
-        ]
-        
-        let gidSignInResult = try await GIDSignIn.sharedInstance.signIn(withPresenting: window.rootViewController!, hint: nil, additionalScopes: scopes)
-        self.currentUser = gidSignInResult.user
-        
-        // Configure the YouTube service with the user's authentication
-        if let user = currentUser {
-            service.authorizer = user.fetcherAuthorizer
-        }
-        
-#if DEBUG
-        print("📺 YouTubeService: Successfully signed in with Google")
-#endif
-    }
-    
-    func isSignedIn() -> Bool {
-        return currentUser != nil
-    }
-    
-    // MARK: - Private Methods
-    private func fetchRawTranscript(videoId: String) async throws -> String {
-#if DEBUG
-        print("📺 YouTubeService: Fetching raw transcript for video: \(videoId)")
-#endif
-        
-        let query = GTLRYouTubeQuery_CaptionsList.query(withPart: ["snippet"], videoId: videoId)
-        
-        let result = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
-            service.executeQuery(query) { (ticket, response, error) in
-                if let error = error {
-#if DEBUG
-                    print("📺 YouTubeService: Error fetching captions - \(error)")
-#endif
-                    continuation.resume(throwing: YouTubeError.apiError(error.localizedDescription))
-                    return
-                }
-                
-                guard let captionList = response as? GTLRYouTube_CaptionListResponse,
-                      let captions = captionList.items,
-                      !captions.isEmpty else {
-                    continuation.resume(throwing: YouTubeError.transcriptNotAvailable)
-                    return
-                }
-                
-                guard let firstCaption = captions.first,
-                      let captionId = firstCaption.identifier else {
-                    continuation.resume(throwing: YouTubeError.transcriptNotAvailable)
-                    return
-                }
-                
-                // Create a direct URL request for caption download
-                guard let user = self.currentUser else {
-                    continuation.resume(throwing: YouTubeError.apiError("Not authenticated"))
-                    return
-                }
-
-                let accessToken = user.accessToken.tokenString
-                
-                let urlString = "https://www.googleapis.com/youtube/v3/captions/\(captionId)/download"
-                guard var urlComponents = URLComponents(string: urlString) else {
-                    continuation.resume(throwing: YouTubeError.apiError("Invalid URL"))
-                    return
-                }
-                
-                urlComponents.queryItems = [URLQueryItem(name: "tfmt", value: "srt")]
-                
-                guard let url = urlComponents.url else {
-                    continuation.resume(throwing: YouTubeError.apiError("Invalid URL"))
-                    return
-                }
-                
-                var request = URLRequest(url: url)
-                request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-                
-#if DEBUG
-                print("📺 YouTubeService: Requesting caption download from: \(url)")
-#endif
-                
-                URLSession.shared.dataTask(with: request) { data, response, error in
-                    if let error = error {
-#if DEBUG
-                        print("📺 YouTubeService: Caption download error - \(error)")
-#endif
-                        continuation.resume(throwing: YouTubeError.apiError(error.localizedDescription))
-                        return
-                    }
-                    
-                    if let httpResponse = response as? HTTPURLResponse {
-#if DEBUG
-                        print("📺 YouTubeService: Response status code: \(httpResponse.statusCode)")
-                        print("📺 YouTubeService: Response headers: \(httpResponse.allHeaderFields)")
-#endif
-                        if httpResponse.statusCode != 200 {
-                            continuation.resume(throwing: YouTubeError.apiError("Server returned status code: \(httpResponse.statusCode)"))
-                            return
-                        }
-                    }
-                    
-                    guard let data = data else {
-                        continuation.resume(throwing: YouTubeError.invalidResponse)
-                        return
-                    }
-                    
-#if DEBUG
-                    print("📺 YouTubeService: Received data of size: \(data.count) bytes")
-                    if let dataString = String(data: data, encoding: .utf8) {
-                        print("📺 YouTubeService: First 200 characters of response: \(String(dataString.prefix(200)))")
-                    }
-#endif
-                    
-                    guard let transcript = String(data: data, encoding: .utf8) else {
-                        continuation.resume(throwing: YouTubeError.invalidResponse)
-                        return
-                    }
-                    
-#if DEBUG
-                    print("📺 YouTubeService: Successfully downloaded caption data with length: \(transcript.count)")
-#endif
-                    
-                    continuation.resume(returning: transcript)
-                }.resume()
-            }
-        }
-        
-        return result
-    }
-}
-
-// MARK: - URL Extension
-private extension URL {
-    func appendingQueryItems(_ items: [String: String]) -> URL {
-        var components = URLComponents(url: self, resolvingAgainstBaseURL: true)!
-        components.queryItems = items.map { URLQueryItem(name: $0.key, value: $0.value) }
-        return components.url!
+        return YouTubeConfig.VideoMetadata(
+            id: videoId,
+            title: snippet.title ?? "Untitled",
+            duration: nil,
+            thumbnailURL: snippet.thumbnails?.high?.url ?? "",
+            description: snippet.descriptionProperty
+        )
     }
 }

@@ -1,7 +1,10 @@
 // ContentView.swift
 
-import CoreData
 import SwiftUI
+import CoreData
+import AVFoundation
+import Speech
+import GoogleSignIn
 import Combine
 
 // MARK: - Navigation Bar
@@ -495,7 +498,7 @@ struct ContentView: View {
                 AudioRecordingView(context: viewContext)
             }
             .sheet(isPresented: $viewModel.isShowingYouTubeInput) {
-                YouTubeInputView(context: viewContext)
+                YouTubeView()
             }
             .sheet(isPresented: $viewModel.isShowingTextUpload) {
                 TextUploadView(context: viewContext)

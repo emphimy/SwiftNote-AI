@@ -57,15 +57,11 @@
 		};
 		C9D149EB2CECADC400A4B7E2 /* SwiftNote AITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "SwiftNote AITests";
 			sourceTree = "<group>";
 		};
 		C9D149F52CECADC400A4B7E2 /* SwiftNote AIUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = "SwiftNote AIUITests";
 			sourceTree = "<group>";
 		};
