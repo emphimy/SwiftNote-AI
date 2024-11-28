@@ -117,13 +117,6 @@ final class YouTubeTranscriptService {
     }
     
     private func fetchTranscript(videoId: String, playerResponse: [String: Any]) async throws -> String {
-        let url = URL(string: "\(baseURL)/youtubei/v1/get_transcript")!
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
-        
         // Get necessary data from player response
         guard let captions = playerResponse["captions"] as? [String: Any],
               let playerCaptionsTracklistRenderer = captions["playerCaptionsTracklistRenderer"] as? [String: Any],
@@ -137,37 +130,81 @@ final class YouTubeTranscriptService {
         print("📺 YouTubeTranscriptService: Found caption URL: \(baseUrl)")
         #endif
         
+        // Configure URLSession with timeout
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 300
+        config.timeoutIntervalForResource = 900
+        let sessionWithTimeout = URLSession(configuration: config)
+        
         // Fetch the actual transcript
         let transcriptURL = URL(string: baseUrl)!
-        let (transcriptData, _) = try await session.data(from: transcriptURL)
+        var request = URLRequest(url: transcriptURL)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36", forHTTPHeaderField: "User-Agent")
+        
+        let (transcriptData, _) = try await sessionWithTimeout.data(from: transcriptURL)
         
         guard let xmlString = String(data: transcriptData, encoding: .utf8) else {
             throw YouTubeTranscriptError.invalidResponse
         }
         
-        // Parse the XML to get transcript text
-        var transcript = ""
+        // Process transcript with larger chunks and better memory management
         let pattern = "<text[^>]*>([^<]*)</text>"
         let regex = try NSRegularExpression(pattern: pattern)
-        let matches = regex.matches(in: xmlString, range: NSRange(xmlString.startIndex..., in: xmlString))
         
-        for match in matches {
-            if let range = Range(match.range(at: 1), in: xmlString) {
-                let text = String(xmlString[range])
-                    .replacingOccurrences(of: "&amp;", with: "&")
-                    .replacingOccurrences(of: "&quot;", with: "\"")
-                    .replacingOccurrences(of: "&#39;", with: "'")
-                    .replacingOccurrences(of: "&lt;", with: "<")
-                    .replacingOccurrences(of: "&gt;", with: ">")
-                transcript += text + "\n"
+        var transcriptParts: [String] = []
+        transcriptParts.reserveCapacity(1000) // Pre-allocate for better performance
+        
+        // Process XML in chunks
+        var currentIndex = xmlString.startIndex
+        let totalSize = xmlString.count
+        let chunkSize = 100000
+        
+        while currentIndex < xmlString.endIndex {
+            autoreleasepool {
+                let endIndex = xmlString.index(currentIndex, offsetBy: min(chunkSize, xmlString.distance(from: currentIndex, to: xmlString.endIndex)))
+                let chunk = String(xmlString[currentIndex..<endIndex])
+                
+                let range = NSRange(chunk.startIndex..., in: chunk)
+                let matches = regex.matches(in: chunk, range: range)
+                
+                for match in matches {
+                    if let range = Range(match.range(at: 1), in: chunk) {
+                        let text = String(chunk[range])
+                            .replacingOccurrences(of: "&amp;", with: "&")
+                            .replacingOccurrences(of: "&quot;", with: "\"")
+                            .replacingOccurrences(of: "&#39;", with: "'")
+                            .replacingOccurrences(of: "&lt;", with: "<")
+                            .replacingOccurrences(of: "&gt;", with: ">")
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !text.isEmpty {
+                            transcriptParts.append(text)
+                        }
+                    }
+                }
+                
+                currentIndex = endIndex
             }
         }
         
-        guard !transcript.isEmpty else {
-            throw YouTubeTranscriptError.transcriptNotAvailable
-        }
+        // Combine transcript parts into proper paragraphs
+        let formattedTranscript = transcriptParts
+            .enumerated()
+            .map { index, text in
+                // Add period if the text doesn't end with punctuation
+                let needsPeriod = !text.hasSuffix(".") && !text.hasSuffix("!") && !text.hasSuffix("?")
+                let punctuatedText = needsPeriod ? text + "." : text
+                
+                // Add space or newline based on context
+                if index % 5 == 4 { // Create paragraphs every 5 sentences
+                    return punctuatedText + "\n\n"
+                } else {
+                    return punctuatedText + " "
+                }
+            }
+            .joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         
-        return transcript
+        return formattedTranscript
     }
     
     func getVideoMetadata(videoId: String) async throws -> YouTubeConfig.VideoMetadata {

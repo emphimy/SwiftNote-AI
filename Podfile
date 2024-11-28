@@ -29,7 +29,5 @@ target 'SwiftNote AI' do
   use_frameworks!
 
   # Pods for SwiftNote AI
-  pod 'GoogleSignIn'
-  pod 'GoogleAPIClientForREST/YouTube', '~> 3.0'  # Using version 3.0 for better compatibility
-
+  # All Google dependencies removed as they are no longer needed
 end
