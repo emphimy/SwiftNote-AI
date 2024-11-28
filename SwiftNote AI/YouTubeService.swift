@@ -1,4 +1,7 @@
 import Foundation
+import UIKit
+import GoogleSignIn
+import GoogleAPIClientForREST
 
 // MARK: - YouTube Error
 enum YouTubeError: LocalizedError {
@@ -23,23 +26,20 @@ enum YouTubeError: LocalizedError {
 @MainActor
 final class YouTubeService {
     // MARK: - Private Properties
-    private let apiKey: String
+    private let service: GTLRYouTubeService
     private let session: URLSession
     private let transcriptProcessor: TranscriptProcessor
+    private var currentUser: GIDGoogleUser?
     
     // MARK: - Initialization
-    init(apiKey: String = Bundle.main.infoDictionary?["YouTubeAPIKey"] as? String ?? "") {
-        self.apiKey = apiKey
+    init() {
+        self.service = GTLRYouTubeService()
         self.session = URLSession.shared
         self.transcriptProcessor = TranscriptProcessor()
         
-        #if DEBUG
-        print("""
-        📺 YouTubeService: Initialized with API key
-        - Key present: \(!apiKey.isEmpty)
-        - Key length: \(apiKey.count)
-        """)
-        #endif
+#if DEBUG
+        print("📺 YouTubeService: Initialized with Google Sign-In")
+#endif
     }
     
     // MARK: - Public Methods
@@ -47,332 +47,168 @@ final class YouTubeService {
         guard !videoId.isEmpty else {
             throw YouTubeError.invalidVideoId
         }
-
-        #if DEBUG
-        print("📺 YouTubeService: Fetching captions for video: \(videoId)")
-        #endif
-
-        // First get available captions
-        let captionsURL = URL(string: "\(YouTubeConfig.apiBaseURL)/captions")!
-            .appendingQueryItems([
-                "videoId": videoId,
-                "key": apiKey,
-                "part": "snippet"
-            ])
-
-        #if DEBUG
-        print("📺 YouTubeService: Captions URL: \(captionsURL)")
-        #endif
-
-        let (captionsData, response) = try await session.data(from: captionsURL)
         
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw YouTubeError.invalidResponse
-        }
+#if DEBUG
+        print("📺 YouTubeService: Fetching transcript for video: \(videoId)")
+#endif
         
-        #if DEBUG
-        print("📺 YouTubeService: Captions response status: \(httpResponse.statusCode)")
-        if let jsonString = String(data: captionsData, encoding: .utf8) {
-            print("📺 YouTubeService: Raw captions response: \(jsonString)")
-        }
-        #endif
-
-        switch httpResponse.statusCode {
-        case 200:
-            let captionsResponse = try JSONDecoder().decode(CaptionsResponse.self, from: captionsData)
-            
-            // Priority: Standard captions > Auto-generated captions
-            let caption = captionsResponse.items.first { caption in
-                caption.snippet.trackKind == "standard"
-            } ?? captionsResponse.items.first
-            
-            guard let selectedCaption = caption else {
-                #if DEBUG
-                print("📺 YouTubeService: No captions available for video: \(videoId)")
-                #endif
-                throw YouTubeError.transcriptNotAvailable
-            }
-            
-            #if DEBUG
-            print("""
-            📺 YouTubeService: Selected caption:
-            - ID: \(selectedCaption.id)
-            - Language: \(selectedCaption.snippet.language)
-            - Track Kind: \(selectedCaption.snippet.trackKind)
-            - Status: \(selectedCaption.snippet.status)
-            """)
-            #endif
-
-            // Download selected transcript
-            let transcriptURL = URL(string: "\(YouTubeConfig.apiBaseURL)/captions/\(selectedCaption.id)")!
-                .appendingQueryItems([
-                    "key": apiKey,
-                    "tfmt": "srt"  // Request SRT format for better parsing
-                ])
-
-            let (transcriptData, transcriptResponse) = try await session.data(from: transcriptURL)
-            
-            guard let transcriptHTTPResponse = transcriptResponse as? HTTPURLResponse else {
-                throw YouTubeError.invalidResponse
-            }
-
-            #if DEBUG
-            print("📺 YouTubeService: Transcript response status: \(transcriptHTTPResponse.statusCode)")
-            if let transcriptString = String(data: transcriptData, encoding: .utf8) {
-                print("📺 YouTubeService: Raw transcript response: \(transcriptString)")
-            }
-            #endif
-
-            switch transcriptHTTPResponse.statusCode {
-            case 200:
-                return String(decoding: transcriptData, as: UTF8.self)
-            case 403:
-                throw YouTubeError.apiError(YouTubeConfig.errorMessages["invalidAPIKey"] ?? "API Error")
-            case 429:
-                throw YouTubeError.rateLimitExceeded
-            default:
-                throw YouTubeError.apiError("HTTP \(transcriptHTTPResponse.statusCode)")
-            }
-            
-        case 429:
-            throw YouTubeError.rateLimitExceeded
-        default:
-            throw YouTubeError.apiError("HTTP \(httpResponse.statusCode)")
-        }
+        return try await fetchRawTranscript(videoId: videoId)
     }
     
     func getVideoMetadata(videoId: String) async throws -> YouTubeConfig.VideoMetadata {
         guard !videoId.isEmpty else {
-            #if DEBUG
+#if DEBUG
             print("📺 YouTubeService: Invalid video ID provided")
-            #endif
+#endif
             throw YouTubeError.invalidVideoId
         }
         
-        if let cachedData = YouTubeCacheManager.shared.getCachedResponse(for: videoId),
-           let metadata = try? JSONDecoder().decode(YouTubeConfig.VideoMetadata.self, from: cachedData) {
-            #if DEBUG
-            print("📺 YouTubeService: Returning cached metadata for video: \(videoId)")
-            #endif
-            return metadata
+        guard isSignedIn() else {
+            throw YouTubeError.apiError("Not signed in with Google")
         }
         
-        let metadataURL = URL(string: "\(YouTubeConfig.apiBaseURL)/videos")!
-            .appendingQueryItems([
-                "id": videoId,
-                "key": apiKey,
-                "part": "snippet,contentDetails"
-            ])
+        let parts = ["snippet", "contentDetails"]
+        let query = GTLRYouTubeQuery_VideosList.query(withPart: parts)
+        query.identifier = [videoId]
         
-        #if DEBUG
-        print("📺 YouTubeService: Fetching metadata for video: \(videoId)")
-        print("📺 YouTubeService: URL: \(metadataURL)")
-        #endif
-        
-        let (data, response) = try await session.data(from: metadataURL)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw YouTubeError.invalidResponse
-        }
-        
-        #if DEBUG
-        print("📺 YouTubeService: Response status code: \(httpResponse.statusCode)")
-        if let jsonString = String(data: data, encoding: .utf8) {
-            print("📺 YouTubeService: Raw JSON response: \(jsonString)")
-        }
-        #endif
-        
-        switch httpResponse.statusCode {
-        case 200:
-            do {
-                let decoder = JSONDecoder()
-                let response = try decoder.decode(VideoListResponse.self, from: data)
-                guard let metadata = response.items.first else {
-                    throw YouTubeError.invalidVideoId
+        let result = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<YouTubeConfig.VideoMetadata, Error>) in
+            
+            service.executeQuery(query) { (ticket, response, error) in
+                if let error = error {
+                    continuation.resume(throwing: YouTubeError.apiError(error.localizedDescription))
+                    return
                 }
-                YouTubeCacheManager.shared.setCachedResponse(data, for: videoId)
-                return metadata
-            } catch {
-                #if DEBUG
-                print("📺 YouTubeService: Decoding error - \(error)")
-                if let decodingError = error as? DecodingError {
-                    switch decodingError {
-                    case .keyNotFound(let key, let context):
-                        print("📺 YouTubeService: Key '\(key)' not found: \(context.debugDescription)")
-                    case .valueNotFound(let type, let context):
-                        print("📺 YouTubeService: Value of type '\(type)' not found: \(context.debugDescription)")
-                    case .typeMismatch(let type, let context):
-                        print("📺 YouTubeService: Type '\(type)' mismatch: \(context.debugDescription)")
-                    case .dataCorrupted(let context):
-                        print("📺 YouTubeService: Data corrupted: \(context.debugDescription)")
-                    @unknown default:
-                        print("📺 YouTubeService: Unknown decoding error: \(error)")
-                    }
+                
+                // Cast response to GTLRYouTube_VideoListResponse
+                guard let videoList = response as? GTLRYouTube_VideoListResponse,
+                      let video = videoList.items?.first else {
+                    continuation.resume(throwing: YouTubeError.invalidVideoId)
+                    return
                 }
-                #endif
-                throw YouTubeError.apiError("Failed to decode video metadata")
+                
+                let metadata = YouTubeConfig.VideoMetadata(
+                    id: video.identifier ?? "",
+                    title: video.snippet?.title ?? "",
+                    duration: video.contentDetails?.duration,
+                    thumbnailURL: video.snippet?.thumbnails?.high?.url,
+                    description: video.snippet?.descriptionProperty
+                )
+                
+                continuation.resume(returning: metadata)
             }
-            
-        case 403:
-            #if DEBUG
-            print("""
-            📺 YouTubeService: API Error
-            - Status Code: 403
-            - API Key length: \(apiKey.count)
-            - API Key: \(apiKey.prefix(10))...
-            """)
-            #endif
-            
-            if apiKey.isEmpty {
-                throw YouTubeError.apiError("YouTube API key not configured")
-            } else {
-                throw YouTubeError.apiError(YouTubeConfig.errorMessages["invalidAPIKey"] ?? "API Error")
-            }
-            
-        case 429:
-            #if DEBUG
-            print("📺 YouTubeService: Rate limit exceeded")
-            #endif
-            throw YouTubeError.rateLimitExceeded
-            
-        default:
-            #if DEBUG
-            print("📺 YouTubeService: HTTP Error \(httpResponse.statusCode)")
-            #endif
-            throw YouTubeError.apiError("HTTP \(httpResponse.statusCode)")
         }
+        
+        return result
+    }
+    
+    // MARK: - Authentication Methods
+    func signIn() async throws {
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first else {
+            throw YouTubeError.apiError("No window scene available")
+        }
+        
+        let gidSignInResult = try await GIDSignIn.sharedInstance.signIn(withPresenting: window.rootViewController!)
+        self.currentUser = gidSignInResult.user
+        
+        // Configure the YouTube service with the user's authentication
+        if let user = currentUser {
+            service.authorizer = user.fetcherAuthorizer
+        }
+        
+#if DEBUG
+        print("📺 YouTubeService: Successfully signed in with Google")
+#endif
+    }
+    
+    func isSignedIn() -> Bool {
+        return currentUser != nil
     }
     
     // MARK: - Private Methods
     private func fetchRawTranscript(videoId: String) async throws -> String {
-        #if DEBUG
+#if DEBUG
         print("📺 YouTubeService: Fetching raw transcript for video: \(videoId)")
-        #endif
+#endif
         
-        let captionsURL = URL(string: "\(YouTubeConfig.apiBaseURL)/captions")!
-            .appendingQueryItems([
-                "videoId": videoId,
-                "key": apiKey,
-                "part": "snippet"
-            ])
+        let query = GTLRYouTubeQuery_CaptionsList.query(withPart: ["snippet"], videoId: videoId)
         
-        let (captionsData, response) = try await session.data(from: captionsURL)
-        
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw YouTubeError.invalidResponse
-        }
-        
-        switch httpResponse.statusCode {
-        case 200:
-            let captionsResponse = try JSONDecoder().decode(CaptionsResponse.self, from: captionsData)
-            guard let captionId = captionsResponse.items.first?.id else {
-                #if DEBUG
-                print("📺 YouTubeService: No captions available for video: \(videoId)")
-                #endif
-                throw YouTubeError.transcriptNotAvailable
-            }
-            
-            let transcriptURL = URL(string: "\(YouTubeConfig.apiBaseURL)/captions/\(captionId)")!
-                .appendingQueryItems(["key": apiKey])
-            
-            let (transcriptData, transcriptResponse) = try await session.data(from: transcriptURL)
-            
-            guard let transcriptHTTPResponse = transcriptResponse as? HTTPURLResponse else {
-                throw YouTubeError.invalidResponse
-            }
-            
-            switch transcriptHTTPResponse.statusCode {
-            case 200:
-                return String(decoding: transcriptData, as: UTF8.self)
-            case 429:
-                #if DEBUG
-                print("📺 YouTubeService: Rate limit exceeded while fetching transcript")
-                #endif
-                throw YouTubeError.rateLimitExceeded
-            default:
-                #if DEBUG
-                print("📺 YouTubeService: HTTP error \(transcriptHTTPResponse.statusCode) while fetching transcript")
-                #endif
-                throw YouTubeError.apiError("HTTP \(transcriptHTTPResponse.statusCode)")
-            }
-            
-        case 429:
-            throw YouTubeError.rateLimitExceeded
-        default:
-            throw YouTubeError.apiError("HTTP \(httpResponse.statusCode)")
-        }
-    }
-}
+        let result = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String, Error>) in
+            service.executeQuery(query) { (ticket, response, error) in
+                if let error = error {
+#if DEBUG
+                    print("📺 YouTubeService: Error fetching captions - \(error)")
+#endif
+                    continuation.resume(throwing: YouTubeError.apiError(error.localizedDescription))
+                    return
+                }
+                
+                guard let captionList = response as? GTLRYouTube_CaptionListResponse,
+                      let captions = captionList.items,
+                      !captions.isEmpty else {
+                    continuation.resume(throwing: YouTubeError.transcriptNotAvailable)
+                    return
+                }
+                
+                guard let firstCaption = captions.first,
+                      let captionId = firstCaption.identifier else {
+                    continuation.resume(throwing: YouTubeError.transcriptNotAvailable)
+                    return
+                }
+                
+                // Create a direct URL request for caption download
+                guard let user = self.currentUser else {
+                    continuation.resume(throwing: YouTubeError.apiError("Not authenticated"))
+                    return
+                }
 
-// MARK: - Response Models
-private extension YouTubeService {
-    struct VideoListResponse: Codable {
-        let items: [YouTubeConfig.VideoMetadata]
-    }
-
-    struct CaptionsResponse: Codable {
-        let items: [Caption]
-        
-        // Add custom decoding
-        init(from decoder: Decoder) throws {
-            #if DEBUG
-            print("📺 YouTubeService: Decoding CaptionsResponse")
-            #endif
-            
-            let container = try decoder.container(keyedBy: CodingKeys.self)
-            do {
-                items = try container.decode([Caption].self, forKey: .items)
-                #if DEBUG
-                print("📺 YouTubeService: Successfully decoded \(items.count) captions")
-                #endif
-            } catch {
-                #if DEBUG
-                print("📺 YouTubeService: Error decoding items - \(error)")
-                print("📺 YouTubeService: Failed to decode captions response")
-                #endif
-                items = []
+                let accessToken = user.accessToken.tokenString
+                
+                let urlString = "https://www.googleapis.com/youtube/v3/captions/\(captionId)/download"
+                guard var urlComponents = URLComponents(string: urlString) else {
+                    continuation.resume(throwing: YouTubeError.apiError("Invalid URL"))
+                    return
+                }
+                
+                urlComponents.queryItems = [URLQueryItem(name: "tfmt", value: "srt")]
+                
+                guard let url = urlComponents.url else {
+                    continuation.resume(throwing: YouTubeError.apiError("Invalid URL"))
+                    return
+                }
+                
+                var request = URLRequest(url: url)
+                request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+                
+#if DEBUG
+                print("📺 YouTubeService: Requesting caption download from: \(url)")
+#endif
+                
+                URLSession.shared.dataTask(with: request) { data, response, error in
+                    if let error = error {
+#if DEBUG
+                        print("📺 YouTubeService: Caption download error - \(error)")
+#endif
+                        continuation.resume(throwing: YouTubeError.apiError(error.localizedDescription))
+                        return
+                    }
+                    
+                    guard let data = data,
+                          let transcript = String(data: data, encoding: .utf8) else {
+                        continuation.resume(throwing: YouTubeError.invalidResponse)
+                        return
+                    }
+                    
+#if DEBUG
+                    print("📺 YouTubeService: Successfully downloaded caption data")
+#endif
+                    
+                    continuation.resume(returning: transcript)
+                }.resume()
             }
         }
-    }
-
-    struct Caption: Codable {
-        let id: String
-        let snippet: CaptionSnippet
         
-        enum CodingKeys: String, CodingKey {
-            case id
-            case snippet
-        }
-    }
-    
-    struct CaptionSnippet: Codable {
-        let videoId: String
-        let language: String
-        let name: String
-        let trackKind: String
-        let lastUpdated: String
-        let audioTrackType: String
-        let isCC: Bool
-        let isLarge: Bool
-        let isEasyReader: Bool
-        let isDraft: Bool
-        let isAutoSynced: Bool
-        let status: String
-        
-        enum CodingKeys: String, CodingKey {
-            case videoId
-            case language
-            case name
-            case trackKind
-            case lastUpdated
-            case audioTrackType
-            case isCC
-            case isLarge
-            case isEasyReader
-            case isDraft
-            case isAutoSynced
-            case status
-        }
+        return result
     }
 }
 

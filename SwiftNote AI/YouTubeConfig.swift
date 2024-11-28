@@ -30,8 +30,28 @@ enum YouTubeConfig {
         let title: String
         let duration: String?
         let thumbnailURL: String?
+        let description: String?
         
         var videoID: String { id }
+        
+        // Add the new initializer HERE, right after properties but before CodingKeys
+        init(id: String, title: String, duration: String?, thumbnailURL: String?, description: String?) {
+            self.id = id
+            self.title = title
+            self.duration = duration
+            self.thumbnailURL = thumbnailURL
+            self.description = description
+            
+            #if DEBUG
+            print("""
+            📺 VideoMetadata: Creating metadata
+            - ID: \(id)
+            - Title: \(title)
+            - Duration: \(duration ?? "nil")
+            - Description: \(description ?? "nil")
+            """)
+            #endif
+        }
         
         enum CodingKeys: String, CodingKey {
             case id
@@ -42,6 +62,7 @@ enum YouTubeConfig {
         enum SnippetKeys: String, CodingKey {
             case title
             case thumbnails
+            case description
         }
         
         enum ThumbnailKeys: String, CodingKey {
@@ -65,6 +86,7 @@ enum YouTubeConfig {
             // Decode snippet
             let snippet = try container.nestedContainer(keyedBy: SnippetKeys.self, forKey: .snippet)
             title = try snippet.decode(String.self, forKey: .title)
+            description = try snippet.decodeIfPresent(String.self, forKey: .description)
             
             // Decode thumbnails (optional)
             if let thumbnails = try? snippet.nestedContainer(keyedBy: ThumbnailKeys.self, forKey: .thumbnails) {
@@ -96,6 +118,7 @@ enum YouTubeConfig {
             // Encode snippet
             var snippet = container.nestedContainer(keyedBy: SnippetKeys.self, forKey: .snippet)
             try snippet.encode(title, forKey: .title)
+            try snippet.encodeIfPresent(description, forKey: .description)
             
             // Encode thumbnails (if available)
             if let thumbnailURL = thumbnailURL {
