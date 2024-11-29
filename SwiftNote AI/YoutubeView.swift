@@ -1,42 +1,4 @@
 import SwiftUI
-import UIKit
-
-struct TextView: UIViewRepresentable {
-    let text: String
-    
-    func makeUIView(context: Context) -> UITextView {
-        let textView = UITextView()
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.font = .preferredFont(forTextStyle: .body)
-        textView.backgroundColor = .white
-        textView.textColor = .black
-        textView.textContainer.lineFragmentPadding = 0
-        textView.textContainerInset = .zero
-        
-        // Force layout attributes
-        let attributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: UIColor.black,
-            .backgroundColor: UIColor.white,
-            .font: UIFont.preferredFont(forTextStyle: .body)
-        ]
-        let attributedText = NSAttributedString(string: text, attributes: attributes)
-        textView.attributedText = attributedText
-        
-        return textView
-    }
-    
-    func updateUIView(_ uiView: UITextView, context: Context) {
-        // Update with attributed text to maintain formatting
-        let attributes: [NSAttributedString.Key: Any] = [
-            .foregroundColor: UIColor.black,
-            .backgroundColor: UIColor.white,
-            .font: UIFont.preferredFont(forTextStyle: .body)
-        ]
-        let attributedText = NSAttributedString(string: text, attributes: attributes)
-        uiView.attributedText = attributedText
-    }
-}
 
 struct YouTubeView: View {
     @StateObject private var viewModel = YouTubeViewModel()
@@ -96,11 +58,22 @@ struct YouTubeView: View {
                         
                         // Transcript Content
                         ScrollView {
-                            TextView(text: viewModel.transcript)
-                                .padding()
-                                .background(Color(.systemBackground))
-                                .cornerRadius(10)
-                                .padding(.horizontal)
+                            VStack(alignment: .leading) {
+                                ForEach(viewModel.transcript.components(separatedBy: "\n\n"), id: \.self) { paragraph in
+                                    if !paragraph.isEmpty {
+                                        Text(paragraph)
+                                            .font(.body)
+                                            .foregroundStyle(.primary)  // Use system color that adapts to dark/light mode
+                                            .textSelection(.enabled)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.vertical, 4)
+                                    }
+                                }
+                            }
+                            .padding()
+                            .background(Theme.Colors.secondaryBackground)
+                            .cornerRadius(10)
+                            .padding(.horizontal)
                         }
                     }
                     .background(Color(.systemGray6))

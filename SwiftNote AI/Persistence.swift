@@ -15,15 +15,20 @@ final class PersistenceController: NSObject {
         
         // Create sample data
         let sampleNote = Note(context: viewContext)
+        sampleNote.id = UUID()
         sampleNote.timestamp = Date()
+        sampleNote.lastModified = Date()
         sampleNote.title = "Sample Note"
         sampleNote.originalContent = "This is a sample note".data(using: .utf8)
         sampleNote.sourceType = "text"
+        sampleNote.isFavorite = false
+        sampleNote.processingStatus = "completed"
         
         let sampleFolder = Folder(context: viewContext)
         sampleFolder.id = UUID()
         sampleFolder.name = "Sample Folder"
         sampleFolder.timestamp = Date()
+        sampleFolder.color = "blue"
         
         do {
             try viewContext.save()

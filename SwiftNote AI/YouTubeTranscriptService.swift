@@ -186,7 +186,7 @@ final class YouTubeTranscriptService {
             }
         }
         
-        // Combine transcript parts into proper paragraphs
+        // Combine transcript parts into proper paragraphs with improved formatting
         let formattedTranscript = transcriptParts
             .enumerated()
             .map { index, text in
@@ -202,7 +202,16 @@ final class YouTubeTranscriptService {
                 }
             }
             .joined()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: .whitespaces)
+        
+        #if DEBUG
+        print("""
+        📺 YouTubeTranscriptService: Transcript processing completed
+        - Parts count: \(transcriptParts.count)
+        - Final length: \(formattedTranscript.count)
+        - First 100 chars: \(String(formattedTranscript.prefix(100)))
+        """)
+        #endif
         
         return formattedTranscript
     }
