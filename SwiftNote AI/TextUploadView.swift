@@ -2,6 +2,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 import CoreData
 import Combine
+import PDFKit
+import Vision
+import UIKit
+import Foundation
 
 // MARK: - Text Upload Error
 enum TextUploadError: LocalizedError {
@@ -78,7 +82,10 @@ final class TextUploadViewModel: ObservableObject {
     
     // MARK: - Private Properties
     private let viewContext: NSManagedObjectContext
-    let supportedTypes: [UTType] = [.text, .plainText, .rtf, .pdf]
+    let supportedTypes: [UTType] = [.text, .plainText, .rtf, .pdf, 
+                                   UTType("com.microsoft.word.doc")!,
+                                   UTType("org.openxmlformats.wordprocessingml.document")!,
+                                   UTType("net.daringfireball.markdown")!]
     private var originalFileURL: URL?
     
     init(context: NSManagedObjectContext) {
@@ -143,9 +150,51 @@ final class TextUploadViewModel: ObservableObject {
             return try String(contentsOf: url, encoding: .utf8)
             
         case "pdf":
-            // For PDF, we'd use PDFKit to extract text
-            // This is a placeholder for now
-            throw TextUploadError.unsupportedFileType("PDF")
+            guard let pdf = CGPDFDocument(url as CFURL),
+                  let page = pdf.page(at: 1) else {
+                throw TextUploadError.readError(NSError(domain: "PDFError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to read PDF"]))
+            }
+            
+            let pageRect = page.getBoxRect(.mediaBox)
+            let renderer = UIGraphicsImageRenderer(size: pageRect.size)
+            let img = renderer.image { ctx in
+                UIColor.white.set()
+                ctx.fill(pageRect)
+                
+                ctx.cgContext.translateBy(x: 0.0, y: pageRect.size.height)
+                ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
+                
+                ctx.cgContext.drawPDFPage(page)
+            }
+            
+            let requestHandler = VNImageRequestHandler(cgImage: img.cgImage!, options: [:])
+            let request = VNRecognizeTextRequest()
+            try requestHandler.perform([request])
+            
+            guard let observations = request.results else {
+                throw TextUploadError.readError(NSError(domain: "OCRError", code: -1, userInfo: [NSLocalizedDescriptionKey: "No text found in PDF"]))
+            }
+            
+            return observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+            
+        case "doc", "docx":
+            // For iOS, we'll use NSAttributedString to read Word documents
+            let options = [NSAttributedString.DocumentReadingOptionKey.documentType: NSAttributedString.DocumentType.rtfd]
+            let data = try Data(contentsOf: url)
+            
+            if let attributedString = try? NSAttributedString(data: data, options: options, documentAttributes: nil) {
+                return attributedString.string
+            }
+            
+            // Fallback to trying RTF if RTFD fails
+            let rtfOptions = [NSAttributedString.DocumentReadingOptionKey.documentType: NSAttributedString.DocumentType.rtf]
+            if let attributedString = try? NSAttributedString(data: data, options: rtfOptions, documentAttributes: nil) {
+                return attributedString.string
+            }
+            
+            throw TextUploadError.readError(NSError(domain: "DocumentError", 
+                                                  code: -1, 
+                                                  userInfo: [NSLocalizedDescriptionKey: "Unable to read document content"]))
             
         default:
             throw TextUploadError.unsupportedFileType(url.pathExtension)
@@ -303,7 +352,7 @@ struct TextUploadView: View {
                 .fontWeight(.bold)
                 .foregroundColor(Theme.Colors.text)
             
-            Text("Import text from files like TXT, RTF, or DOC")
+            Text("Import text from files like TXT, RTF, DOC or PDF")
                 .font(.body)
                 .foregroundColor(Theme.Colors.secondaryText)
                 .multilineTextAlignment(.center)
@@ -348,7 +397,7 @@ struct TextUploadView: View {
                     .foregroundColor(Theme.Colors.secondaryText)
                 
                 HStack(spacing: Theme.Spacing.md) {
-                    ForEach(["TXT", "RTF", "DOC", "DOCX"], id: \.self) { format in
+                    ForEach(["TXT", "RTF", "DOC", "DOCX", "PDF"], id: \.self) { format in
                         HStack(spacing: Theme.Spacing.xs) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green.gradient)
