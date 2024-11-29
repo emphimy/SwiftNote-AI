@@ -1,7 +1,7 @@
 import SwiftUI
 
 // MARK: - Note Card Configuration
-struct NoteCardConfiguration: Identifiable, Equatable {
+struct NoteCardConfiguration: Identifiable {
     let id = UUID()
     var title: String
     let date: Date
@@ -9,6 +9,7 @@ struct NoteCardConfiguration: Identifiable, Equatable {
     let sourceType: NoteSourceType
     let isFavorite: Bool
     var tags: [String]
+    var metadata: [String: Any]?
     var audioURL: URL? {
         switch sourceType {
         case .audio, .video:
@@ -31,17 +32,6 @@ struct NoteCardConfiguration: Identifiable, Equatable {
         return Color(colorName)
     }
     
-    static func == (lhs: NoteCardConfiguration, rhs: NoteCardConfiguration) -> Bool {
-        lhs.id == rhs.id &&
-        lhs.title == rhs.title &&
-        lhs.date == rhs.date &&
-        lhs.preview == rhs.preview &&
-        lhs.sourceType == rhs.sourceType &&
-        lhs.isFavorite == rhs.isFavorite &&
-        lhs.tags == rhs.tags &&
-        lhs.audioURL == rhs.audioURL &&
-        lhs.folder?.objectID == rhs.folder?.objectID 
-    }
     // MARK: - Initialization
     init(
         title: String,
@@ -50,7 +40,8 @@ struct NoteCardConfiguration: Identifiable, Equatable {
         sourceType: NoteSourceType,
         isFavorite: Bool = false,
         tags: [String] = [],
-        folder: Folder? = nil
+        folder: Folder? = nil,
+        metadata: [String: Any]? = nil
     ) {
         self.title = title
         self.date = date
@@ -59,6 +50,7 @@ struct NoteCardConfiguration: Identifiable, Equatable {
         self.isFavorite = isFavorite
         self.tags = tags
         self.folder = folder
+        self.metadata = metadata
         
         #if DEBUG
         print("""
@@ -84,6 +76,7 @@ struct NoteCardConfiguration: Identifiable, Equatable {
         - Favorite: \(isFavorite)
         - Tags: \(tags.joined(separator: ", "))
         - Audio URL: \(audioURL?.absoluteString ?? "none")
+        - Metadata: \(String(describing: metadata))
         """
     }
 
@@ -246,6 +239,29 @@ struct NoteCardConfiguration: Identifiable, Equatable {
                 .degrees(isShowingAnswer ? 180 : 0),
                 axis: (x: 0, y: 1, z: 0)
             )
+        }
+    }
+}
+
+extension NoteCardConfiguration: Equatable {
+    static func == (lhs: NoteCardConfiguration, rhs: NoteCardConfiguration) -> Bool {
+        guard lhs.id == rhs.id,
+              lhs.title == rhs.title,
+              lhs.date == rhs.date,
+              lhs.preview == rhs.preview,
+              lhs.sourceType == rhs.sourceType,
+              lhs.isFavorite == rhs.isFavorite,
+              lhs.tags == rhs.tags,
+              lhs.folder?.objectID == rhs.folder?.objectID else {
+            return false
+        }
+        
+        // Compare metadata dictionaries if they exist
+        if let lhsMetadata = lhs.metadata, let rhsMetadata = rhs.metadata {
+            return NSDictionary(dictionary: lhsMetadata).isEqual(to: rhsMetadata)
+        } else {
+            // If both are nil, return true. If only one is nil, return false
+            return lhs.metadata == nil && rhs.metadata == nil
         }
     }
 }

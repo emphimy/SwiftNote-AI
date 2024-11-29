@@ -15,6 +15,13 @@ enum YouTubeError: LocalizedError {
     }
 }
 
+// MARK: - Video Metadata
+struct YouTubeVideoMetadata {
+    let title: String
+    let description: String
+    let videoId: String
+}
+
 // MARK: - YouTube Service
 class YouTubeService {
     // MARK: - Private Properties
@@ -28,5 +35,15 @@ class YouTubeService {
     // MARK: - Public Methods
     func getTranscript(videoId: String) async throws -> String {
         return try await transcriptService.getTranscript(videoId: videoId)
+    }
+    
+    func getVideoMetadata(videoId: String) async throws -> YouTubeVideoMetadata {
+        // For now, return a basic metadata object with just the video ID as title
+        // This can be expanded later to fetch actual metadata from YouTube API
+        return YouTubeVideoMetadata(
+            title: "YouTube Video \(videoId)",
+            description: "Video content from YouTube",
+            videoId: videoId
+        )
     }
 }

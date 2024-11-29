@@ -27,15 +27,32 @@ final class ReadTabViewModel: ObservableObject {
     }
     
     func loadContent() async {
-            isLoading = true
-            defer { isLoading = false }
-            
-            do {
+        isLoading = true
+        defer { isLoading = false }
+        
+        do {
+            // First check metadata for AI generated content
+            if let aiContent = note.metadata?["aiGeneratedContent"] as? String {
+                #if DEBUG
+                print("📖 ReadTabViewModel: Using AI generated content")
+                #endif
+                let blocks = try parseContent(aiContent)
+                content = NoteContent(
+                    rawText: aiContent,
+                    formattedContent: blocks,
+                    summary: nil,
+                    highlights: []
+                )
+            } else {
+                // Fallback to preview if no AI content
                 guard !note.preview.isEmpty else {
                     throw NSError(domain: "ReadTab", code: 1001,
                                  userInfo: [NSLocalizedDescriptionKey: "Note content is empty"])
                 }
                 
+                #if DEBUG
+                print("📖 ReadTabViewModel: Using preview content")
+                #endif
                 let blocks = try parseContent(note.preview)
                 content = NoteContent(
                     rawText: note.preview,
@@ -43,35 +60,48 @@ final class ReadTabViewModel: ObservableObject {
                     summary: nil,
                     highlights: []
                 )
-                
-                #if DEBUG
-                print("📖 ReadTabViewModel: Content loaded successfully")
-                #endif
-            } catch {
-                #if DEBUG
-                print("📖 ReadTabViewModel: Error loading content - \(error)")
-                #endif
-                errorMessage = "Failed to load content: \(error.localizedDescription)"
             }
+            
+            #if DEBUG
+            print("📖 ReadTabViewModel: Content loaded successfully with \(content?.formattedContent.count ?? 0) blocks")
+            #endif
+        } catch {
+            #if DEBUG
+            print("📖 ReadTabViewModel: Error loading content - \(error)")
+            #endif
+            errorMessage = "Failed to load content: \(error.localizedDescription)"
         }
+    }
     
     private func parseContent(_ text: String) throws -> [ContentBlock] {
         guard !text.isEmpty else {
+            #if DEBUG
+            print("📖 ReadTabViewModel: Cannot parse empty text")
+            #endif
             throw NSError(domain: "ReadTab", code: 1002,
                          userInfo: [NSLocalizedDescriptionKey: "Cannot parse empty text"])
         }
         
-        return text.split(separator: "\n").map { line in
-            if line.hasPrefix("# ") {
-                return ContentBlock(type: .heading1, content: String(line.dropFirst(2)))
-            } else if line.hasPrefix("## ") {
-                return ContentBlock(type: .heading2, content: String(line.dropFirst(3)))
-            } else if line.hasPrefix("- ") {
-                return ContentBlock(type: .bulletList, content: String(line.dropFirst(2)))
-            } else if line.hasPrefix("```") {
-                return ContentBlock(type: .codeBlock(language: nil), content: String(line.dropFirst(3)))
+        #if DEBUG
+        print("📖 ReadTabViewModel: Parsing content of length: \(text.count)")
+        #endif
+        
+        return text.components(separatedBy: "\n").compactMap { line in
+            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmedLine.isEmpty else { return nil }
+            
+            if trimmedLine.hasPrefix("# ") {
+                return ContentBlock(type: .heading1, content: String(trimmedLine.dropFirst(2)))
+            } else if trimmedLine.hasPrefix("## ") {
+                return ContentBlock(type: .heading2, content: String(trimmedLine.dropFirst(3)))
+            } else if trimmedLine.hasPrefix("- ") {
+                return ContentBlock(type: .bulletList, content: String(trimmedLine.dropFirst(2)))
+            } else if trimmedLine.hasPrefix("`") && trimmedLine.hasSuffix("`") {
+                return ContentBlock(type: .codeBlock(language: nil), content: String(trimmedLine.dropFirst().dropLast()))
+            } else if trimmedLine.hasPrefix("> ") {
+                return ContentBlock(type: .quote, content: String(trimmedLine.dropFirst(2)))
             } else {
-                return ContentBlock(type: .paragraph, content: String(line))
+                return ContentBlock(type: .paragraph, content: trimmedLine)
             }
         }
     }

@@ -6,6 +6,7 @@ import Combine
 // MARK: - Tab Models
 enum StudyTab: String, CaseIterable {
     case read = "Read"
+    case transcript = "Transcript"
     case quiz = "Quiz"
     case flashcards = "Flashcards"
     case chat = "Chat"
@@ -13,6 +14,7 @@ enum StudyTab: String, CaseIterable {
     var icon: String {
         switch self {
         case .read: return "doc.text"
+        case .transcript: return "text.quote"
         case .quiz: return "checkmark.circle"
         case .flashcards: return "rectangle.stack"
         case .chat: return "bubble.left.and.bubble.right"
@@ -27,7 +29,7 @@ struct NoteStudyTabs: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Custom Tab Bar
+            // Tab Bar
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: Theme.Spacing.md) {
                     ForEach(StudyTab.allCases, id: \.self) { tab in
@@ -38,33 +40,66 @@ struct NoteStudyTabs: View {
                         ) {
                             withAnimation(.spring(response: 0.3)) {
                                 selectedTab = tab
+                                #if DEBUG
+                                print("📚 NoteStudyTabs: Tab selected - \(tab)")
+                                #endif
                             }
                         }
                     }
                 }
-                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .padding(.vertical, Theme.Spacing.md)
             }
+            .background(Theme.Colors.secondaryBackground)
+            .cornerRadius(Theme.Layout.cornerRadius)
+            .padding(.horizontal, Theme.Spacing.md)
             .padding(.vertical, Theme.Spacing.sm)
-            .background(Theme.Colors.background)
-            .standardShadow()
             
-            // Tab Content
-            TabView(selection: $selectedTab) {
-                Group {
+            // Content Area
+            Group {
+                switch selectedTab {
+                case .read:
                     ReadTabView(note: note)
-                        .tag(StudyTab.read)
-                    
+                        .onAppear {
+                            #if DEBUG
+                            print("📚 NoteStudyTabs: Switched to Read tab")
+                            #endif
+                        }
+                case .transcript:
+                    TranscriptTabView(note: note)
+                        .onAppear {
+                            #if DEBUG
+                            print("📚 NoteStudyTabs: Switched to Transcript tab")
+                            #endif
+                        }
+                case .quiz:
                     QuizTabView(note: note)
-                        .tag(StudyTab.quiz)
-                    
+                        .onAppear {
+                            #if DEBUG
+                            print("📚 NoteStudyTabs: Switched to Quiz tab")
+                            #endif
+                        }
+                case .flashcards:
                     FlashcardsTabView(note: note)
-                        .tag(StudyTab.flashcards)
-                    
+                        .onAppear {
+                            #if DEBUG
+                            print("📚 NoteStudyTabs: Switched to Flashcards tab")
+                            #endif
+                        }
+                case .chat:
                     ChatTabView(note: note)
-                        .tag(StudyTab.chat)
+                        .onAppear {
+                            #if DEBUG
+                            print("📚 NoteStudyTabs: Switched to Chat tab")
+                            #endif
+                        }
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
+        }
+        .onAppear {
+            #if DEBUG
+            print("📚 NoteStudyTabs: View appeared - Initial tab: \(selectedTab)")
+            #endif
         }
     }
 }
@@ -77,22 +112,30 @@ private struct TabButton: View {
     let action: () -> Void
     
     var body: some View {
-        Button(action: action) {
+        Button(action: {
+            #if DEBUG
+            print("📚 TabButton: Tapped - \(title)")
+            #endif
+            action()
+        }) {
             VStack(spacing: Theme.Spacing.xxs) {
                 Image(systemName: icon)
                     .font(.system(size: 20))
+                    .foregroundColor(isSelected ? Theme.Colors.primary : Theme.Colors.secondaryText)
                 
                 Text(title)
                     .font(Theme.Typography.caption)
+                    .foregroundColor(isSelected ? Theme.Colors.primary : Theme.Colors.secondaryText)
             }
-            .foregroundColor(isSelected ? Theme.Colors.primary : Theme.Colors.secondaryText)
             .padding(.horizontal, Theme.Spacing.sm)
             .padding(.vertical, Theme.Spacing.xs)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
                     .fill(isSelected ? Theme.Colors.primary.opacity(0.1) : Color.clear)
             )
+            .contentShape(Rectangle())
         }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
@@ -111,61 +154,38 @@ struct ReadTabView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Controls Bar
-            HStack {
-                SearchBar(text: $viewModel.searchText)
-                
-                Button(action: {
+        ScrollView {
+            if viewModel.isLoading {
+                LoadingIndicator(message: "Loading content...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.top, 100)
+            } else if let error = viewModel.errorMessage {
+                ErrorView(
+                    error: NSError(
+                        domain: "ReadTab",
+                        code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: error]
+                    )
+                ) {
                     #if DEBUG
-                    print("📖 ReadTabView: Decreasing text size")
+                    print("📖 ReadTabView: Retrying content load")
                     #endif
-                    viewModel.adjustTextSize(-2)
-                }) {
-                    Image(systemName: "textformat.size.smaller")
-                        .foregroundColor(Theme.Colors.primary)
-                }
-                
-                Button(action: {
-                    #if DEBUG
-                    print("📖 ReadTabView: Increasing text size")
-                    #endif
-                    viewModel.adjustTextSize(2)
-                }) {
-                    Image(systemName: "textformat.size.larger")
-                        .foregroundColor(Theme.Colors.primary)
-                }
-            }
-            .padding(.horizontal)
-            
-            // Content
-            ScrollView {
-                if viewModel.isLoading {
-                    LoadingIndicator(message: "Loading content...")
-                } else if let error = viewModel.errorMessage {
-                    ErrorView(
-                        error: NSError(
-                            domain: "ReadTab",
-                            code: -1,
-                            userInfo: [NSLocalizedDescriptionKey: error]
-                        )
-                    ) {
-                        #if DEBUG
-                        print("📖 ReadTabView: Retrying content load")
-                        #endif
-                        Task {
-                            await viewModel.loadContent()
-                        }
+                    Task {
+                        await viewModel.loadContent()
                     }
-                    .padding()
-                } else if let content = viewModel.content {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                        ForEach(content.formattedContent) { block in
-                            ContentBlockView(block: block, fontSize: viewModel.textSize)
-                        }
-                    }
-                    .padding()
                 }
+                .padding()
+            } else if let content = viewModel.content {
+                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    ForEach(content.formattedContent) { block in
+                        ContentBlockView(block: block, fontSize: viewModel.textSize)
+                    }
+                }
+                .padding()
+            } else {
+                Text("No content available")
+                    .foregroundColor(Theme.Colors.secondaryText)
+                    .padding()
             }
         }
         .task {
@@ -345,6 +365,45 @@ private struct ContentBlockView: View {
                 .font(.system(size: fontSize, weight: .regular, design: .serif))
                 .italic()
                 .padding(.leading)
+        }
+    }
+}
+
+// MARK: - Transcript Tab View
+struct TranscriptTabView: View {
+    let note: NoteCardConfiguration
+    @StateObject private var viewModel: TranscriptViewModel
+    
+    init(note: NoteCardConfiguration) {
+        self.note = note
+        self._viewModel = StateObject(wrappedValue: TranscriptViewModel(note: note))
+    }
+    
+    var body: some View {
+        ScrollView {
+            if viewModel.isLoading {
+                LoadingIndicator(message: "Loading transcript...")
+            } else if let error = viewModel.errorMessage {
+                ErrorView(
+                    error: NSError(
+                        domain: "TranscriptTab",
+                        code: -1,
+                        userInfo: [NSLocalizedDescriptionKey: error]
+                    )
+                ) {
+                    Task {
+                        await viewModel.loadTranscript()
+                    }
+                }
+                .padding()
+            } else if let transcript = viewModel.transcript {
+                Text(transcript)
+                    .font(.body)
+                    .padding()
+            }
+        }
+        .task {
+            await viewModel.loadTranscript()
         }
     }
 }

@@ -16,12 +16,12 @@ final class TranscriptViewModel: ObservableObject {
     @Published private(set) var segments: [TranscriptSegment] = []
     @Published private(set) var loadingState: TranscriptLoadingState = .idle
     @Published private(set) var searchResults: [TranscriptSearchResult] = []
+    @Published var transcript: String?
+    @Published var isLoading = false
+    @Published var errorMessage: String?
     @Published var currentTime: TimeInterval = 0 {
         didSet {
             updateHighlightedSegment()
-            #if DEBUG
-            print("📝 TranscriptVM: Current time updated to \(currentTime)")
-            #endif
         }
     }
     @Published var searchText: String = "" {
@@ -29,19 +29,17 @@ final class TranscriptViewModel: ObservableObject {
             performSearch()
         }
     }
-    @Published var editingSegment: TranscriptSegment?
     
     // MARK: - Private Properties
-    private let transcriptionService: TranscriptionServiceProtocol
+    private let note: NoteCardConfiguration?
     private var cancellables = Set<AnyCancellable>()
-    private var isEditingEnabled = false
     
     // MARK: - Initialization
-    init(transcriptionService: TranscriptionServiceProtocol = LiveTranscriptionService()) {
-        self.transcriptionService = transcriptionService
+    init(note: NoteCardConfiguration) {
+        self.note = note
         
         #if DEBUG
-        print("📝 TranscriptVM: Initializing with service: \(String(describing: type(of: transcriptionService)))")
+        print("📝 TranscriptVM: Initializing with note: \(note.title)")
         #endif
         
         setupSearchDebounce()
@@ -57,43 +55,27 @@ final class TranscriptViewModel: ObservableObject {
             .store(in: &cancellables)
     }
     
-    // MARK: - Transcript Generation
-    func generateTranscript(for url: URL) async {
-        if case .loading = loadingState {
-            #if DEBUG
-            print("📝 TranscriptVM: Already generating transcript")
-            #endif
-            return
-        }
+    // MARK: - Transcript Loading
+    func loadTranscript() async {
+        guard let note = note else { return }
         
-        // Update loading state - Remove message: label
-        loadingState = .loading("Generating transcript...")
+        isLoading = true
+        errorMessage = nil
         
         do {
-            #if DEBUG
-            print("📝 TranscriptVM: Starting transcript generation for \(url)")
-            #endif
-            
-            let newSegments = try await transcriptionService.transcribe(audioURL: url)
-            await MainActor.run {
-                self.segments = newSegments
-                // Update success state - Remove message: label
-                self.loadingState = .success("Transcript generated successfully")
+            // For now, we'll use the raw transcript stored in the note's metadata
+            if let rawTranscript = note.metadata?["rawTranscript"] as? String {
+                transcript = rawTranscript
+            } else {
+                throw NSError(domain: "TranscriptVM", code: 1001, userInfo: [
+                    NSLocalizedDescriptionKey: "No transcript found for this note"
+                ])
             }
-            
-            #if DEBUG
-            print("📝 TranscriptVM: Generated \(newSegments.count) segments")
-            #endif
         } catch {
-            #if DEBUG
-            print("📝 TranscriptVM: Error generating transcript - \(error)")
-            #endif
-            
-            await MainActor.run {
-                // Update error state - Remove message: label
-                self.loadingState = .error(error.localizedDescription)
-            }
+            errorMessage = error.localizedDescription
         }
+        
+        isLoading = false
     }
     
     // MARK: - Search
@@ -103,94 +85,30 @@ final class TranscriptViewModel: ObservableObject {
             return
         }
         
-        #if DEBUG
-        print("📝 TranscriptVM: Performing search for: \(searchText)")
-        #endif
-        
-        searchResults = transcriptionService.searchTranscript(segments, query: searchText)
-        
-        #if DEBUG
-        print("📝 TranscriptVM: Found \(searchResults.count) matches")
-        #endif
-    }
-    
-    // MARK: - Export
-    func exportTranscript(format: TranscriptExportFormat) throws -> Data {
-        #if DEBUG
-        print("📝 TranscriptVM: Exporting transcript in format: \(format)")
-        #endif
-        
-        do {
-            let data = try transcriptionService.exportTranscript(segments, format: format)
-            #if DEBUG
-            print("📝 TranscriptVM: Successfully exported transcript")
-            #endif
-            return data
-        } catch {
-            #if DEBUG
-            print("📝 TranscriptVM: Export failed - \(error)")
-            #endif
-            throw error
-        }
-    }
-    
-    // MARK: - Editing
-    func startEditing(_ segment: TranscriptSegment) {
-        #if DEBUG
-        print("📝 TranscriptVM: Starting edit for segment: \(segment.id)")
-        #endif
-        editingSegment = segment
-    }
-    
-    func updateSegment(_ segment: TranscriptSegment, newText: String) {
-        do {
-            #if DEBUG
-            print("📝 TranscriptVM: Updating segment text: \(segment.text) -> \(newText)")
-            #endif
-            
-            let updatedSegment = try transcriptionService.updateSegment(segment, newText: newText)
-            if let index = segments.firstIndex(where: { $0.id == segment.id }) {
-                segments[index] = updatedSegment
+        let results = segments.compactMap { segment -> TranscriptSearchResult? in
+            guard let range = segment.text.range(of: searchText, options: .caseInsensitive) else {
+                return nil
             }
-            editingSegment = nil
-        } catch {
-            #if DEBUG
-            print("📝 TranscriptVM: Error updating segment - \(error)")
-            #endif
+            return TranscriptSearchResult(segment: segment, range: range)
         }
-    }
-    
-    func cancelEditing() {
+        
+        searchResults = results
+        
         #if DEBUG
-        print("📝 TranscriptVM: Canceling segment edit")
+        print("📝 TranscriptVM: Found \(results.count) search results for '\(searchText)'")
         #endif
-        editingSegment = nil
     }
     
-    // MARK: - Navigation
-    func seekToSegment(_ segment: TranscriptSegment) -> TimeInterval {
-        #if DEBUG
-        print("📝 TranscriptVM: Seeking to segment at \(segment.startTime)")
-        #endif
-        return segment.startTime
-    }
-    
-    // MARK: - Private Methods
+    // MARK: - Segment Highlighting
     private func updateHighlightedSegment() {
         for (index, segment) in segments.enumerated() {
-            let shouldHighlight = currentTime >= segment.startTime && currentTime <= segment.endTime
-            if segment.isHighlighted != shouldHighlight {
-                segments[index].isHighlighted = shouldHighlight
+            if currentTime >= segment.startTime && currentTime < segment.endTime {
+                #if DEBUG
+                print("📝 TranscriptVM: Highlighted segment at index \(index)")
+                #endif
+                break
             }
         }
-    }
-    
-    // MARK: - Cleanup
-    deinit {
-        #if DEBUG
-        print("📝 TranscriptVM: Deinitializing")
-        #endif
-        cancellables.forEach { $0.cancel() }
     }
 }
 
@@ -200,11 +118,14 @@ extension TranscriptViewModel {
         !searchResults.isEmpty
     }
     
-    var isSearching: Bool {
-        !searchText.isEmpty
+    var hasSegments: Bool {
+        !segments.isEmpty
     }
     
-    var displaySegments: [TranscriptSegment] {
-        isSearching ? searchResults.map(\.segment) : segments
+    var isGeneratingTranscript: Bool {
+        if case .loading = loadingState {
+            return true
+        }
+        return false
     }
 }

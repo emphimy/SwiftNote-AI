@@ -2,18 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <!-- Google OAuth Client ID -->
-    <key>GIDClientID</key>
-    <string>17364962360-qjgkqlj8vs1les209p8j0pkfskl8ido8.apps.googleusercontent.com</string>
-    <key>CFBundleURLTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleURLSchemes</key>
-            <array>
-                <string>com.googleusercontent.apps.17364962360-qjgkqlj8vs1les209p8j0pkfskl8ido8</string>
-            </array>
-        </dict>
-    </array>
+
     <!-- App Transport Security -->
     <key>NSAppTransportSecurity</key>
     <dict>

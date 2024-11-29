@@ -1,15 +1,22 @@
 import SwiftUI
 
+// MARK: - Imports
+import Foundation
+import SwiftUI
+import UIKit
+
+// MARK: - YouTube View
 struct YouTubeView: View {
     @StateObject private var viewModel = YouTubeViewModel()
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.managedObjectContext) private var viewContext
     @FocusState private var isURLFieldFocused: Bool
     @State private var videoUrl: String = ""
     @State private var showingError = false
     @State private var errorMessage = ""
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: Theme.Spacing.xl) {
                     // Header Section
@@ -25,12 +32,12 @@ struct YouTubeView: View {
                             )
                             .padding(.top, Theme.Spacing.xl)
 
-                        Text("YouTube Transcript")
+                        Text("YouTube Notes")
                             .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(Theme.Colors.text)
 
-                        Text("Enter a YouTube URL to get its transcript")
+                        Text("Create AI-powered notes from YouTube videos")
                             .font(.body)
                             .foregroundColor(Theme.Colors.secondaryText)
                             .multilineTextAlignment(.center)
@@ -75,10 +82,17 @@ struct YouTubeView: View {
                         )
                         .animation(.easeInOut, value: isURLFieldFocused)
 
-                        Button(action: fetchTranscript) {
+                        Button(action: processVideo) {
                             HStack {
-                                Text("Get Transcript")
-                                Image(systemName: "arrow.right.circle.fill")
+                                if viewModel.isProcessing {
+                                    ProgressView()
+                                        .progressViewStyle(CircularProgressViewStyle())
+                                        .tint(.white)
+                                    Text(viewModel.processState)
+                                } else {
+                                    Text("Create Note")
+                                    Image(systemName: "arrow.right.circle.fill")
+                                }
                             }
                             .frame(maxWidth: .infinity)
                             .padding()
@@ -86,74 +100,11 @@ struct YouTubeView: View {
                             .foregroundColor(.white)
                             .cornerRadius(Theme.Layout.cornerRadius)
                         }
-                        .disabled(videoUrl.isEmpty)
+                        .disabled(videoUrl.isEmpty || viewModel.isProcessing)
                     }
                     .padding(.horizontal)
 
-                    // Transcript Section
-                    if !viewModel.transcript.isEmpty {
-                        VStack(spacing: Theme.Spacing.md) {
-                            // Info Bar
-                            HStack {
-                                Label("\(viewModel.transcript.count) characters", systemImage: "character.cursor.ibeam")
-                                    .font(.caption)
-                                    .foregroundColor(Theme.Colors.secondaryText)
-                                Spacer()
-                                Button(action: {
-                                    UIPasteboard.general.string = viewModel.transcript
-                                }) {
-                                    Label("Copy", systemImage: "doc.on.doc")
-                                        .font(.caption)
-                                        .foregroundColor(Theme.Colors.primary)
-                                }
-                            }
-                            .padding(.horizontal)
-
-                            // Transcript Content
-                            ScrollView {
-                                VStack(alignment: .leading) {
-                                    ForEach(viewModel.transcript.components(separatedBy: "\n\n"), id: \.self) { paragraph in
-                                        if !paragraph.isEmpty {
-                                            Text(paragraph)
-                                                .font(.body)
-                                                .foregroundColor(Theme.Colors.text)
-                                                .textSelection(.enabled)
-                                                .frame(maxWidth: .infinity, alignment: .leading)
-                                                .padding(.vertical, 4)
-                                        }
-                                    }
-                                }
-                                .padding()
-                                .background(Theme.Colors.secondaryBackground)
-                                .cornerRadius(Theme.Layout.cornerRadius)
-                                .padding(.horizontal)
-                            }
-                        }
-                    } else if !viewModel.isLoading {
-                        VStack(spacing: Theme.Spacing.md) {
-                            Image(systemName: "text.quote")
-                                .font(.largeTitle)
-                                .foregroundColor(Theme.Colors.secondaryText)
-                            Text("Enter a YouTube URL to get started")
-                                .font(.body)
-                                .foregroundColor(Theme.Colors.secondaryText)
-                        }
-                        .padding(.top, Theme.Spacing.xl)
-                    }
-
-                    if viewModel.isLoading {
-                        VStack(spacing: Theme.Spacing.md) {
-                            ProgressView()
-                                .scaleEffect(1.2)
-                            Text("Fetching transcript...")
-                                .font(.caption)
-                                .foregroundColor(Theme.Colors.secondaryText)
-                        }
-                        .padding()
-                        .background(Theme.Colors.secondaryBackground)
-                        .cornerRadius(Theme.Layout.cornerRadius)
-                        .padding(.horizontal)
-                    }
+                    Spacer()
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -165,72 +116,130 @@ struct YouTubeView: View {
                 }
             }
             .alert("Error", isPresented: $showingError) {
-                Button("OK", role: .cancel) { }
+                Button("OK") {
+                    errorMessage = ""
+                    showingError = false
+                }
             } message: {
                 Text(errorMessage)
+            }
+            .navigationDestination(isPresented: $viewModel.shouldNavigateToNote) {
+                if let note = viewModel.generatedNote {
+                    NoteDetailsView(note: note, context: viewContext)
+                }
             }
         }
     }
 
-    private func fetchTranscript() {
+    private func processVideo() {
         Task {
             do {
-                try await viewModel.fetchTranscript(from: videoUrl)
+                try await viewModel.processVideo(url: videoUrl)
             } catch {
-                showingError = true
                 errorMessage = error.localizedDescription
+                showingError = true
             }
         }
     }
 }
 
+// MARK: - YouTube ViewModel
 @MainActor
 class YouTubeViewModel: ObservableObject {
     private let youtubeService: YouTubeService
-    @Published var transcript: String = ""
-    @Published var isLoading: Bool = false
-
+    private let noteGenerationService: NoteGenerationService
+    
+    @Published var isProcessing = false
+    @Published var processState = ""
+    @Published var shouldNavigateToNote = false
+    @Published var generatedNote: NoteCardConfiguration?
+    @Published private(set) var loadingState: LoadingState = .idle
+    private var videoId: String?
+    
     init() {
         self.youtubeService = YouTubeService()
-    }
-
-    private func cleanupTranscript(_ text: String) -> String {
-        return text
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
-            .replacingOccurrences(of: "[Music]", with: "🎵 [Music]")
-            .replacingOccurrences(of: "\u{200B}", with: "") // Zero-width space
-            .replacingOccurrences(of: "\u{FEFF}", with: "") // Zero-width non-breaking space
-    }
-
-    func fetchTranscript(from url: String) async throws {
-        isLoading = true
-        transcript = ""
-
         do {
-            guard let videoId = extractVideoId(from: url) else {
+            self.noteGenerationService = try NoteGenerationService()
+        } catch {
+            fatalError("Failed to initialize NoteGenerationService: \(error)")
+        }
+    }
+    
+    private func validateURL(_ urlString: String) throws -> String {
+        guard let videoId = extractVideoId(from: urlString) else {
+            #if DEBUG
+            print("🎥 YouTubeViewModel: Invalid URL format: \(urlString)")
+            #endif
+            throw YouTubeError.invalidVideoId
+        }
+        self.videoId = videoId
+        return urlString
+    }
+    
+    func processVideo(url: String) async throws {
+        isProcessing = true
+        defer { isProcessing = false }
+        
+        do {
+            _ = try validateURL(url)
+            guard let videoId = self.videoId else {
                 throw YouTubeError.invalidVideoId
             }
-            let fetchedTranscript = try await youtubeService.getTranscript(videoId: videoId)
-            transcript = cleanupTranscript(fetchedTranscript)
-            isLoading = false
+            
+            #if DEBUG
+            print("🎥 YouTubeViewModel: Starting video processing for ID: \(videoId)")
+            #endif
+            
+            loadingState = .loading(message: "Extracting transcript...")
+            let transcript = try await youtubeService.getTranscript(videoId: videoId)
+            let metadata = try await youtubeService.getVideoMetadata(videoId: videoId)
+            
+            loadingState = .loading(message: "Generating note...")
+            let noteContent = try await noteGenerationService.generateNote(from: transcript)
+            
+            loadingState = .loading(message: "Generating title...")
+            let title = try await noteGenerationService.generateTitle(from: transcript)
+            
+            generatedNote = NoteCardConfiguration(
+                title: title,
+                date: Date(),
+                preview: noteContent,
+                sourceType: .video,
+                tags: ["YouTube", "AI Generated"],
+                metadata: [
+                    "rawTranscript": transcript,
+                    "videoId": videoId,
+                    "videoTitle": metadata.title,
+                    "aiGeneratedContent": noteContent
+                ]
+            )
+            
+            #if DEBUG
+            print("🎥 YouTubeViewModel: Note generation completed")
+            print("- Title: \(title)")
+            print("- Content Length: \(noteContent.count)")
+            #endif
+            
+            shouldNavigateToNote = true
+            loadingState = .success(message: "Note created successfully")
+            
         } catch {
-            isLoading = false
+            #if DEBUG
+            print("🎥 YouTubeViewModel: Error processing video - \(error)")
+            #endif
+            loadingState = .error(message: error.localizedDescription)
             throw error
         }
     }
-
+    
     private func extractVideoId(from url: String) -> String? {
-        // Handle various YouTube URL formats
         let patterns = [
             "(?<=v=)[^&]+",           // Standard YouTube URL
             "(?<=be/)[^&]+",          // Shortened youtu.be URL
             "(?<=embed/)[^&]+",       // Embedded player URL
             "(?<=videos/)[^&]+"       // Alternative video URL
         ]
-
+        
         for pattern in patterns {
             if let regex = try? NSRegularExpression(pattern: pattern),
                let match = regex.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)),
@@ -238,20 +247,12 @@ class YouTubeViewModel: ObservableObject {
                 return String(url[range])
             }
         }
-
+        
         // If no patterns match, check if the input is a direct video ID
         if url.count == 11 && url.range(of: "^[A-Za-z0-9_-]{11}$", options: .regularExpression) != nil {
             return url
         }
-
+        
         return nil
     }
 }
-
-#if DEBUG
-struct YouTubeView_Previews: PreviewProvider {
-    static var previews: some View {
-        YouTubeView()
-    }
-}
-#endif
