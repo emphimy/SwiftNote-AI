@@ -1,5 +1,3 @@
-// ContentView.swift
-
 import SwiftUI
 import CoreData
 import AVFoundation
@@ -256,6 +254,7 @@ private struct RefreshableScrollView<Content: View>: View {
 }
 
 // MARK: - Add Note Action Sheet
+// MARK: - Add Note Action Sheet
 private struct AddNoteActionSheet: View {
     @ObservedObject var viewModel: HomeViewModel
     
@@ -276,7 +275,7 @@ private struct AddNoteActionSheet: View {
                 viewModel.isShowingAddNote = false
                 viewModel.isShowingRecording = true
             },
-        
+            
             ActionCardItem(title: "Upload Audio", icon: "waveform", color: .orange) {
                 #if DEBUG
                 print("🏠 AddNoteSheet: Upload audio selected")
@@ -284,6 +283,7 @@ private struct AddNoteActionSheet: View {
                 viewModel.isShowingAddNote = false
                 viewModel.isShowingAudioUpload = true
             },
+            
             ActionCardItem(title: "Scan Text", icon: "doc.text.viewfinder", color: .green) {
                 #if DEBUG
                 print("🏠 AddNoteSheet: Scan text selected")
@@ -291,6 +291,7 @@ private struct AddNoteActionSheet: View {
                 viewModel.isShowingAddNote = false
                 viewModel.isShowingTextScan = true
             },
+            
             ActionCardItem(title: "Upload Text", icon: "doc.badge.arrow.up", color: .blue) {
                 #if DEBUG
                 print("🏠 AddNoteSheet: Upload text selected")
@@ -298,6 +299,7 @@ private struct AddNoteActionSheet: View {
                 viewModel.isShowingAddNote = false
                 viewModel.isShowingTextUpload = true
             },
+            
             ActionCardItem(title: "YouTube Video", icon: "video.fill", color: .red) {
                 #if DEBUG
                 print("🏠 AddNoteSheet: YouTube video selected")
@@ -305,24 +307,16 @@ private struct AddNoteActionSheet: View {
                 viewModel.isShowingAddNote = false
                 viewModel.isShowingYouTubeInput = true
             },
-            ActionCardItem(title: "Google Drive", icon: "externaldrive.fill", color: .blue) {
+            
+            ActionCardItem(title: "Web Link", icon: "link", color: .blue) {
                 #if DEBUG
-                print("🏠 AddNoteSheet: Google Drive selected")
+                print("🏠 AddNoteSheet: Web link selected")
                 #endif
                 viewModel.isShowingAddNote = false
-                viewModel.isShowingCloudStorageImport = true
-                viewModel.selectedCloudStorage = .googleDrive
-            },
-            ActionCardItem(title: "Dropbox", icon: "archivebox.fill", color: .blue) {
-                #if DEBUG
-                print("🏠 AddNoteSheet: Dropbox selected")
-                #endif
-                viewModel.isShowingAddNote = false
-                viewModel.isShowingCloudStorageImport = true
-                viewModel.selectedCloudStorage = .dropbox
+                viewModel.isShowingWebLinkInput = true
             }
-       ])
-   }
+        ])
+    }
 }
 
 // MARK: - Custom Add Button
@@ -490,7 +484,7 @@ struct ContentView: View {
             }
             .sheet(isPresented: $viewModel.isShowingAddNote) {
                 AddNoteActionSheet(viewModel: viewModel)
-                    .presentationDetents([.height(470)])
+                    .presentationDetents([.height(350)])
                     .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $viewModel.isShowingRecording) {
@@ -522,10 +516,8 @@ struct ContentView: View {
             .sheet(isPresented: $viewModel.isShowingTextScan) {
                 ScanTextView(context: viewContext)
             }
-            .sheet(isPresented: $viewModel.isShowingCloudStorageImport) {
-                if let provider = viewModel.selectedCloudStorage {
-                    CloudStorageImportView(context: viewContext, provider: provider)
-                }
+            .sheet(isPresented: $viewModel.isShowingWebLinkInput) {
+                WebLinkImportView(context: viewContext)
             }
         }
         .onAppear {

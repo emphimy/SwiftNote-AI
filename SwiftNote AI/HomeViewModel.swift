@@ -22,14 +22,8 @@ final class HomeViewModel: ObservableObject {
     @Published var isShowingTextUpload = false
     @Published var isShowingAudioUpload = false
     @Published var isShowingTextScan = false
-    @Published var isShowingCloudStorageImport = false
-    @Published var selectedCloudStorage: CloudStorageProvider?
+    @Published var isShowingWebLinkInput = false
     private var cancellables = Set<AnyCancellable>()
-    
-    enum CloudStorageProvider {
-        case googleDrive
-        case dropbox
-    }
     
     // MARK: - Folder Navigation
     @Published var currentFolder: Folder? {
