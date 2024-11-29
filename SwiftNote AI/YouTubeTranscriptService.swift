@@ -186,34 +186,27 @@ final class YouTubeTranscriptService {
             }
         }
         
-        // Combine transcript parts into proper paragraphs with improved formatting
-        let formattedTranscript = transcriptParts
-            .enumerated()
-            .map { index, text in
-                // Add period if the text doesn't end with punctuation
-                let needsPeriod = !text.hasSuffix(".") && !text.hasSuffix("!") && !text.hasSuffix("?")
-                let punctuatedText = needsPeriod ? text + "." : text
-                
-                // Add space or newline based on context
-                if index % 5 == 4 { // Create paragraphs every 5 sentences
-                    return punctuatedText + "\n\n"
-                } else {
-                    return punctuatedText + " "
-                }
-            }
-            .joined()
-            .trimmingCharacters(in: .whitespaces)
+        let finalTranscript = transcriptParts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "  ", with: " ")
+            .replacingOccurrences(of: "[Music]", with: "🎵 [Music]")
+            .replacingOccurrences(of: "\u{200B}", with: "")
+            .replacingOccurrences(of: "\u{FEFF}", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         
         #if DEBUG
         print("""
         📺 YouTubeTranscriptService: Transcript processing completed
         - Parts count: \(transcriptParts.count)
-        - Final length: \(formattedTranscript.count)
-        - First 100 chars: \(String(formattedTranscript.prefix(100)))
+        - Final length: \(finalTranscript.count)
+        - First 100 chars: \(String(finalTranscript.prefix(100)))
         """)
         #endif
         
-        return formattedTranscript
+        return finalTranscript
     }
     
     func getVideoMetadata(videoId: String) async throws -> YouTubeConfig.VideoMetadata {

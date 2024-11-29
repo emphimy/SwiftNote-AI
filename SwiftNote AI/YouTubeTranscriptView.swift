@@ -144,6 +144,8 @@ struct YouTubeTranscriptView: View {
                                     Text(transcript)
                                         .font(.body)
                                         .lineLimit(nil)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .textSelection(.enabled)
                                 }
                                 .frame(maxHeight: 200)
                             }
