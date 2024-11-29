@@ -288,6 +288,140 @@ extension AudioRecordingViewModel: AVAudioRecorderDelegate {
     }
 }
 
+// MARK: - Modern Audio Visualizer
+struct AudioParticle: Identifiable {
+    let id = UUID()
+    var position: CGPoint
+    var scale: CGFloat
+    var opacity: Double
+    var angle: Double
+}
+
+struct ModernAudioVisualizerView: View {
+    let audioLevel: CGFloat
+    
+    @State private var particles: [AudioParticle] = []
+    @State private var phase: Double = 0
+    @State private var innerRingScale: CGFloat = 1
+    @State private var outerRingScale: CGFloat = 1
+    
+    private let particleCount = 80
+    private let baseRadius: CGFloat = 60
+    
+    init(audioLevel: CGFloat) {
+        self.audioLevel = audioLevel
+        _particles = State(initialValue: Self.generateParticles(count: particleCount))
+    }
+    
+    private static func generateParticles(count: Int) -> [AudioParticle] {
+        (0..<count).map { i in
+            let angle = (2 * .pi * Double(i)) / Double(count)
+            return AudioParticle(
+                position: .zero,
+                scale: CGFloat.random(in: 0.3...1),
+                opacity: Double.random(in: 0.3...0.8),
+                angle: angle
+            )
+        }
+    }
+    
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            ZStack {
+                // Background glow
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            gradient: Gradient(colors: [
+                                Color.blue.opacity(0.3 * (0.5 + audioLevel)),
+                                Color.clear
+                            ]),
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 100
+                        )
+                    )
+                    .frame(width: 200, height: 200)
+                    .scaleEffect(outerRingScale)
+                
+                // Particle system
+                ForEach(particles) { particle in
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                gradient: Gradient(colors: [
+                                    Color.blue,
+                                    Color.purple
+                                ]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 4, height: 4)
+                        .position(particle.position)
+                        .scaleEffect(particle.scale)
+                        .opacity(particle.opacity)
+                }
+                
+                // Inner ring
+                Circle()
+                    .strokeBorder(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.blue,
+                                Color.purple,
+                                Color.blue
+                            ]),
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 3
+                    )
+                    .frame(width: baseRadius * 2, height: baseRadius * 2)
+                    .scaleEffect(innerRingScale)
+                
+                // Center dot
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 8, height: 8)
+                    .blur(radius: 2)
+                    .opacity(0.5 + audioLevel * 0.5)
+            }
+            .onChange(of: audioLevel) { _ in
+                updateParticles()
+                animateRings()
+            }
+        }
+        .frame(width: 200, height: 200)
+    }
+    
+    private func updateParticles() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            phase += 0.05
+            
+            for i in particles.indices {
+                let baseAngle = particles[i].angle
+                let wobble = sin(phase + baseAngle) * 20 * audioLevel
+                let radius = baseRadius + wobble
+                
+                let x = cos(baseAngle) * radius
+                let y = sin(baseAngle) * radius
+                
+                particles[i].position = CGPoint(x: x + 100, y: y + 100)
+                particles[i].opacity = 0.3 + audioLevel * 0.7
+                particles[i].scale = 0.3 + audioLevel * 0.7
+            }
+        }
+    }
+    
+    private func animateRings() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+            innerRingScale = 1 + audioLevel * 0.3
+            outerRingScale = 1 + audioLevel * 0.2
+        }
+    }
+}
+
 // MARK: - Audio Recording View
 struct AudioRecordingView: View {
     @StateObject private var viewModel: AudioRecordingViewModel
@@ -296,51 +430,82 @@ struct AudioRecordingView: View {
     @State private var noteTitle: String = ""
     
     init(context: NSManagedObjectContext) {
-        _viewModel = StateObject(wrappedValue: AudioRecordingViewModel(context: context))
+        self._viewModel = StateObject(wrappedValue: AudioRecordingViewModel(context: context))
     }
     
     var body: some View {
         NavigationView {
-            ZStack {
-                Theme.Colors.background
-                    .ignoresSafeArea()
-                
+            ScrollView {
                 VStack(spacing: Theme.Spacing.xl) {
-                    // Waveform Visualization
-                    EnhancedWaveformView(
-                        audioLevel: viewModel.audioLevel,
-                        configuration: WaveformConfiguration(
-                            primaryColor: viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary,
-                            secondaryColor: (viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary).opacity(0.3),
-                            backgroundColor: Theme.Colors.background,
-                            maxBars: 60,
-                            spacing: 2,
-                            minBarHeight: 10,
-                            maxBarHeight: 100,
-                            barWidth: 3,
-                            animationDuration: 0.15
-                        )
-                    )
+                    // Header Section
+                    VStack(spacing: Theme.Spacing.md) {
+                        Image(systemName: "mic.circle.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .padding(.top, Theme.Spacing.xl)
+                        
+                        Text("Audio Recording")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(Theme.Colors.text)
+                        
+                        Text(viewModel.isRecording ? "Recording in progress..." : "Tap the button to start recording")
+                            .font(.body)
+                            .foregroundColor(Theme.Colors.secondaryText)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    
+                    // Audio Visualizer
+                    ModernAudioVisualizerView(audioLevel: viewModel.audioLevel)
                         .frame(height: 200)
                         .padding()
                     
-                    // Timer Display
-                    Text(formatDuration(viewModel.recordingDuration))
-                        .font(Theme.Typography.h1)
-                        .foregroundColor(viewModel.isRecording ? Theme.Colors.error : Theme.Colors.text)
-                    
                     // Recording Controls
-                    recordingControls
+                    VStack(spacing: Theme.Spacing.md) {
+                        // Timer Display
+                        Text(formatDuration(viewModel.recordingDuration))
+                            .font(.system(size: 24, weight: .medium, design: .monospaced))
+                            .foregroundColor(Theme.Colors.text)
+                            .padding(.vertical, Theme.Spacing.sm)
+                        
+                        // Record Button
+                        Button(action: {
+                            if viewModel.isRecording {
+                                viewModel.stopRecording()
+                            } else {
+                                viewModel.startRecording()
+                            }
+                        }) {
+                            Circle()
+                                .fill(viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary)
+                                .frame(width: 72, height: 72)
+                                .overlay(
+                                    Image(systemName: viewModel.isRecording ? "stop.fill" : "mic.fill")
+                                        .font(.system(size: 30))
+                                        .foregroundColor(.white)
+                                )
+                                .shadow(color: (viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary).opacity(0.3),
+                                       radius: 10, x: 0, y: 5)
+                        }
+                        .padding(.vertical, Theme.Spacing.md)
+                    }
+                    .padding()
+                    .background(Theme.Colors.secondaryBackground)
+                    .cornerRadius(Theme.Layout.cornerRadius)
+                    .padding(.horizontal)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .navigationTitle("Record Audio")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
-                        #if DEBUG
-                        print("🎙️ AudioRecordingView: Cancel button tapped")
-                        #endif
                         Task {
                             await viewModel.cleanup()
                             dismiss()
@@ -349,86 +514,30 @@ struct AudioRecordingView: View {
                 }
             }
             .alert("Save Recording", isPresented: $viewModel.showingSaveDialog) {
-                TextField("Note Title", text: $noteTitle)
-                Button("Cancel", role: .cancel) {
-                    Task {
-                        await viewModel.cleanup()
-                    }
-                }
-                Button("Save") {
-                    saveRecording()
-                }
-            } message: {
-                Text("Enter a title for your recording")
-            }
-            .overlay {
-                if viewModel.isProcessing {
-                    LoadingIndicator(message: "Saving recording...")
-                }
+                TextField("Recording Title", text: $noteTitle)
+                Button("Cancel", role: .cancel) { }
+                Button("Save") { saveRecording() }
             }
         }
-    }
-    
-    // MARK: - Recording Controls
-    private var recordingControls: some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            Button(action: {
-                #if DEBUG
-                print("🎙️ AudioRecordingView: Record button tapped - Current state: \(viewModel.isRecording)")
-                #endif
-                
-                if viewModel.isRecording {
-                    viewModel.stopRecording()
-                } else {
-                    viewModel.startRecording()
-                }
-            }) {
-                Circle()
-                    .fill(viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary)
-                    .frame(width: 80, height: 80)
-                    .overlay(
-                        Image(systemName: viewModel.isRecording ? "stop.fill" : "mic.fill")
-                            .font(.system(size: 32))
-                            .foregroundColor(.white)
-                    )
-                    .shadow(color: (viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary).opacity(0.3),
-                            radius: 8, x: 0, y: 4)
-            }
-            
-            if viewModel.isRecording {
-                Text("Tap to stop recording")
-                    .font(Theme.Typography.caption)
-                    .foregroundColor(Theme.Colors.secondaryText)
-            }
-        }
-    }
-    
-    // MARK: - Helper Methods
-    private func formatDuration(_ duration: TimeInterval) -> String {
-        let hours = Int(duration) / 3600
-        let minutes = Int(duration) / 60 % 60
-        let seconds = Int(duration) % 60
-        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
     }
     
     private func saveRecording() {
-        guard !noteTitle.isEmpty else {
-            toastManager.show("Please enter a title", type: .error)
-            return
-        }
-        
         Task {
             do {
                 try await viewModel.saveRecording(title: noteTitle)
                 dismiss()
                 toastManager.show("Recording saved successfully", type: .success)
             } catch {
-                #if DEBUG
-                print("🎙️ AudioRecordingView: Failed to save recording - \(error)")
-                #endif
-                toastManager.show("Failed to save recording: \(error.localizedDescription)", type: .error)
+                toastManager.show(error.localizedDescription, type: .error)
             }
         }
+    }
+    
+    private func formatDuration(_ duration: TimeInterval) -> String {
+        let hours = Int(duration) / 3600
+        let minutes = Int(duration) / 60 % 60
+        let seconds = Int(duration) % 60
+        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
     }
 }
 

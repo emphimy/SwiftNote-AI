@@ -85,7 +85,7 @@ private struct FolderNavigationButton: View {
             isShowingFolders = true
         }) {
             Image(systemName: "folder.fill")
-                .font(.title2)
+                .font(.system(size: 24))
                 .foregroundColor(Theme.Colors.primary)
                 .frame(width: 44, height: 44)
                 .background(Theme.Colors.secondaryBackground)
@@ -254,9 +254,9 @@ private struct RefreshableScrollView<Content: View>: View {
 }
 
 // MARK: - Add Note Action Sheet
-// MARK: - Add Note Action Sheet
 private struct AddNoteActionSheet: View {
     @ObservedObject var viewModel: HomeViewModel
+    @Environment(\.colorScheme) private var colorScheme
     
     init(viewModel: HomeViewModel) {
         self._viewModel = ObservedObject(wrappedValue: viewModel)
@@ -267,55 +267,61 @@ private struct AddNoteActionSheet: View {
     }
 
     var body: some View {
-        ActionCard(items: [
-            ActionCardItem(title: "Record Audio", icon: "mic.fill", color: .blue) {
-                #if DEBUG
-                print("🏠 AddNoteSheet: Record audio selected")
-                #endif
-                viewModel.isShowingAddNote = false
-                viewModel.isShowingRecording = true
-            },
+        ZStack {
+            Theme.Colors.background
+                .ignoresSafeArea()
             
-            ActionCardItem(title: "Upload Audio", icon: "waveform", color: .orange) {
-                #if DEBUG
-                print("🏠 AddNoteSheet: Upload audio selected")
-                #endif
-                viewModel.isShowingAddNote = false
-                viewModel.isShowingAudioUpload = true
-            },
-            
-            ActionCardItem(title: "Scan Text", icon: "doc.text.viewfinder", color: .green) {
-                #if DEBUG
-                print("🏠 AddNoteSheet: Scan text selected")
-                #endif
-                viewModel.isShowingAddNote = false
-                viewModel.isShowingTextScan = true
-            },
-            
-            ActionCardItem(title: "Upload Text", icon: "doc.badge.arrow.up", color: .blue) {
-                #if DEBUG
-                print("🏠 AddNoteSheet: Upload text selected")
-                #endif
-                viewModel.isShowingAddNote = false
-                viewModel.isShowingTextUpload = true
-            },
-            
-            ActionCardItem(title: "YouTube Video", icon: "video.fill", color: .red) {
-                #if DEBUG
-                print("🏠 AddNoteSheet: YouTube video selected")
-                #endif
-                viewModel.isShowingAddNote = false
-                viewModel.isShowingYouTubeInput = true
-            },
-            
-            ActionCardItem(title: "Web Link", icon: "link", color: .blue) {
-                #if DEBUG
-                print("🏠 AddNoteSheet: Web link selected")
-                #endif
-                viewModel.isShowingAddNote = false
-                viewModel.isShowingWebLinkInput = true
-            }
-        ])
+            ActionCard(items: [
+                ActionCardItem(title: "Record Audio", icon: "mic", color: .blue) {
+                    #if DEBUG
+                    print("🏠 AddNoteSheet: Record audio selected")
+                    #endif
+                    viewModel.isShowingAddNote = false
+                    viewModel.isShowingRecording = true
+                },
+                
+                ActionCardItem(title: "Import Audio", icon: "waveform", color: .orange) {
+                    #if DEBUG
+                    print("🏠 AddNoteSheet: Upload audio selected")
+                    #endif
+                    viewModel.isShowingAddNote = false
+                    viewModel.isShowingAudioUpload = true
+                },
+                
+                ActionCardItem(title: "Scan Text", icon: "viewfinder.circle", color: .blue) {
+                    #if DEBUG
+                    print("🏠 AddNoteSheet: Scan text selected")
+                    #endif
+                    viewModel.isShowingAddNote = false
+                    viewModel.isShowingTextScan = true
+                },
+                
+                ActionCardItem(title: "Import Text", icon: "doc", color: .blue) {
+                    #if DEBUG
+                    print("🏠 AddNoteSheet: Upload text selected")
+                    #endif
+                    viewModel.isShowingAddNote = false
+                    viewModel.isShowingTextUpload = true
+                },
+                
+                ActionCardItem(title: "YouTube Video", icon: "play.circle.fill", color: .red) {
+                    #if DEBUG
+                    print("🏠 AddNoteSheet: YouTube video selected")
+                    #endif
+                    viewModel.isShowingAddNote = false
+                    viewModel.isShowingYouTubeInput = true
+                },
+                
+                ActionCardItem(title: "Web Link", icon: "link", color: .blue) {
+                    #if DEBUG
+                    print("🏠 AddNoteSheet: Web link selected")
+                    #endif
+                    viewModel.isShowingAddNote = false
+                    viewModel.isShowingWebLinkInput = true
+                }
+            ])
+            .padding(.top, Theme.Spacing.lg)
+        }
     }
 }
 
@@ -476,6 +482,7 @@ struct ContentView: View {
                         viewModel.isShowingSettings = true
                     }) {
                         Image(systemName: "gear")
+                            .font(.system(size: 24))
                             .foregroundColor(Theme.Colors.primary)
                             .scaleEffect(viewModel.isShowingSettings ? 1.1 : 1.0)
                             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewModel.isShowingSettings)
@@ -484,41 +491,34 @@ struct ContentView: View {
             }
             .sheet(isPresented: $viewModel.isShowingAddNote) {
                 AddNoteActionSheet(viewModel: viewModel)
-                    .presentationDetents([.height(350)])
+                    .presentationDetents([.height(390)])
                     .presentationDragIndicator(.visible)
+                    .presentationBackground(.ultraThinMaterial)
+                    .presentationCornerRadius(24)
+                    .interactiveDismissDisabled(false)
             }
-            .sheet(isPresented: $viewModel.isShowingRecording) {
+            .fullScreenCover(isPresented: $viewModel.isShowingRecording) {
                 AudioRecordingView(context: viewContext)
             }
-            .sheet(isPresented: $viewModel.isShowingYouTubeInput) {
+            .fullScreenCover(isPresented: $viewModel.isShowingYouTubeInput) {
                 YouTubeView()
             }
-            .sheet(isPresented: $viewModel.isShowingTextUpload) {
+            .fullScreenCover(isPresented: $viewModel.isShowingTextUpload) {
                 TextUploadView(context: viewContext)
             }
-            .sheet(isPresented: $viewModel.isShowingAudioUpload) {
+            .fullScreenCover(isPresented: $viewModel.isShowingAudioUpload) {
                 AudioUploadView(context: viewContext)
             }
-            .sheet(isPresented: $isShowingFolders) {
-                FolderListView(selectedFolder: $selectedFolder)
-                    .onChange(of: selectedFolder) { newFolder in
-                        #if DEBUG
-                        print("""
-                        📁 ContentView: Folder selection changed
-                        - New folder: \(String(describing: newFolder?.name))
-                        - Note count: \(newFolder?.notes?.count ?? 0)
-                        - Raw notes: \(String(describing: newFolder?.notes))
-                        """)
-                        #endif
-                    }
-            }
-
-            .sheet(isPresented: $viewModel.isShowingTextScan) {
+            .fullScreenCover(isPresented: $viewModel.isShowingTextScan) {
                 ScanTextView(context: viewContext)
             }
-            .sheet(isPresented: $viewModel.isShowingWebLinkInput) {
+            .fullScreenCover(isPresented: $viewModel.isShowingWebLinkInput) {
                 WebLinkImportView(context: viewContext)
             }
+            .fullScreenCover(isPresented: $isShowingFolders) {
+                FolderListView(selectedFolder: $selectedFolder)
+            }
+
         }
         .onAppear {
             #if DEBUG

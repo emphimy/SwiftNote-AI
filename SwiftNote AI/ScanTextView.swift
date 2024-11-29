@@ -213,134 +213,154 @@ struct ScanTextView: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: Theme.Spacing.lg) {
-                    if viewModel.scannedPages.isEmpty {
-                        scanButton
-                    } else {
-                        scannedContent
+                VStack(spacing: Theme.Spacing.xl) {
+                    // Header Section
+                    VStack(spacing: Theme.Spacing.md) {
+                        Image(systemName: "viewfinder.circle.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .padding(.top, Theme.Spacing.xl)
+                        
+                        Text("Scan Document")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(Theme.Colors.text)
+                        
+                        Text("Scan physical documents and convert them to digital notes")
+                            .font(.body)
+                            .foregroundColor(Theme.Colors.secondaryText)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
                     }
+                    
+                    // Content Section
+                    VStack(spacing: Theme.Spacing.lg) {
+                        if viewModel.scannedPages.isEmpty {
+                            Button(action: { isShowingScanner = true }) {
+                                VStack(spacing: Theme.Spacing.md) {
+                                    Image(systemName: "doc.viewfinder")
+                                        .font(.system(size: 40))
+                                    Text("Tap to Scan")
+                                        .font(.headline)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(Theme.Spacing.xl)
+                                .background(Theme.Colors.secondaryBackground)
+                                .foregroundColor(Theme.Colors.primary)
+                                .cornerRadius(Theme.Layout.cornerRadius)
+                            }
+                        } else {
+                            // Title Input
+                            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                                Text("Note Title")
+                                    .font(.subheadline)
+                                    .foregroundColor(Theme.Colors.secondaryText)
+                                TextField("Enter title", text: $viewModel.noteTitle)
+                                    .textFieldStyle(.roundedBorder)
+                                    .padding(.bottom, Theme.Spacing.sm)
+                            }
+                            
+                            // Scanned Pages
+                            ForEach(viewModel.scannedPages) { page in
+                                VStack(spacing: Theme.Spacing.md) {
+                                    Image(uiImage: page.image)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .cornerRadius(Theme.Layout.cornerRadius)
+                                    
+                                    if !page.recognizedText.isEmpty {
+                                        Text(page.recognizedText)
+                                            .font(.body)
+                                            .foregroundColor(Theme.Colors.text)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding()
+                                            .background(Theme.Colors.secondaryBackground)
+                                            .cornerRadius(Theme.Layout.cornerRadius)
+                                    }
+                                }
+                            }
+                            
+                            // Scan More Button
+                            Button(action: { isShowingScanner = true }) {
+                                Label("Scan More", systemImage: "doc.viewfinder")
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(Theme.Colors.primary)
+                            .padding(.top, Theme.Spacing.md)
+                            
+                            // Save Button
+                            if !viewModel.scannedPages.isEmpty {
+                                Button(action: saveNote) {
+                                    Text("Save Note")
+                                        .font(.headline)
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(
+                                            LinearGradient(
+                                                colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.8)],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                        .cornerRadius(Theme.Layout.cornerRadius)
+                                }
+                                .padding(.top, Theme.Spacing.lg)
+                            }
+                        }
+                    }
+                    .padding()
                 }
-                .padding()
+                
+                if case .loading(let message) = viewModel.loadingState {
+                    VStack(spacing: Theme.Spacing.md) {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                        if let message = message {
+                            Text(message)
+                                .font(.subheadline)
+                                .foregroundColor(Theme.Colors.secondaryText)
+                        }
+                        if viewModel.scanningProgress > 0 {
+                            ProgressView(value: viewModel.scanningProgress)
+                                .progressViewStyle(.linear)
+                                .padding(.horizontal)
+                        }
+                    }
+                    .padding()
+                }
             }
-            .navigationTitle("Scan Text")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
-                        #if DEBUG
-                        print("📝 ScanTextView: Cancel button tapped")
-                        #endif
-                        
-                        // First cleanup
                         viewModel.cleanup()
-                        
-                        // Then dismiss
-                        Task { @MainActor in
-                            dismiss()
-                            #if DEBUG
-                            print("📝 ScanTextView: View dismissed after cleanup")
-                            #endif
-                        }
+                        dismiss()
                     }
-                }
-                
-                if !viewModel.scannedPages.isEmpty {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Save") {
-                            #if DEBUG
-                            print("📝 ScanTextView: Save button tapped")
-                            #endif
-                            showingSaveDialog = true
-                        }
-                    }
-                }
-            }
-            .sheet(isPresented: $isShowingScanner) {
-                DocumentScannerView { result in
-                    switch result {
-                    case .success(let images):
-                        #if DEBUG
-                        print("📝 ScanTextView: Successfully scanned \(images.count) pages")
-                        #endif
-                        images.forEach { viewModel.addScannedPage($0) }
-                    case .failure(let error):
-                        #if DEBUG
-                        print("📝 ScanTextView: Scanning failed - \(error)")
-                        #endif
-                        toastManager.show(error.localizedDescription, type: .error)
-                    }
-                    isShowingScanner = false
-                }
-            }
-            .alert("Save Note", isPresented: $showingSaveDialog) {
-                TextField("Note Title", text: $viewModel.noteTitle)
-                Button("Cancel", role: .cancel) { }
-                Button("Save") { saveNote() }
-            }
-            .onChange(of: viewModel.loadingState) { state in
-                if case .error(let message) = state {
-                    toastManager.show(message, type: .error)
                 }
             }
         }
-    }
-    
-    // MARK: - View Components
-    private var scanButton: some View {
-        Button(action: {
-            #if DEBUG
-            print("📝 ScanTextView: Scan button tapped")
-            #endif
-            if viewModel.isDocumentScanningAvailable() {
-                isShowingScanner = true
-            } else {
-                toastManager.show("Document scanning is not available on this device", type: .error)
-            }
-        }) {
-            VStack(spacing: Theme.Spacing.md) {
-                Image(systemName: "doc.text.viewfinder")
-                    .font(.system(size: 48))
-                    .foregroundColor(Theme.Colors.primary)
-                
-                Text("Scan Document")
-                    .font(Theme.Typography.body)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Theme.Spacing.xl)
-            .background(Theme.Colors.secondaryBackground)
-            .cornerRadius(Theme.Layout.cornerRadius)
-        }
-    }
-    
-    private var scannedContent: some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            // Progress Indicator
-            if viewModel.scanningProgress < 1.0 {
-                VStack(spacing: Theme.Spacing.sm) {
-                    ProgressView(value: viewModel.scanningProgress)
-                        .tint(Theme.Colors.primary)
-                    
-                    Text("Processing \(Int(viewModel.scanningProgress * 100))%")
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.secondaryText)
+        .sheet(isPresented: $isShowingScanner) {
+            DocumentScannerView { result in
+                switch result {
+                case .success(let images):
+                    images.forEach { viewModel.addScannedPage($0) }
+                case .failure(let error):
+                    toastManager.show(error.localizedDescription, type: .error)
                 }
+                isShowingScanner = false
             }
-            
-            // Scanned Pages
-            ForEach(viewModel.scannedPages) { page in
-                ScannedPageView(page: page)
+        }
+        .onChange(of: viewModel.loadingState) { state in
+            if case .error(let message) = state {
+                toastManager.show(message, type: .error)
             }
-            
-            // Add More Button
-            Button(action: {
-                #if DEBUG
-                print("📝 ScanTextView: Add more pages button tapped")
-                #endif
-                isShowingScanner = true
-            }) {
-                Label("Add More Pages", systemImage: "plus.circle.fill")
-            }
-            .buttonStyle(SecondaryButtonStyle())
         }
     }
     
@@ -423,16 +443,16 @@ struct ScannedPageView: View {
     let page: ScanPage
     
     var body: some View {
-        VStack(spacing: Theme.Spacing.sm) {
+        VStack(spacing: Theme.Spacing.md) {
             Image(uiImage: page.image)
                 .resizable()
                 .scaledToFit()
-                .frame(height: 200)
                 .cornerRadius(Theme.Layout.cornerRadius)
             
             if !page.recognizedText.isEmpty {
                 Text(page.recognizedText)
-                    .font(Theme.Typography.body)
+                    .font(.body)
+                    .foregroundColor(Theme.Colors.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
                     .background(Theme.Colors.secondaryBackground)

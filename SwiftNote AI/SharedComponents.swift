@@ -27,6 +27,7 @@ struct HomeHeaderView: View {
                     isSearchFocused = true
                 }
             }
+            .padding(.horizontal, Theme.Spacing.lg)
             
             HStack {
                 Spacer()
@@ -40,6 +41,7 @@ struct HomeHeaderView: View {
                     }
                 }) {
                     Image(systemName: viewMode == .list ? "square.grid.2x2" : "list.bullet")
+                        .font(.system(size: 24))
                         .foregroundColor(Theme.Colors.primary)
                         .padding(Theme.Spacing.xs)
                         .background(
@@ -48,7 +50,7 @@ struct HomeHeaderView: View {
                         )
                 }
             }
-            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.horizontal, Theme.Spacing.lg)
         }
         .padding(.top, Theme.Spacing.md)
     }

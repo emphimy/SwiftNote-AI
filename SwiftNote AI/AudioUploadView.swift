@@ -275,92 +275,22 @@ struct AudioUploadView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: Theme.Spacing.lg) {
-                    // File Selection Button
+                    headerSection
+                    
                     if viewModel.selectedFileName == nil {
-                        Button(action: {
-                            #if DEBUG
-                            print("🎵 AudioUploadView: Showing file picker")
-                            #endif
-                            showingFilePicker = true
-                        }) {
-                            VStack(spacing: Theme.Spacing.md) {
-                                Image(systemName: "music.note.list")
-                                    .font(.system(size: 48))
-                                    .foregroundColor(Theme.Colors.primary)
-                                
-                                Text("Select Audio File")
-                                    .font(Theme.Typography.body)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Theme.Spacing.xl)
-                            .background(Theme.Colors.secondaryBackground)
-                            .cornerRadius(Theme.Layout.cornerRadius)
-                        }
+                        fileSelectionSection
+                    } else {
+                        audioPreviewSection
                     }
                     
-                    // Audio Preview
-                    if !viewModel.isLoading, let stats = viewModel.stats {
-                        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                            // File Info Header
-                            HStack {
-                                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                                    Text(viewModel.selectedFileName ?? "Untitled")
-                                        .font(Theme.Typography.h3)
-                                    
-                                    Text("\(stats.formattedDuration) • \(ByteCountFormatter.string(fromByteCount: stats.fileSize, countStyle: .file))")
-                                        .font(Theme.Typography.caption)
-                                        .foregroundColor(Theme.Colors.secondaryText)
-                                }
-                                
-                                Spacer()
-                                
-                                Button(action: {
-                                    #if DEBUG
-                                    print("🎵 AudioUploadView: Showing file picker for new file")
-                                    #endif
-                                    showingFilePicker = true
-                                }) {
-                                    Image(systemName: "arrow.triangle.2.circlepath")
-                                        .foregroundColor(Theme.Colors.primary)
-                                }
-                            }
-                            
-                            // Audio Details
-                            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                                AudioDetailRow(label: "Format", value: stats.format)
-                                AudioDetailRow(label: "Sample Rate", value: "\(Int(stats.sampleRate))Hz")
-                            }
-                            .padding()
-                            .background(Theme.Colors.secondaryBackground)
-                            .cornerRadius(Theme.Layout.cornerRadius)
-                            
-                            // Local Storage Toggle
-                            Toggle("Save original file locally", isOn: $viewModel.saveLocally)
-                                .padding()
-                                .background(Theme.Colors.secondaryBackground)
-                                .cornerRadius(Theme.Layout.cornerRadius)
-                            
-                            // Import Button
-                            Button("Import Audio") {
-                                #if DEBUG
-                                print("🎵 AudioUploadView: Showing save dialog")
-                                #endif
-                                showingSaveDialog = true
-                            }
-                            .buttonStyle(PrimaryButtonStyle())
-                        }
-                    }
+                    Spacer()
                 }
                 .padding()
             }
-            .navigationTitle("Upload Audio")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
-                        #if DEBUG
-                        print("🎵 AudioUploadView: Canceling import")
-                        #endif
                         dismiss()
                     }
                 }
@@ -377,12 +307,161 @@ struct AudioUploadView: View {
                 Button("Cancel", role: .cancel) { }
                 Button("Save") { saveAudio() }
             }
-            .overlay {
-                if viewModel.isLoading {
-                    LoadingIndicator(message: "Processing audio...")
+        }
+    }
+    
+    // MARK: - View Components
+    
+    private var headerSection: some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            Image(systemName: "waveform.circle.fill")
+                .font(.system(size: 60))
+                .foregroundStyle(.blue.gradient)
+                .scaleEffect(1.0)
+                .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: UUID())
+            
+            Text("Import Audio")
+                .font(Theme.Typography.h2)
+                .foregroundColor(Theme.Colors.text)
+            
+            Text("Upload your audio files for transcription and note-taking")
+                .font(Theme.Typography.body)
+                .foregroundColor(Theme.Colors.secondaryText)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.top, Theme.Spacing.xl)
+    }
+    
+    private var fileSelectionSection: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            Button(action: { showingFilePicker = true }) {
+                VStack(spacing: Theme.Spacing.md) {
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.blue.gradient)
+                    
+                    Text("Select Audio File")
+                        .font(Theme.Typography.body)
+                        .foregroundColor(Theme.Colors.primary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Theme.Spacing.xl)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                        .fill(Theme.Colors.secondaryBackground)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                                .stroke(Theme.Colors.tertiaryBackground, lineWidth: 1)
+                        )
+                )
+            }
+            
+            supportedFormatsSection
+        }
+    }
+    
+    private var supportedFormatsSection: some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            Text("Supported Formats")
+                .font(Theme.Typography.caption)
+                .foregroundColor(Theme.Colors.secondaryText)
+            
+            HStack(spacing: Theme.Spacing.md) {
+                ForEach(["MP3", "WAV", "M4A"], id: \.self) { format in
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green.gradient)
+                        Text(format)
+                    }
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.secondaryText)
                 }
             }
         }
+        .padding()
+        .background(Theme.Colors.secondaryBackground)
+        .cornerRadius(Theme.Layout.cornerRadius)
+    }
+    
+    private var audioPreviewSection: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            audioFileInfo
+            
+            audioDetails
+            
+            localStorageToggle
+            
+            importButton
+        }
+    }
+    
+    private var audioFileInfo: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text(viewModel.selectedFileName ?? "Untitled")
+                        .font(Theme.Typography.h3)
+                        .foregroundColor(Theme.Colors.text)
+                    
+                    if let stats = viewModel.stats {
+                        Text("\(stats.formattedDuration) • \(ByteCountFormatter.string(fromByteCount: stats.fileSize, countStyle: .file))")
+                            .font(Theme.Typography.caption)
+                            .foregroundColor(Theme.Colors.secondaryText)
+                    }
+                }
+                
+                Spacer()
+                
+                Button(action: { showingFilePicker = true }) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.blue.gradient)
+                }
+            }
+            .padding()
+            .background(Theme.Colors.secondaryBackground)
+            .cornerRadius(Theme.Layout.cornerRadius)
+        }
+    }
+    
+    private var audioDetails: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            if let stats = viewModel.stats {
+                AudioDetailRow(label: "Format", value: stats.format)
+                AudioDetailRow(label: "Sample Rate", value: "\(Int(stats.sampleRate))Hz")
+            }
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                .fill(Theme.Colors.secondaryBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                        .stroke(Theme.Colors.tertiaryBackground, lineWidth: 1)
+                )
+        )
+    }
+    
+    private var localStorageToggle: some View {
+        Toggle("Save original file locally", isOn: $viewModel.saveLocally)
+            .padding()
+            .background(Theme.Colors.secondaryBackground)
+            .cornerRadius(Theme.Layout.cornerRadius)
+    }
+    
+    private var importButton: some View {
+        Button(action: { showingSaveDialog = true }) {
+            if case .loading = viewModel.loadingState {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle())
+            } else {
+                Text("Import Audio")
+                    .font(Theme.Typography.body)
+                    .fontWeight(.semibold)
+            }
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .disabled(viewModel.loadingState.isLoading)
     }
     
     // MARK: - Helper Methods

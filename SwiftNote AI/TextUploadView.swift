@@ -1,7 +1,7 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import CoreData
 import Combine
-import UniformTypeIdentifiers
 
 // MARK: - Text Upload Error
 enum TextUploadError: LocalizedError {
@@ -39,6 +39,28 @@ struct TextStats {
         self.charCount = text.count
         self.lineCount = text.components(separatedBy: .newlines).count
         self.fileSize = fileSize
+    }
+}
+
+// MARK: - Document Stats
+private struct DocumentStats {
+    let wordCount: Int
+    let characterCount: Int
+    let pageCount: Int
+    
+    static let empty = DocumentStats(wordCount: 0, characterCount: 0, pageCount: 0)
+    
+    static func calculate(from text: String) -> DocumentStats {
+        let words = text.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
+        let characters = text.filter { !$0.isWhitespace }
+        // Rough estimate of pages based on average words per page
+        let pages = max(1, Int(ceil(Double(words.count) / 250.0)))
+        
+        return DocumentStats(
+            wordCount: words.count,
+            characterCount: characters.count,
+            pageCount: pages
+        )
     }
 }
 
@@ -167,6 +189,48 @@ final class TextUploadViewModel: ObservableObject {
         }
         return supportedTypes.contains { type.conforms(to: $0) }
     }
+    
+    func getFileSize(for url: URL) -> String? {
+        guard let fileSize = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            return nil
+        }
+        return ByteCountFormatter.string(fromByteCount: Int64(fileSize), countStyle: .file)
+    }
+}
+
+// MARK: - Document Picker
+struct DocumentPicker: UIViewControllerRepresentable {
+    let types: [UTType]
+    let onResult: (Result<[URL], Error>) -> Void
+    
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types)
+        picker.delegate = context.coordinator
+        picker.allowsMultipleSelection = false
+        return picker
+    }
+    
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let parent: DocumentPicker
+        
+        init(_ parent: DocumentPicker) {
+            self.parent = parent
+        }
+        
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            parent.onResult(.success(urls))
+        }
+        
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            parent.onResult(.failure(NSError(domain: "DocumentPicker", code: -1, userInfo: [NSLocalizedDescriptionKey: "Document picker was cancelled"])))
+        }
+    }
 }
 
 // MARK: - Text Upload View
@@ -177,6 +241,8 @@ struct TextUploadView: View {
     @State private var showingFilePicker = false
     @State private var showingSaveDialog = false
     @State private var noteTitle: String = ""
+    @State private var documentStats: DocumentStats = .empty
+    @State private var selectedFile: URL?
     
     init(context: NSManagedObjectContext) {
         self._viewModel = StateObject(wrappedValue: TextUploadViewModel(context: context))
@@ -185,115 +251,191 @@ struct TextUploadView: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: Theme.Spacing.lg) {
-                    // File Selection Button
-                    if viewModel.selectedFileName == nil {
-                        Button(action: {
-                            #if DEBUG
-                            print("📄 TextUploadView: Showing file picker")
-                            #endif
-                            showingFilePicker = true
-                        }) {
-                            VStack(spacing: Theme.Spacing.md) {
-                                Image(systemName: "doc.badge.plus")
-                                    .font(.system(size: 48))
-                                    .foregroundColor(Theme.Colors.primary)
-                                
-                                Text("Select Text File")
-                                    .font(Theme.Typography.body)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, Theme.Spacing.xl)
-                            .background(Theme.Colors.secondaryBackground)
-                            .cornerRadius(Theme.Layout.cornerRadius)
-                        }
+                VStack(spacing: Theme.Spacing.xl) {
+                    headerSection
+                    
+                    if selectedFile == nil {
+                        fileSelectionSection
+                    } else if let file = selectedFile {
+                        previewSection(for: file)
                     }
                     
-                    // Content Preview
-                    if !viewModel.textContent.isEmpty {
-                        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-                            // File Info Header
-                            HStack {
-                                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                                    Text(viewModel.selectedFileName ?? "Untitled")
-                                        .font(Theme.Typography.h3)
-                                    
-                                    if let stats = viewModel.stats {
-                                        Text("\(stats.wordCount) words • \(stats.charCount) characters")
-                                            .font(Theme.Typography.caption)
-                                            .foregroundColor(Theme.Colors.secondaryText)
-                                    }
-                                }
-                                
-                                Spacer()
-                                
-                                Button(action: {
-                                    #if DEBUG
-                                    print("📄 TextUploadView: Showing file picker for new file")
-                                    #endif
-                                    showingFilePicker = true
-                                }) {
-                                    Image(systemName: "arrow.triangle.2.circlepath")
-                                        .foregroundColor(Theme.Colors.primary)
-                                }
-                            }
-                            
-                            // Text Preview
-                            Text(viewModel.textContent)
-                                .font(Theme.Typography.body)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding()
-                                .background(Theme.Colors.secondaryBackground)
-                                .cornerRadius(Theme.Layout.cornerRadius)
-                            
-                            // Local Storage Toggle
-                            Toggle("Save original file locally", isOn: $viewModel.saveLocally)
-                                .padding()
-                                .background(Theme.Colors.secondaryBackground)
-                                .cornerRadius(Theme.Layout.cornerRadius)
-                            
-                            // Save Button
-                            Button("Import Text") {
-                                #if DEBUG
-                                print("📄 TextUploadView: Showing save dialog")
-                                #endif
-                                showingSaveDialog = true
-                            }
-                            .buttonStyle(PrimaryButtonStyle())
-                        }
-                    }
+                    Spacer()
                 }
                 .padding()
             }
-            .navigationTitle("Import Text")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Cancel") {
-                        #if DEBUG
-                        print("📄 TextUploadView: Canceling import")
-                        #endif
                         dismiss()
                     }
                 }
+            }
+            .sheet(isPresented: $showingFilePicker) {
+                DocumentPicker(types: viewModel.supportedTypes, onResult: handleSelectedFile)
             }
             .alert("Save Note", isPresented: $showingSaveDialog) {
                 TextField("Note Title", text: $noteTitle)
                 Button("Cancel", role: .cancel) { }
                 Button("Save") { saveNote() }
             }
-            .fileImporter(
-                isPresented: $showingFilePicker,
-                allowedContentTypes: viewModel.supportedTypes,
-                allowsMultipleSelection: false
-            ) { result in
-                handleSelectedFile(result)
+        }
+    }
+    
+    // MARK: - View Components
+    
+    private var headerSection: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            Image(systemName: "doc.circle.fill")
+                .font(.system(size: 60))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .padding(.top, Theme.Spacing.xl)
+            
+            Text("Import Text Document")
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(Theme.Colors.text)
+            
+            Text("Import text from files like TXT, RTF, or DOC")
+                .font(.body)
+                .foregroundColor(Theme.Colors.secondaryText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+        }
+    }
+    
+    private var fileSelectionSection: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            Button(action: { showingFilePicker = true }) {
+                VStack(spacing: Theme.Spacing.md) {
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 48))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    
+                    Text("Select Document")
+                        .font(Theme.Typography.body)
+                        .foregroundColor(Theme.Colors.primary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Theme.Spacing.xl)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                        .fill(Theme.Colors.secondaryBackground)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                                .stroke(Theme.Colors.tertiaryBackground, lineWidth: 1)
+                        )
+                )
             }
-            .overlay {
-                if viewModel.isLoading {
-                    LoadingIndicator(message: "Processing file...")
+            
+            // Supported Formats Section
+            VStack(spacing: Theme.Spacing.sm) {
+                Text("Supported Formats")
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.secondaryText)
+                
+                HStack(spacing: Theme.Spacing.md) {
+                    ForEach(["TXT", "RTF", "DOC", "DOCX"], id: \.self) { format in
+                        HStack(spacing: Theme.Spacing.xs) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green.gradient)
+                            Text(format)
+                        }
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.secondaryText)
+                    }
                 }
             }
+            .padding()
+            .background(Theme.Colors.secondaryBackground)
+            .cornerRadius(Theme.Layout.cornerRadius)
+        }
+    }
+    
+    private func previewSection(for file: URL) -> some View {
+        VStack(spacing: Theme.Spacing.md) {
+            // File Info Section
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                HStack {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                        Text(file.lastPathComponent)
+                            .font(Theme.Typography.h3)
+                            .foregroundColor(Theme.Colors.text)
+                        
+                        if let fileSize = viewModel.getFileSize(for: file) {
+                            Text(fileSize)
+                                .font(Theme.Typography.caption)
+                                .foregroundColor(Theme.Colors.secondaryText)
+                        }
+                    }
+                    
+                    Spacer()
+                    
+                    Button(action: { showingFilePicker = true }) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 20))
+                            .foregroundStyle(.blue.gradient)
+                    }
+                }
+                .padding()
+                .background(Theme.Colors.secondaryBackground)
+                .cornerRadius(Theme.Layout.cornerRadius)
+            }
+            
+            // Document Stats Section
+            HStack(spacing: Theme.Spacing.lg) {
+                StatItem(title: "Words", value: "\(documentStats.wordCount)")
+                
+                Divider()
+                    .frame(height: 40)
+                
+                StatItem(title: "Characters", value: "\(documentStats.characterCount)")
+                
+                Divider()
+                    .frame(height: 40)
+                
+                StatItem(title: "Pages", value: String(format: "%.1f", documentStats.pageCount))
+            }
+            .padding()
+            .background(Theme.Colors.secondaryBackground)
+            .cornerRadius(Theme.Layout.cornerRadius)
+            
+            // Save Options
+            Toggle("Save original file locally", isOn: $viewModel.saveLocally)
+                .padding()
+                .background(Theme.Colors.secondaryBackground)
+                .cornerRadius(Theme.Layout.cornerRadius)
+            
+            Button(action: { showingSaveDialog = true }) {
+                if viewModel.isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                } else {
+                    HStack {
+                        Text("Import Document")
+                        Image(systemName: "arrow.right.circle.fill")
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .background(viewModel.isLoading ? Theme.Colors.primary.opacity(0.5) : Theme.Colors.primary)
+            .foregroundColor(.white)
+            .cornerRadius(Theme.Layout.cornerRadius)
+            .disabled(viewModel.isLoading)
         }
     }
     
@@ -306,6 +448,12 @@ struct TextUploadView: View {
                 
                 if viewModel.canHandle(url) {
                     try await viewModel.processSelectedFile(url)
+                    selectedFile = url
+                    
+                    // Calculate document stats
+                    if let content = try? String(contentsOf: url, encoding: .utf8) {
+                        documentStats = DocumentStats.calculate(from: content)
+                    }
                 } else {
                     throw TextUploadError.unsupportedFileType(url.pathExtension)
                 }
@@ -329,6 +477,23 @@ struct TextUploadView: View {
             } catch {
                 toastManager.show(error.localizedDescription, type: .error)
             }
+        }
+    }
+}
+
+// MARK: - Stat Item View
+private struct StatItem: View {
+    let title: String
+    let value: String
+    
+    var body: some View {
+        VStack(spacing: Theme.Spacing.xxs) {
+            Text(title)
+                .font(Theme.Typography.caption)
+                .foregroundColor(Theme.Colors.secondaryText)
+            Text(value)
+                .font(Theme.Typography.body)
+                .foregroundColor(Theme.Colors.text)
         }
     }
 }

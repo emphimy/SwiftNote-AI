@@ -159,6 +159,8 @@ struct WebLinkImportView: View {
     @StateObject private var viewModel: WebLinkImportViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.toastManager) private var toastManager
+    @FocusState private var isURLFieldFocused: Bool
+    @State private var showSupportedLinks = false
     
     init(context: NSManagedObjectContext) {
         self._viewModel = StateObject(wrappedValue: WebLinkImportViewModel(context: context))
@@ -167,15 +169,51 @@ struct WebLinkImportView: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: Theme.Spacing.lg) {
+                VStack(spacing: Theme.Spacing.xl) {
+                    // Header Section
+                    VStack(spacing: Theme.Spacing.md) {
+                        Image(systemName: "link.circle.fill")
+                            .font(.system(size: 60))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .padding(.top, Theme.Spacing.xl)
+                        
+                        Text("Import Web Content")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(Theme.Colors.text)
+                        
+                        Text("Paste a URL to import content with supported audio or document")
+                            .font(.body)
+                            .foregroundColor(Theme.Colors.secondaryText)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    
                     // URL Input Section
-                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        HStack {
+                    VStack(spacing: Theme.Spacing.md) {
+                        HStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: "link")
-                                .foregroundColor(.gray)
+                                .foregroundColor(isURLFieldFocused ? Theme.Colors.primary : .gray)
+                                .animation(.easeInOut, value: isURLFieldFocused)
+                            
                             TextField("Enter URL", text: $viewModel.urlInput)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                                .textFieldStyle(PlainTextFieldStyle())
                                 .autocapitalization(.none)
+                                .focused($isURLFieldFocused)
+                            
+                            if !viewModel.urlInput.isEmpty {
+                                Button(action: { viewModel.urlInput = "" }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.gray)
+                                }
+                                .transition(.scale.combined(with: .opacity))
+                            }
                             
                             Button(action: {
                                 if let clipboardString = UIPasteboard.general.string {
@@ -186,40 +224,58 @@ struct WebLinkImportView: View {
                                     .foregroundColor(Theme.Colors.primary)
                             }
                         }
+                        .padding()
+                        .background(Theme.Colors.secondaryBackground)
+                        .cornerRadius(Theme.Layout.cornerRadius)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                                .stroke(isURLFieldFocused ? Theme.Colors.primary : Color.clear, lineWidth: 1)
+                        )
+                        .animation(.easeInOut, value: isURLFieldFocused)
                         
-                        Button("Process URL") {
+                        Button(action: {
                             Task {
                                 await viewModel.processURL()
                             }
+                        }) {
+                            HStack {
+                                Text("Import Content")
+                                Image(systemName: "arrow.right.circle.fill")
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(viewModel.urlInput.isEmpty ? Theme.Colors.primary.opacity(0.5) : Theme.Colors.primary)
+                            .foregroundColor(.white)
+                            .cornerRadius(Theme.Layout.cornerRadius)
                         }
-                        .buttonStyle(PrimaryButtonStyle())
                         .disabled(viewModel.urlInput.isEmpty)
                     }
-                    .padding()
+                    .padding(.horizontal)
                     
                     // Progress Indicator
                     if case .loading(let message) = viewModel.loadingState {
-                        LoadingIndicator(message: message)
+                        VStack(spacing: Theme.Spacing.md) {
+                            ProgressView()
+                                .scaleEffect(1.2)
+                            if let message = message {
+                                Text(message)
+                                    .font(.caption)
+                                    .foregroundColor(Theme.Colors.secondaryText)
+                            }
+                            
+                            if viewModel.downloadProgress > 0 {
+                                ProgressView(value: viewModel.downloadProgress)
+                                    .progressViewStyle(.linear)
+                                    .tint(Theme.Colors.primary)
+                            }
+                        }
+                        .padding()
+                        .background(Theme.Colors.secondaryBackground)
+                        .cornerRadius(Theme.Layout.cornerRadius)
+                        .padding(.horizontal)
                     }
-                    
-                    // Supported Links Info
-                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        Text("Supported Links:")
-                            .font(Theme.Typography.caption)
-                            .foregroundColor(Theme.Colors.secondaryText)
-                        
-                        Text("• Dropbox\n• Google Drive\n• iCloud Drive\n• Google Docs")
-                            .font(Theme.Typography.small)
-                            .foregroundColor(Theme.Colors.tertiaryText)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-                    .background(Theme.Colors.secondaryBackground)
-                    .cornerRadius(Theme.Layout.cornerRadius)
                 }
-                .padding()
             }
-            .navigationTitle("Import from Web")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {

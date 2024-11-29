@@ -248,11 +248,11 @@ struct NoteListCard: View {
         let items: [ActionCardItem]
         
         // MARK: - Constants
-        private let buttonWidth: CGFloat = 170
+        private let buttonWidth: CGFloat = 160
         private let buttonHeight: CGFloat = 100
         private let columns: [GridItem] = [
-            GridItem(.fixed(170), spacing: Theme.Spacing.md),
-            GridItem(.fixed(170), spacing: Theme.Spacing.md)
+            GridItem(.fixed(160), spacing: Theme.Spacing.xl),
+            GridItem(.fixed(160), spacing: Theme.Spacing.xl)
         ]
         
         init(items: [ActionCardItem]) {
@@ -267,43 +267,57 @@ struct NoteListCard: View {
         // MARK: - Body
         var body: some View {
             ScrollView {
-                LazyVGrid(columns: columns, spacing: Theme.Spacing.md) {
+                LazyVGrid(columns: columns, spacing: Theme.Spacing.lg) {
                     ForEach(items) { item in
                         Button(action: {
 #if DEBUG
                             print("📝 ActionCard: Item tapped: \(item.title)")
 #endif
-                            item.action()
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                item.action()
+                            }
                         }) {
                             VStack(spacing: Theme.Spacing.sm) {
                                 Image(systemName: item.icon)
-                                    .font(.system(size: 32))
+                                    .font(.system(size: 32, weight: .medium))
                                     .foregroundColor(item.color)
                                     .frame(height: 40)
                                     .accessibility(label: Text(item.title))
                                 
                                 Text(item.title)
-                                    .font(Theme.Typography.body)
+                                    .font(Theme.Typography.body.weight(.medium))
                                     .foregroundColor(Theme.Colors.text)
                                     .multilineTextAlignment(.center)
                                     .lineLimit(2)
                                     .frame(height: 15)
                             }
                             .frame(width: buttonWidth, height: buttonHeight)
-                            .background(Theme.Colors.secondaryBackground)
-                            .cornerRadius(Theme.Layout.cornerRadius)
-                            .shadow(color: Theme.Shadows.small.color,
-                                    radius: Theme.Shadows.small.radius,
-                                    x: Theme.Shadows.small.x,
-                                    y: Theme.Shadows.small.y)
+                            .background(
+                                RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                                    .fill(Theme.Colors.secondaryBackground)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                                            .stroke(item.color.opacity(0.1), lineWidth: 1)
+                                    )
+                            )
+                            .shadow(color: Theme.Colors.primary.opacity(0.05), radius: 15, x: 0, y: 5)
+                            .shadow(color: Theme.Colors.primary.opacity(0.05), radius: 3, x: 0, y: 2)
                         }
-                        .buttonStyle(PlainButtonStyle())
+                        .buttonStyle(ScaleButtonStyle())
                         .transition(.scale.combined(with: .opacity))
                     }
                 }
                 .padding(Theme.Spacing.md)
-                .animation(.spring(), value: items.count)
+                .animation(.spring(response: 0.4, dampingFraction: 0.7), value: items.count)
             }
+        }
+    }
+
+    struct ScaleButtonStyle: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .scaleEffect(configuration.isPressed ? 0.95 : 1)
+                .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
         }
     }
     
@@ -380,4 +394,3 @@ struct NoteListCard: View {
         }
     }
 #endif
-
