@@ -65,7 +65,50 @@ final class TranscriptViewModel: ObservableObject {
         do {
             // For now, we'll use the raw transcript stored in the note's metadata
             if let rawTranscript = note.metadata?["rawTranscript"] as? String {
-                transcript = rawTranscript
+                let lines = rawTranscript.components(separatedBy: CharacterSet.newlines)
+                var currentMinute = -1
+                var currentText = ""
+                var formattedParagraphs: [String] = []
+                
+                for line in lines {
+                    if line.isEmpty { continue }
+                    
+                    if let timeRange = line.range(of: "\\[(\\d{2}):\\d{2}\\]", options: [.regularExpression]) {
+                        let timeStr = String(line[timeRange])
+                        let text = String(line[line.index(after: timeRange.upperBound)...])
+                            .trimmingCharacters(in: CharacterSet.whitespaces)
+                        
+                        // Extract minute from timestamp using regex
+                        if let minuteRange = timeStr.range(of: "\\d{2}", options: .regularExpression) {
+                            if let minute = Int(timeStr[minuteRange]) {
+                                if minute != currentMinute {
+                                    // Save current paragraph if exists
+                                    if !currentText.isEmpty {
+                                        formattedParagraphs.append(currentText)
+                                        currentText = ""
+                                    }
+                                    currentMinute = minute
+                                }
+                                
+                                // Add timestamp and text
+                                if currentText.isEmpty {
+                                    currentText = timeStr + " " + text
+                                } else {
+                                    currentText += " " + text
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Add the last paragraph
+                if !currentText.isEmpty {
+                    formattedParagraphs.append(currentText)
+                }
+                
+                // Join paragraphs with double newline
+                transcript = formattedParagraphs.joined(separator: "\n\n")
+                
             } else {
                 throw NSError(domain: "TranscriptVM", code: 1001, userInfo: [
                     NSLocalizedDescriptionKey: "No transcript found for this note"

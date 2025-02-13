@@ -126,87 +126,60 @@ final class YouTubeTranscriptService {
             throw YouTubeTranscriptError.transcriptNotAvailable
         }
         
-        #if DEBUG
-        print("📺 YouTubeTranscriptService: Found caption URL: \(baseUrl)")
-        #endif
-        
-        // Configure URLSession with timeout
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 300
-        config.timeoutIntervalForResource = 900
-        let sessionWithTimeout = URLSession(configuration: config)
-        
-        // Fetch the actual transcript
-        let transcriptURL = URL(string: baseUrl)!
-        var request = URLRequest(url: transcriptURL)
-        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36", forHTTPHeaderField: "User-Agent")
-        
-        let (transcriptData, _) = try await sessionWithTimeout.data(from: transcriptURL)
-        
-        guard let xmlString = String(data: transcriptData, encoding: .utf8) else {
-            throw YouTubeTranscriptError.invalidResponse
+        // Create URL for transcript
+        guard let url = URL(string: baseUrl + "&fmt=json3") else {
+            throw YouTubeTranscriptError.invalidVideoId
         }
         
-        // Process transcript with larger chunks and better memory management
-        let pattern = "<text[^>]*>([^<]*)</text>"
-        let regex = try NSRegularExpression(pattern: pattern)
+        // Fetch transcript data
+        let (data, _) = try await session.data(from: url)
         
-        var transcriptParts: [String] = []
-        transcriptParts.reserveCapacity(1000) // Pre-allocate for better performance
+        // Parse transcript JSON
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let events = json["events"] as? [[String: Any]] else {
+            throw YouTubeTranscriptError.jsonParsingError("Invalid transcript format")
+        }
         
-        // Process XML in chunks
-        var currentIndex = xmlString.startIndex
-        let totalSize = xmlString.count
-        let chunkSize = 100000
+        #if DEBUG
+        print("📝 YouTubeTranscriptService: First event structure:")
+        if let firstEvent = events.first {
+            print(firstEvent)
+        }
+        #endif
         
-        while currentIndex < xmlString.endIndex {
-            autoreleasepool {
-                let endIndex = xmlString.index(currentIndex, offsetBy: min(chunkSize, xmlString.distance(from: currentIndex, to: xmlString.endIndex)))
-                let chunk = String(xmlString[currentIndex..<endIndex])
+        // Group segments by timestamp
+        var currentGroup: [String] = []
+        var currentStartTime: Int = 0
+        var formattedTranscript = ""
+        
+        for event in events {
+            if let segs = event["segs"] as? [[String: Any]],
+               let startTime = event["tStartMs"] as? Int {
                 
-                let range = NSRange(chunk.startIndex..., in: chunk)
-                let matches = regex.matches(in: chunk, range: range)
+                // Combine all segments in this event
+                let textParts = segs.compactMap { seg -> String? in
+                    guard let text = seg["utf8"] as? String else { return nil }
+                    return text.trimmingCharacters(in: .whitespacesAndNewlines)
+                }.filter { !$0.isEmpty }
                 
-                for match in matches {
-                    if let range = Range(match.range(at: 1), in: chunk) {
-                        let text = String(chunk[range])
-                            .replacingOccurrences(of: "&amp;", with: "&")
-                            .replacingOccurrences(of: "&quot;", with: "\"")
-                            .replacingOccurrences(of: "&#39;", with: "'")
-                            .replacingOccurrences(of: "&lt;", with: "<")
-                            .replacingOccurrences(of: "&gt;", with: ">")
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        if !text.isEmpty {
-                            transcriptParts.append(text)
-                        }
-                    }
+                if !textParts.isEmpty {
+                    let combinedText = textParts.joined(separator: " ")
+                    
+                    let seconds = startTime / 1000
+                    let minutes = seconds / 60
+                    let remainingSeconds = seconds % 60
+                    
+                    formattedTranscript += String(format: "[%02d:%02d] %@\n", minutes, remainingSeconds, combinedText)
                 }
-                
-                currentIndex = endIndex
             }
         }
         
-        let finalTranscript = transcriptParts
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "  ", with: " ")
-            .replacingOccurrences(of: "[Music]", with: "🎵 [Music]")
-            .replacingOccurrences(of: "\u{200B}", with: "")
-            .replacingOccurrences(of: "\u{FEFF}", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        
         #if DEBUG
-        print("""
-        📺 YouTubeTranscriptService: Transcript processing completed
-        - Parts count: \(transcriptParts.count)
-        - Final length: \(finalTranscript.count)
-        - First 100 chars: \(String(finalTranscript.prefix(100)))
-        """)
+        print("📝 YouTubeTranscriptService: Sample of formatted transcript:")
+        print(formattedTranscript.prefix(500))
         #endif
         
-        return finalTranscript
+        return formattedTranscript
     }
     
     func getVideoMetadata(videoId: String) async throws -> YouTubeConfig.VideoMetadata {

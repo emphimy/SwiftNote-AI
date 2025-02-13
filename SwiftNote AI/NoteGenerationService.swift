@@ -95,7 +95,7 @@ actor NoteGenerationService {
 
         do {
             let response = try await openAIService.chatCompletionRequest(body: .init(
-                model: "gpt-4o",
+                model: "gpt-4o-mini",
                 messages: [
                     .system(content: .text("You are a helpful assistant that creates well-structured notes from transcripts.")),
                     .user(content: .text(prompt))

@@ -397,9 +397,25 @@ struct TranscriptTabView: View {
                 }
                 .padding()
             } else if let transcript = viewModel.transcript {
-                Text(transcript)
-                    .font(.body)
-                    .padding()
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    ForEach(transcript.components(separatedBy: "\n\n"), id: \.self) { paragraph in
+                        if !paragraph.isEmpty {
+                            if let timeRange = paragraph.range(of: "\\[\\d{2}:\\d{2}\\]", options: [.regularExpression]) {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(String(paragraph[timeRange]))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Text(String(paragraph[paragraph.index(after: timeRange.upperBound)...])
+                                        .trimmingCharacters(in: CharacterSet.whitespaces))
+                                        .font(.body)
+                                }
+                                .padding(.horizontal)
+                            }
+                        }
+                    }
+                }
+                .padding(.vertical)
             }
         }
         .task {
