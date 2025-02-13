@@ -2,6 +2,7 @@ import SwiftUI
 import CoreData
 import AVKit
 import Combine
+import WebKit
 
 // MARK: - Tab Models
 enum StudyTab: String, CaseIterable {
@@ -177,6 +178,14 @@ struct ReadTabView: View {
                 .padding()
             } else if let content = viewModel.content {
                 VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                    // Show video player if it's a YouTube note
+                    if note.sourceType == .video,
+                       let metadata = note.metadata,
+                       let videoId = metadata["videoId"] as? String {
+                        YouTubeVideoPlayerView(videoId: videoId)
+                            .padding(.bottom, Theme.Spacing.md)
+                    }
+                    
                     ForEach(content.formattedContent) { block in
                         ContentBlockView(block: block, fontSize: viewModel.textSize)
                     }
@@ -195,6 +204,34 @@ struct ReadTabView: View {
             await viewModel.loadContent()
         }
     }
+}
+
+// MARK: - YouTube Video Player View
+struct YouTubeVideoPlayerView: View {
+    let videoId: String
+    
+    var body: some View {
+        let videoURL = URL(string: "https://www.youtube.com/embed/\(videoId)")!
+        
+        WebView(url: videoURL)
+            .frame(height: 220)
+            .cornerRadius(Theme.Layout.cornerRadius)
+            .shadow(radius: 4)
+    }
+}
+
+// MARK: - Web View
+struct WebView: UIViewRepresentable {
+    let url: URL
+    
+    func makeUIView(context: Context) -> WKWebView {
+        let webView = WKWebView()
+        webView.scrollView.isScrollEnabled = false
+        webView.load(URLRequest(url: url))
+        return webView
+    }
+    
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
 // MARK: - Flashcards Tab View

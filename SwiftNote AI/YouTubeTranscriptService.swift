@@ -38,7 +38,8 @@ final class YouTubeTranscriptService {
         self.session = session
     }
     
-    func getTranscript(videoId: String) async throws -> String {
+    // MARK: - Public Methods
+    func getTranscript(videoId: String) async throws -> (transcript: String, language: String?) {
         #if DEBUG
         print("📺 YouTubeTranscriptService: Fetching transcript for video: \(videoId)")
         #endif
@@ -116,7 +117,7 @@ final class YouTubeTranscriptService {
         throw YouTubeTranscriptError.jsonParsingError("Could not find ytInitialPlayerResponse in page")
     }
     
-    private func fetchTranscript(videoId: String, playerResponse: [String: Any]) async throws -> String {
+    private func fetchTranscript(videoId: String, playerResponse: [String: Any]) async throws -> (transcript: String, language: String?) {
         // Get necessary data from player response
         guard let captions = playerResponse["captions"] as? [String: Any],
               let playerCaptionsTracklistRenderer = captions["playerCaptionsTracklistRenderer"] as? [String: Any],
@@ -125,6 +126,13 @@ final class YouTubeTranscriptService {
               let baseUrl = firstCaption["baseUrl"] as? String else {
             throw YouTubeTranscriptError.transcriptNotAvailable
         }
+        
+        // Extract language code from the first caption
+        let language = (firstCaption["languageCode"] as? String) ?? (firstCaption["vssId"] as? String)?.components(separatedBy: ".").first
+        
+        #if DEBUG
+        print("📺 YouTubeTranscriptService: Detected language: \(language ?? "unknown")")
+        #endif
         
         // Create URL for transcript
         guard let url = URL(string: baseUrl + "&fmt=json3") else {
@@ -179,7 +187,7 @@ final class YouTubeTranscriptService {
         print(formattedTranscript.prefix(500))
         #endif
         
-        return formattedTranscript
+        return (formattedTranscript, language)
     }
     
     func getVideoMetadata(videoId: String) async throws -> YouTubeConfig.VideoMetadata {

@@ -33,7 +33,7 @@ class YouTubeService {
     }
     
     // MARK: - Public Methods
-    func getTranscript(videoId: String) async throws -> String {
+    func getTranscript(videoId: String) async throws -> (transcript: String, language: String?) {
         return try await transcriptService.getTranscript(videoId: videoId)
     }
     

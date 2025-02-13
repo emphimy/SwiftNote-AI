@@ -187,14 +187,14 @@ class YouTubeViewModel: ObservableObject {
             #endif
             
             loadingState = .loading(message: "Extracting transcript...")
-            let transcript = try await youtubeService.getTranscript(videoId: videoId)
+            let (transcript, language) = try await youtubeService.getTranscript(videoId: videoId)
             let metadata = try await youtubeService.getVideoMetadata(videoId: videoId)
             
             loadingState = .loading(message: "Generating note...")
-            let noteContent = try await noteGenerationService.generateNote(from: transcript)
+            let noteContent = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: language)
             
             loadingState = .loading(message: "Generating title...")
-            let title = try await noteGenerationService.generateTitle(from: transcript)
+            let title = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: language)
             
             generatedNote = NoteCardConfiguration(
                 title: title,

@@ -35,7 +35,7 @@ actor NoteGenerationService {
         #endif
     }
     
-    func generateNote(from transcript: String) async throws -> String {
+    func generateNote(from transcript: String, detectedLanguage: String? = nil) async throws -> String {
         guard !transcript.isEmpty else {
             throw NoteGenerationError.emptyTranscript
         }
@@ -43,6 +43,8 @@ actor NoteGenerationService {
         #if DEBUG
         print("🤖 NoteGenerationService: Generating note from transcript of length: \(transcript.count)")
         #endif
+        
+        let languagePrompt = detectedLanguage != nil ? "Generate the note in \(detectedLanguage!) language." : ""
         
         let prompt = """
         Please analyze this transcript and create a well-structured note with the following sections:
@@ -52,6 +54,7 @@ actor NoteGenerationService {
         4. Notable Quotes (if any)
         
         Use Markdown formatting for better readability.
+        \(languagePrompt)
         
         Transcript:
         \(transcript)
@@ -60,14 +63,17 @@ actor NoteGenerationService {
         return try await makeRequest(prompt: prompt)
     }
     
-    func generateTitle(from transcript: String) async throws -> String {
+    func generateTitle(from transcript: String, detectedLanguage: String? = nil) async throws -> String {
         guard !transcript.isEmpty else {
             throw NoteGenerationError.emptyTranscript
         }
         
+        let languagePrompt = detectedLanguage != nil ? "Generate the title in \(detectedLanguage!) language." : ""
+        
         let prompt = """
         Based on this transcript, generate a concise but descriptive title (maximum 60 characters) that captures the main topic or theme.
         The title should be clear and informative, avoiding generic phrases.
+        \(languagePrompt)
         
         Transcript:
         \(transcript)

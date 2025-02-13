@@ -95,10 +95,10 @@ final class YouTubeTranscriptViewModel: ObservableObject {
         
         do {
             processState = .extractingTranscript
-            let transcript = try await transcriptService.getTranscript(videoId: videoId)
+            let (transcript, language) = try await transcriptService.getTranscript(videoId: videoId)
             
             processState = .generatingNote
-            try await generateNote(from: transcript)
+            try await generateNote(from: transcript, language: language)
             
             processState = .completed
             shouldNavigateToNote = true
@@ -116,13 +116,14 @@ final class YouTubeTranscriptViewModel: ObservableObject {
         }
     }
     
-    private func generateNote(from transcript: String) async throws {
-        let noteContent = try await noteGenerationService.generateNote(from: transcript)
+    private func generateNote(from transcript: String, language: String?) async throws {
+        let title = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: language)
+        let content = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: language)
         
         generatedNote = NoteCardConfiguration(
-            title: metadata?.title ?? "YouTube Note",
+            title: title,
             date: Date(),
-            preview: String(noteContent.prefix(100)),
+            preview: String(content.prefix(100)),
             sourceType: .video,
             tags: ["YouTube"]
         )
