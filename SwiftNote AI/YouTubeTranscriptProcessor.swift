@@ -21,14 +21,8 @@ final class YouTubeTranscriptViewModel: ObservableObject {
     // MARK: - Initialization
     init(initialURL: String = "") {
         self.transcriptService = YouTubeTranscriptService()
-        do {
-            self.noteGenerationService = try NoteGenerationService()
-        } catch {
-            self.noteGenerationService = try! NoteGenerationService() // This will never fail in production as we have the key in Info.plist
-            #if DEBUG
-            print("🤖 Error initializing NoteGenerationService: \(error)")
-            #endif
-        }
+        self.noteGenerationService = NoteGenerationService()
+
         self.urlInput = initialURL
         setupURLInputSubscriber()
         

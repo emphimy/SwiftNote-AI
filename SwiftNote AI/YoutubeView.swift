@@ -158,11 +158,7 @@ class YouTubeViewModel: ObservableObject {
     
     init() {
         self.youtubeService = YouTubeService()
-        do {
-            self.noteGenerationService = try NoteGenerationService()
-        } catch {
-            fatalError("Failed to initialize NoteGenerationService: \(error)")
-        }
+        self.noteGenerationService = NoteGenerationService()
     }
     
     private func validateURL(_ urlString: String) throws -> String {

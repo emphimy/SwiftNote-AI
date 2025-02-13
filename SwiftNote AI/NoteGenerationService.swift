@@ -1,16 +1,14 @@
 import Foundation
+import AIProxy
 
 // MARK: - Note Generation Error
 enum NoteGenerationError: LocalizedError {
-    case invalidAPIKey
     case apiError(String)
     case invalidResponse
     case emptyTranscript
     
     var errorDescription: String? {
         switch self {
-        case .invalidAPIKey:
-            return "Invalid OpenAI API key"
         case .apiError(let message):
             return "API Error: \(message)"
         case .invalidResponse:
@@ -23,35 +21,18 @@ enum NoteGenerationError: LocalizedError {
 
 // MARK: - Note Generation Service
 actor NoteGenerationService {
-    private let apiKey: String
-    private let endpoint = "https://api.openai.com/v1/chat/completions"
+
+    private let openAIService: OpenAIService
     
-    init() throws {
+    init() {
+        self.openAIService = AIProxy.openAIService(
+            partialKey: "v2|feef4cd4|k3bJw_-iBG5958LZ",
+            serviceURL: "https://api.aiproxy.pro/4b571ffb/5b899002"
+        )
+        
         #if DEBUG
         print("🤖 NoteGeneration: Initializing service")
         #endif
-        
-        guard let apiKey = Bundle.main.object(forInfoDictionaryKey: "OpenAIAPIKey") as? String else {
-            #if DEBUG
-            print("🤖 NoteGeneration: Failed to retrieve API key from Info.plist")
-            #endif
-            throw NoteGenerationError.invalidAPIKey
-        }
-        
-        guard !apiKey.isEmpty else {
-            #if DEBUG
-            print("🤖 NoteGeneration: API key is empty")
-            #endif
-            throw NoteGenerationError.invalidAPIKey
-        }
-        
-        #if DEBUG
-        print("🤖 NoteGeneration: Successfully retrieved API key")
-        print("🤖 NoteGeneration: API key length: \(apiKey.count)")
-        print("🤖 NoteGeneration: First 10 chars: \(String(apiKey.prefix(10)))...")
-        #endif
-        
-        self.apiKey = apiKey
     }
     
     func generateNote(from transcript: String) async throws -> String {
@@ -99,7 +80,7 @@ actor NoteGenerationService {
         return response.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
-    // MARK: - Update makeRequest function
+    // MARK: - Private Methods
     private func makeRequest(prompt: String) async throws -> String {
         guard !prompt.isEmpty else {
             #if DEBUG
@@ -108,88 +89,40 @@ actor NoteGenerationService {
             throw NoteGenerationError.apiError("Empty prompt provided")
         }
 
-        let requestBody: [String: Any] = [
-            "model": "gpt-4o",
-            "messages": [
-                ["role": "system", "content": "You are a helpful assistant that creates well-structured notes from transcripts. Create comprehensive, well-organized notes with sections for Summary, Key Points, Important Details, and Notable Quotes."],
-                ["role": "user", "content": prompt]
-            ],
-            "temperature": 0.7,
-            "max_tokens": 2000
-        ]
-        
-        guard let url = URL(string: endpoint) else {
-            #if DEBUG
-            print("🤖 NoteGeneration: Invalid endpoint URL")
-            #endif
-            throw NoteGenerationError.invalidAPIKey
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-        
+        #if DEBUG
+        print("🤖 NoteGeneration: Making request with prompt length: \(prompt.count)")
+        #endif
+
         do {
-            let jsonData = try JSONSerialization.data(withJSONObject: requestBody)
-            request.httpBody = jsonData
+            let response = try await openAIService.chatCompletionRequest(body: .init(
+                model: "gpt-4o",
+                messages: [
+                    .system(content: .text("You are a helpful assistant that creates well-structured notes from transcripts.")),
+                    .user(content: .text(prompt))
+                ]
+            ))
             
-            #if DEBUG
-            print("🤖 NoteGeneration: Request body:")
-            if let requestString = String(data: jsonData, encoding: .utf8) {
-                print(requestString)
-            }
-            #endif
-            
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            guard let httpResponse = response as? HTTPURLResponse else {
+            guard let content = response.choices.first?.message.content else {
                 #if DEBUG
-                print("🤖 NoteGeneration: Invalid response type")
+                print("🤖 NoteGeneration: Invalid response - no content in choices")
                 #endif
                 throw NoteGenerationError.invalidResponse
             }
-            
+
             #if DEBUG
-            print("🤖 NoteGeneration: Response status code: \(httpResponse.statusCode)")
-            print("🤖 NoteGeneration: Response headers: \(httpResponse.allHeaderFields)")
-            if let responseString = String(data: data, encoding: .utf8) {
-                print("🤖 NoteGeneration: Response body: \(responseString)")
-            }
+            print("🤖 NoteGeneration: Successfully received response")
             #endif
             
-            if httpResponse.statusCode == 400 {
-                // Parse error message from response
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let error = json["error"] as? [String: Any],
-                   let message = error["message"] as? String {
-                    #if DEBUG
-                    print("🤖 NoteGeneration: API error message: \(message)")
-                    #endif
-                    throw NoteGenerationError.apiError(message)
-                }
-            }
-            
-            guard (200...299).contains(httpResponse.statusCode) else {
-                #if DEBUG
-                print("🤖 NoteGeneration: Error status code: \(httpResponse.statusCode)")
-                #endif
-                throw NoteGenerationError.apiError("Server returned status code: \(httpResponse.statusCode)")
-            }
-
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = json["choices"] as? [[String: Any]],
-                  let firstChoice = choices.first,
-                  let message = firstChoice["message"] as? [String: Any],
-                  let content = message["content"] as? String else {
-                throw NoteGenerationError.invalidResponse
-            }
-
             return content
+
+        } catch AIProxyError.unsuccessfulRequest(let statusCode, let responseBody) {
+            #if DEBUG
+            print("🤖 NoteGeneration: Request failed with status code: \(statusCode), body: \(responseBody)")
+            #endif
+            throw NoteGenerationError.apiError("Request failed with status \(statusCode)")
         } catch {
             #if DEBUG
-            print("🤖 NoteGeneration: Request failed with error: \(error)")
+            print("🤖 NoteGeneration: Request failed - \(error)")
             #endif
             throw NoteGenerationError.apiError(error.localizedDescription)
         }

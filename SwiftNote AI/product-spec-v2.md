@@ -33,6 +33,8 @@ The app allows students to import content (audio, text, video) and automatically
     - Mathematical formulas (when relevant)
     - Code snippets (for programming content)
     - Diagrams (where applicable)
+    - Emojis (where relevant)
+    - Icons (where relevant)
 
 ## User Interface Specifications
 

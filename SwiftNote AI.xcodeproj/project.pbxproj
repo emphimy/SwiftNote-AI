@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		C950AFAC2D5D0AD600558875 /* AIProxy in Frameworks */ = {isa = PBXBuildFile; productRef = C950AFAB2D5D0AD600558875 /* AIProxy */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		C9F047202CF92F090031419E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -65,6 +69,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C950AFAC2D5D0AD600558875 /* AIProxy in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,6 +130,7 @@
 			);
 			name = "SwiftNote AI";
 			packageProductDependencies = (
+				C950AFAB2D5D0AD600558875 /* AIProxy */,
 			);
 			productName = "SwiftNote AI";
 			productReference = C9F047082CF92F080031419E /* SwiftNote AI.app */;
@@ -208,6 +214,9 @@
 			);
 			mainGroup = C9F046FF2CF92F080031419E;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C950AFAA2D5D0AD600558875 /* XCRemoteSwiftPackageReference "AIProxySwift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C9F047092CF92F080031419E /* Products */;
 			projectDirPath = "";
@@ -291,15 +300,21 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"SwiftNote AI/Preview Content\"";
-				DEVELOPMENT_TEAM = 2S256PTN3T;
+				DEVELOPMENT_TEAM = 44YH7KBJ2U;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "SwiftNote AI/Info.plist";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "We need camera access to scan documents and create notes";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "We need microphone access to record audio notes";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "We need access to your photos to import images for notes";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "We use speech recognition to transcribe your audio notes";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = armv7;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -323,15 +338,21 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"SwiftNote AI/Preview Content\"";
-				DEVELOPMENT_TEAM = 2S256PTN3T;
+				DEVELOPMENT_TEAM = 44YH7KBJ2U;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "SwiftNote AI/Info.plist";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "We need camera access to scan documents and create notes";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "We need microphone access to record audio notes";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "We need access to your photos to import images for notes";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "We use speech recognition to transcribe your audio notes";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIRequiredDeviceCapabilities = armv7;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportsDocumentBrowser = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -577,6 +598,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		C950AFAA2D5D0AD600558875 /* XCRemoteSwiftPackageReference "AIProxySwift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/lzell/AIProxySwift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.70.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C950AFAB2D5D0AD600558875 /* AIProxy */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C950AFAA2D5D0AD600558875 /* XCRemoteSwiftPackageReference "AIProxySwift" */;
+			productName = AIProxy;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = C9F047002CF92F080031419E /* Project object */;
 }

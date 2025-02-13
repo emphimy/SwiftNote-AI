@@ -2,199 +2,104 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-
-    <!-- App Transport Security -->
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsArbitraryLoads</key>
-        <false/>
-    </dict>
-
-    <!-- Privacy Permissions -->
-    <key>NSCameraUsageDescription</key>
-    <string>We need camera access to scan documents and create notes</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>We need microphone access to record audio notes</string>
-    <key>NSSpeechRecognitionUsageDescription</key>
-    <string>We use speech recognition to transcribe your audio notes</string>
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>We need access to your photos to import images for notes</string>
-
-    <!-- Background Modes -->
-    <key>UIBackgroundModes</key>
-    <array>
-        <string>audio</string>
-        <string>remote-notification</string>
-    </array>
-
-    <!-- Required device capabilities -->
-    <key>UIRequiredDeviceCapabilities</key>
-    <array>
-        <string>armv7</string>
-    </array>
-
-    <!-- Supported interface orientations -->
-    <key>UISupportedInterfaceOrientations</key>
-    <array>
-        <string>UIInterfaceOrientationPortrait</string>
-        <string>UIInterfaceOrientationLandscapeLeft</string>
-        <string>UIInterfaceOrientationLandscapeRight</string>
-    </array>
-    <key>UISupportedInterfaceOrientations~ipad</key>
-    <array>
-        <string>UIInterfaceOrientationPortrait</string>
-        <string>UIInterfaceOrientationPortraitUpsideDown</string>
-        <string>UIInterfaceOrientationLandscapeLeft</string>
-        <string>UIInterfaceOrientationLandscapeRight</string>
-    </array>
-
-    <!-- Application Settings -->
-    <key>UIApplicationSceneManifest</key>
-    <dict>
-        <key>UIApplicationSupportsMultipleScenes</key>
-        <false/>
-        <key>UISceneConfigurations</key>
-        <dict>
-            <key>UIWindowSceneSessionRoleApplication</key>
-            <array>
-                <dict>
-                    <key>UISceneConfigurationName</key>
-                    <string>Default Configuration</string>
-                    <key>UISceneDelegateClassName</key>
-                    <string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
-                </dict>
-            </array>
-        </dict>
-    </dict>
-
-    <!-- Launch Screen -->
-    <key>UILaunchScreen</key>
-    <dict/>
-
-    <!-- Appearance -->
-    <key>UIViewControllerBasedStatusBarAppearance</key>
-    <true/>
-
-    <!-- File Type Support -->
-    <key>UTExportedTypeDeclarations</key>
-    <array>
-        <dict>
-            <key>UTTypeIdentifier</key>
-            <string>com.yourapp.note</string>
-            <key>UTTypeDescription</key>
-            <string>SwiftNote AI Note</string>
-            <key>UTTypeConformsTo</key>
-            <array>
-                <string>public.data</string>
-                <string>public.content</string>
-            </array>
-        </dict>
-    </array>
-
-    <!-- Document Types -->
-    <key>CFBundleDocumentTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleTypeName</key>
-            <string>Audio</string>
-            <key>LSHandlerRank</key>
-            <string>Alternate</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>public.audio</string>
-                <string>public.mp3</string>
-                <string>public.mpeg-4-audio</string>
-                <string>com.apple.m4a-audio</string>
-                <string>com.apple.protected-mpeg-4-audio</string>
-            </array>
-            <key>LSSupportsOpeningDocumentsInPlace</key>
-            <true/>
-            <key>CFBundleTypeRole</key>
-            <string>Editor</string>
-        </dict>
-        <dict>
-            <key>CFBundleTypeName</key>
-            <string>Text</string>
-            <key>LSHandlerRank</key>
-            <string>Alternate</string>
-            <key>LSItemContentTypes</key>
-            <array>
-                <string>public.text</string>
-                <string>public.plain-text</string>
-                <string>public.rtf</string>
-                <string>public.markdown</string>
-                <string>com.apple.iwork.pages.document</string>
-                <string>com.microsoft.word.doc</string>
-                <string>org.openxmlformats.wordprocessingml.document</string>
-            </array>
-            <key>LSSupportsOpeningDocumentsInPlace</key>
-            <true/>
-            <key>CFBundleTypeRole</key>
-            <string>Editor</string>
-        </dict>
-    </array>
-    
-    <!-- Document Handling Support -->
-    <key>LSSupportsOpeningDocumentsInPlace</key>
-    <true/>
-    <key>UISupportsDocumentBrowser</key>
-    <true/>
-
-    <!-- File Provider Support -->
-    <key>UIFileSharingEnabled</key>
-    <true/>
-    <key>LSSupportsOpeningDocumentsInPlace</key>
-    <true/>
-
-    <!-- Required app info -->
-    <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>LSRequiresIPhoneOS</key>
-    <true/>
-    
-    <!-- Minimum iOS Version -->
-    <key>MinimumOSVersion</key>
-    <string>16.6</string>
-    
-    <!-- YouTube API Configuration -->
-    <key>YouTubeAPIKey</key>
-    <string>AIzaSyDUfnDljPQp_vzo1CFaKRBZzQu6DgV7PeQ</string>
-
-    <!-- URL Schemes for YouTube -->
-    <key>LSApplicationQueriesSchemes</key>
-    <array>
-        <string>youtube</string>
-        <string>youtube-x-callback</string>
-    </array>
-
-    <!-- YouTube API Access -->
-    <key>NSAppTransportSecurity</key>
-    <dict>
-        <key>NSAllowsArbitraryLoads</key>
-        <false/>
-        <key>NSExceptionDomains</key>
-        <dict>
-            <key>youtube.com</key>
-            <dict>
-                <key>NSIncludesSubdomains</key>
-                <true/>
-                <key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
-                <false/>
-                <key>NSTemporaryExceptionMinimumTLSVersion</key>
-                <string>TLSv1.2</string>
-            </dict>
-            <key>googleapis.com</key>
-            <dict>
-                <key>NSIncludesSubdomains</key>
-                <true/>
-                <key>NSTemporaryExceptionAllowsInsecureHTTPLoads</key>
-                <false/>
-                <key>NSTemporaryExceptionMinimumTLSVersion</key>
-                <string>TLSv1.2</string>
-            </dict>
-        </dict>
-    </dict>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Audio</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.audio</string>
+				<string>public.mp3</string>
+				<string>public.mpeg-4-audio</string>
+				<string>com.apple.m4a-audio</string>
+				<string>com.apple.protected-mpeg-4-audio</string>
+			</array>
+			<key>LSSupportsOpeningDocumentsInPlace</key>
+			<true/>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Text</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.text</string>
+				<string>public.plain-text</string>
+				<string>public.rtf</string>
+				<string>public.markdown</string>
+				<string>com.apple.iwork.pages.document</string>
+				<string>com.microsoft.word.doc</string>
+				<string>org.openxmlformats.wordprocessingml.document</string>
+			</array>
+			<key>LSSupportsOpeningDocumentsInPlace</key>
+			<true/>
+		</dict>
+	</array>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>youtube</string>
+		<string>youtube-x-callback</string>
+	</array>
+	<key>MinimumOSVersion</key>
+	<string>16.6</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
+		<key>NSExceptionDomains</key>
+		<dict/>
+	</dict>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>remote-notification</string>
+	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>SwiftNote AI Note</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.yourapp.note</string>
+		</dict>
+	</array>
+	<key>YouTubeAPIKey</key>
+	<string>AIzaSyDUfnDljPQp_vzo1CFaKRBZzQu6DgV7PeQ</string>
 </dict>
 </plist>
