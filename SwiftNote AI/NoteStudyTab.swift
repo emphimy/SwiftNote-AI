@@ -400,7 +400,8 @@ struct TranscriptTabView: View {
                 LazyVStack(alignment: .leading, spacing: 24) {
                     ForEach(transcript.components(separatedBy: "\n\n"), id: \.self) { paragraph in
                         if !paragraph.isEmpty {
-                            if let timeRange = paragraph.range(of: "\\[\\d{2}:\\d{2}\\]", options: [.regularExpression]) {
+                            // Updated regex to handle any number of digits for minutes
+                            if let timeRange = paragraph.range(of: "\\[\\d+:\\d{2}\\]", options: [.regularExpression]) {
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text(String(paragraph[timeRange]))
                                         .font(.caption)

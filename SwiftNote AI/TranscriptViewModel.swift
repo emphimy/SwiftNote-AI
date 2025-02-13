@@ -73,13 +73,14 @@ final class TranscriptViewModel: ObservableObject {
                 for line in lines {
                     if line.isEmpty { continue }
                     
-                    if let timeRange = line.range(of: "\\[(\\d{2}):\\d{2}\\]", options: [.regularExpression]) {
+                    // Updated regex to handle any number of digits for minutes
+                    if let timeRange = line.range(of: "\\[(\\d+):\\d{2}\\]", options: [.regularExpression]) {
                         let timeStr = String(line[timeRange])
                         let text = String(line[line.index(after: timeRange.upperBound)...])
                             .trimmingCharacters(in: CharacterSet.whitespaces)
                         
-                        // Extract minute from timestamp using regex
-                        if let minuteRange = timeStr.range(of: "\\d{2}", options: .regularExpression) {
+                        // Extract minute from timestamp
+                        if let minuteRange = timeStr.range(of: "\\d+", options: .regularExpression) {
                             if let minute = Int(timeStr[minuteRange]) {
                                 if minute != currentMinute {
                                     // Save current paragraph if exists
