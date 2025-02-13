@@ -47,15 +47,38 @@ actor NoteGenerationService {
         let languagePrompt = detectedLanguage != nil ? "Generate the note in \(detectedLanguage!) language." : ""
         
         let prompt = """
-        Please analyze this transcript and create a well-structured note with the following sections:
-        1. Summary (detailed summary with a couple of paragraph)
-        2. Key Points (bullet points and tables)
-        3. Important Details (organized by topics)
-        4. Notable Quotes (if any)
-        5. Conclusion (based on the whole content)
-        6. Recommendation (What other things the user can look at if they want to learn more about it)
+        Please analyze this transcript and create a well-structured detailed note using proper markdown formatting:
         
-        Use Markdown formatting for better readability.
+        Add 1-2 table into different section of the note if anything can be represented better in table. Notes are always between summary and conclusion sections.
+        No need another header before summary. If you have to use ##
+
+        ## Summary
+        Create a detailed summary with a couple of paragraphs.
+
+        ## Key Points
+        - Use bullet points for key points
+
+        ## Important Details (with custom header)
+        as many topic as you need with the topic format below
+        
+        ### Topic
+        Content for topic
+
+        ## Notable Quotes
+        > Include quotes if any
+
+        ## Conclusion
+        Detailed conclusion based on the whole content with a couple of paragraph.
+
+        Use proper markdown formatting:
+        1. Use ## for main headers
+        2. Use ### for subheaders
+        3. Use proper table formatting with | and -
+        4. Use > for quotes
+        5. Use - for bullet points
+        6. Use ` for code or technical terms
+        7. Use ** for emphasis
+        
         \(languagePrompt)
         
         Transcript:
