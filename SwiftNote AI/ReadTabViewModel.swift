@@ -172,36 +172,23 @@ final class ReadTabViewModel: ObservableObject {
             }
             // Handle formatted text
             else {
-                let text = trimmed
-                var currentIndex = text.startIndex
-                var segments: [ContentBlock] = []
-                
-                while currentIndex < text.endIndex {
-                    // Find next bold text
-                    if let boldRange = text[currentIndex...].range(of: "\\*\\*[^*]+\\*\\*", options: .regularExpression) {
-                        // Add text before bold as regular paragraph if any
-                        let beforeBold = String(text[currentIndex..<boldRange.lowerBound])
-                        if !beforeBold.isEmpty {
-                            segments.append(ContentBlock(type: .paragraph, content: beforeBold))
+                // Process bold text
+                if trimmed.contains("**") {
+                    let parts = trimmed.components(separatedBy: "**")
+                    for (index, part) in parts.enumerated() {
+                        if !part.isEmpty {
+                            if index % 2 == 1 {
+                                // Bold text
+                                blocks.append(ContentBlock(type: .formattedText(style: .bold), content: part))
+                            } else {
+                                // Regular text
+                                blocks.append(ContentBlock(type: .paragraph, content: part))
+                            }
                         }
-                        
-                        // Add bold text
-                        let boldText = String(text[boldRange])
-                        let content = String(boldText.dropFirst(2).dropLast(2))
-                        segments.append(ContentBlock(type: .formattedText(style: .bold), content: content))
-                        
-                        currentIndex = boldRange.upperBound
-                    } else {
-                        // Add remaining text as regular paragraph
-                        let remainingText = String(text[currentIndex...])
-                        if !remainingText.isEmpty {
-                            segments.append(ContentBlock(type: .paragraph, content: remainingText))
-                        }
-                        break
                     }
+                } else {
+                    blocks.append(ContentBlock(type: .paragraph, content: trimmed))
                 }
-                
-                blocks.append(contentsOf: segments)
             }
         }
         
@@ -210,19 +197,7 @@ final class ReadTabViewModel: ObservableObject {
             blocks.append(ContentBlock(type: .table(headers: headers, rows: tableRows), content: ""))
         }
         
-        // Deduplicate blocks by comparing content
-        var uniqueBlocks: [ContentBlock] = []
-        var seenContent = Set<String>()
-        
-        for block in blocks {
-            let key = "\(block.content)_\(block.type)"
-            if !seenContent.contains(key) {
-                uniqueBlocks.append(block)
-                seenContent.insert(key)
-            }
-        }
-        
-        return uniqueBlocks
+        return blocks
     }
     
     func adjustTextSize(_ delta: CGFloat) {

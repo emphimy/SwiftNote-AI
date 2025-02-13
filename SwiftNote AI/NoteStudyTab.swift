@@ -3,6 +3,7 @@ import CoreData
 import AVKit
 import Combine
 import WebKit
+import Down
 
 // MARK: - Tab Models
 enum StudyTab: String, CaseIterable {
@@ -400,6 +401,7 @@ private struct ContentBlockView: View {
                     .font(.system(size: fontSize))
                 Text(block.content)
                     .font(.system(size: fontSize))
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.vertical, 2)
         case .numberedList:
@@ -494,6 +496,25 @@ private struct ContentBlockView: View {
                     ProgressView()
                 }
             }
+        }
+    }
+}
+
+// MARK: - Down View
+struct DownView: UIViewRepresentable {
+    let markdown: String
+    
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.isEditable = false
+        textView.isScrollEnabled = false
+        return textView
+    }
+    
+    func updateUIView(_ uiView: UITextView, context: Context) {
+        let down = Down(markdownString: markdown)
+        if let attributedString = try? down.toAttributedString() {
+            uiView.attributedText = attributedString
         }
     }
 }

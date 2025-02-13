@@ -56,7 +56,7 @@ actor NoteGenerationService {
         Create a detailed summary with a couple of paragraphs.
 
         ## Key Points
-        - Use bullet points for key points
+        - Use bullet points for key points. 
 
         ## Important Details (with custom header)
         as many topic as you need with the topic format below
@@ -64,7 +64,7 @@ actor NoteGenerationService {
         ### Topic
         Content for topic
 
-        ## Notable Quotes
+        ## Notable Quotes (only impactful and important ones, 
         > Include quotes if any
 
         ## Conclusion
