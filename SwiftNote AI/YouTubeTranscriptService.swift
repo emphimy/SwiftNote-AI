@@ -121,8 +121,8 @@ final class YouTubeTranscriptService {
         // Get necessary data from player response
         guard let captions = playerResponse["captions"] as? [String: Any],
               let playerCaptionsTracklistRenderer = captions["playerCaptionsTracklistRenderer"] as? [String: Any],
-              let captionsArray = playerCaptionsTracklistRenderer["captionTracks"] as? [[String: Any]],
-              let firstCaption = captionsArray.first,
+              let captionTracks = playerCaptionsTracklistRenderer["captionTracks"] as? [[String: Any]],
+              let firstCaption = captionTracks.first,
               let baseUrl = firstCaption["baseUrl"] as? String else {
             throw YouTubeTranscriptError.transcriptNotAvailable
         }
@@ -142,36 +142,32 @@ final class YouTubeTranscriptService {
         // Fetch transcript data
         let (data, _) = try await session.data(from: url)
         
-        // Parse transcript JSON
+        // Parse JSON response
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let events = json["events"] as? [[String: Any]] else {
-            throw YouTubeTranscriptError.jsonParsingError("Invalid transcript format")
+            throw YouTubeTranscriptError.jsonParsingError("Invalid transcript data format")
         }
         
         #if DEBUG
-        print("📝 YouTubeTranscriptService: First event structure:")
-        if let firstEvent = events.first {
-            print(firstEvent)
-        }
+        print("📺 YouTubeTranscriptService: Processing \(events.count) transcript events")
         #endif
         
-        // Group segments by timestamp
         var formattedTranscript = ""
         
         for event in events {
             if let segs = event["segs"] as? [[String: Any]],
-               let _ = event["tStartMs"] as? Int {
+               let startTime = event["tStartMs"] as? Int {
                 
                 // Combine all segments in this event
                 let textParts = segs.compactMap { seg -> String? in
                     guard let text = seg["utf8"] as? String else { return nil }
                     return text.trimmingCharacters(in: .whitespacesAndNewlines)
-                }.filter { !$0.isEmpty }
+                }
                 
                 if !textParts.isEmpty {
                     let combinedText = textParts.joined(separator: " ")
                     
-                    let seconds = 0 / 1000
+                    let seconds = startTime / 1000
                     let minutes = seconds / 60
                     let remainingSeconds = seconds % 60
                     
@@ -181,7 +177,7 @@ final class YouTubeTranscriptService {
         }
         
         #if DEBUG
-        print("📝 YouTubeTranscriptService: Sample of formatted transcript:")
+        print("📺 YouTubeTranscriptService: First 500 characters of transcript:")
         print(formattedTranscript.prefix(500))
         #endif
         
