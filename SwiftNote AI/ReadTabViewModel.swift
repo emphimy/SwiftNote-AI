@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreData
 import Combine
+import Down
 
 // MARK: - Read Tab View Model
 @MainActor
@@ -86,24 +87,142 @@ final class ReadTabViewModel: ObservableObject {
         print("📖 ReadTabViewModel: Parsing content of length: \(text.count)")
         #endif
         
-        return text.components(separatedBy: "\n").compactMap { line in
-            let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmedLine.isEmpty else { return nil }
+        var blocks: [ContentBlock] = []
+        let lines = text.components(separatedBy: .newlines)
+        var currentCodeBlock: String?
+        var codeLanguage: String?
+        var tableHeaders: [String]?
+        var tableRows: [[String]] = []
+        
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { continue }
             
-            if trimmedLine.hasPrefix("# ") {
-                return ContentBlock(type: .heading1, content: String(trimmedLine.dropFirst(2)))
-            } else if trimmedLine.hasPrefix("## ") {
-                return ContentBlock(type: .heading2, content: String(trimmedLine.dropFirst(3)))
-            } else if trimmedLine.hasPrefix("- ") {
-                return ContentBlock(type: .bulletList, content: String(trimmedLine.dropFirst(2)))
-            } else if trimmedLine.hasPrefix("`") && trimmedLine.hasSuffix("`") {
-                return ContentBlock(type: .codeBlock(language: nil), content: String(trimmedLine.dropFirst().dropLast()))
-            } else if trimmedLine.hasPrefix("> ") {
-                return ContentBlock(type: .quote, content: String(trimmedLine.dropFirst(2)))
-            } else {
-                return ContentBlock(type: .paragraph, content: trimmedLine)
+            // Handle code blocks
+            if trimmed.hasPrefix("```") {
+                if currentCodeBlock == nil {
+                    codeLanguage = String(trimmed.dropFirst(3))
+                    currentCodeBlock = ""
+                } else {
+                    blocks.append(ContentBlock(type: .codeBlock(language: codeLanguage), content: currentCodeBlock ?? ""))
+                    currentCodeBlock = nil
+                    codeLanguage = nil
+                }
+                continue
+            }
+            
+            if currentCodeBlock != nil {
+                currentCodeBlock?.append(trimmed + "\n")
+                continue
+            }
+            
+            // Handle tables
+            if trimmed.contains("|") {
+                let cells = trimmed.components(separatedBy: "|")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                
+                if tableHeaders == nil {
+                    tableHeaders = cells
+                } else if trimmed.contains("---") {
+                    continue
+                } else {
+                    tableRows.append(cells)
+                }
+                continue
+            } else if tableHeaders != nil {
+                blocks.append(ContentBlock(type: .table(headers: tableHeaders ?? [], rows: tableRows), content: ""))
+                tableHeaders = nil
+                tableRows = []
+            }
+            
+            // Handle headers
+            if trimmed.hasPrefix("# ") {
+                blocks.append(ContentBlock(type: .heading1, content: String(trimmed.dropFirst(2))))
+            } else if trimmed.hasPrefix("## ") {
+                blocks.append(ContentBlock(type: .heading2, content: String(trimmed.dropFirst(3))))
+            } else if trimmed.hasPrefix("### ") {
+                blocks.append(ContentBlock(type: .heading3, content: String(trimmed.dropFirst(4))))
+            } else if trimmed.hasPrefix("#### ") {
+                blocks.append(ContentBlock(type: .heading4, content: String(trimmed.dropFirst(5))))
+            } else if trimmed.hasPrefix("##### ") {
+                blocks.append(ContentBlock(type: .heading5, content: String(trimmed.dropFirst(6))))
+            } else if trimmed.hasPrefix("###### ") {
+                blocks.append(ContentBlock(type: .heading6, content: String(trimmed.dropFirst(7))))
+            }
+            // Handle lists
+            else if trimmed.hasPrefix("- [ ] ") {
+                blocks.append(ContentBlock(type: .taskList(checked: false), content: String(trimmed.dropFirst(6))))
+            } else if trimmed.hasPrefix("- [x] ") {
+                blocks.append(ContentBlock(type: .taskList(checked: true), content: String(trimmed.dropFirst(6))))
+            } else if trimmed.hasPrefix("- ") {
+                blocks.append(ContentBlock(type: .bulletList, content: String(trimmed.dropFirst(2))))
+            } else if trimmed.hasPrefix("* ") {
+                blocks.append(ContentBlock(type: .bulletList, content: String(trimmed.dropFirst(2))))
+            } else if let match = trimmed.range(of: "^\\d+\\. ", options: .regularExpression) {
+                blocks.append(ContentBlock(type: .numberedList, content: String(trimmed[match.upperBound...])))
+            }
+            // Handle quotes
+            else if trimmed.hasPrefix("> ") {
+                blocks.append(ContentBlock(type: .quote, content: String(trimmed.dropFirst(2))))
+            }
+            // Handle horizontal rules
+            else if trimmed == "---" || trimmed == "***" || trimmed == "___" {
+                blocks.append(ContentBlock(type: .horizontalRule, content: ""))
+            }
+            // Handle formatted text
+            else {
+                let text = trimmed
+                var currentIndex = text.startIndex
+                var segments: [ContentBlock] = []
+                
+                while currentIndex < text.endIndex {
+                    // Find next bold text
+                    if let boldRange = text[currentIndex...].range(of: "\\*\\*[^*]+\\*\\*", options: .regularExpression) {
+                        // Add text before bold as regular paragraph if any
+                        let beforeBold = String(text[currentIndex..<boldRange.lowerBound])
+                        if !beforeBold.isEmpty {
+                            segments.append(ContentBlock(type: .paragraph, content: beforeBold))
+                        }
+                        
+                        // Add bold text
+                        let boldText = String(text[boldRange])
+                        let content = String(boldText.dropFirst(2).dropLast(2))
+                        segments.append(ContentBlock(type: .formattedText(style: .bold), content: content))
+                        
+                        currentIndex = boldRange.upperBound
+                    } else {
+                        // Add remaining text as regular paragraph
+                        let remainingText = String(text[currentIndex...])
+                        if !remainingText.isEmpty {
+                            segments.append(ContentBlock(type: .paragraph, content: remainingText))
+                        }
+                        break
+                    }
+                }
+                
+                blocks.append(contentsOf: segments)
             }
         }
+        
+        // Handle any remaining table
+        if let headers = tableHeaders {
+            blocks.append(ContentBlock(type: .table(headers: headers, rows: tableRows), content: ""))
+        }
+        
+        // Deduplicate blocks by comparing content
+        var uniqueBlocks: [ContentBlock] = []
+        var seenContent = Set<String>()
+        
+        for block in blocks {
+            let key = "\(block.content)_\(block.type)"
+            if !seenContent.contains(key) {
+                uniqueBlocks.append(block)
+                seenContent.insert(key)
+            }
+        }
+        
+        return uniqueBlocks
     }
     
     func adjustTextSize(_ delta: CGFloat) {

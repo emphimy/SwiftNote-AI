@@ -48,10 +48,12 @@ actor NoteGenerationService {
         
         let prompt = """
         Please analyze this transcript and create a well-structured note with the following sections:
-        1. Summary (2-3 sentences)
-        2. Key Points (bullet points)
+        1. Summary (detailed summary with a couple of paragraph)
+        2. Key Points (bullet points and tables)
         3. Important Details (organized by topics)
         4. Notable Quotes (if any)
+        5. Conclusion (based on the whole content)
+        6. Recommendation (What other things the user can look at if they want to learn more about it)
         
         Use Markdown formatting for better readability.
         \(languagePrompt)
@@ -103,7 +105,7 @@ actor NoteGenerationService {
             let response = try await openAIService.chatCompletionRequest(body: .init(
                 model: "gpt-4o-mini",
                 messages: [
-                    .system(content: .text("You are a helpful assistant that creates well-structured notes from transcripts.")),
+                    .system(content: .text("You are a helpful assistant that creates well-structured and detailed notes from the provided content. The notes will be used to study with feynman technique")),
                     .user(content: .text(prompt))
                 ]
             ))

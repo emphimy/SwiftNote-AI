@@ -18,12 +18,29 @@ struct ContentBlock: Identifiable, Equatable {
     enum BlockType: Equatable {
         case heading1
         case heading2
+        case heading3
+        case heading4
+        case heading5
+        case heading6
         case paragraph
         case bulletList
         case numberedList
         case codeBlock(language: String?)
         case quote
+        case horizontalRule
+        case table(headers: [String], rows: [[String]])
+        case taskList(checked: Bool)
+        case formattedText(style: TextStyle)
     }
+}
+
+enum TextStyle: Equatable {
+    case bold
+    case italic
+    case boldItalic
+    case strikethrough
+    case link(url: String)
+    case image(url: String, alt: String)
 }
 
 // MARK: - Text Highlight Model

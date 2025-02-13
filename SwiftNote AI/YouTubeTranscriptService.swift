@@ -156,13 +156,11 @@ final class YouTubeTranscriptService {
         #endif
         
         // Group segments by timestamp
-        var currentGroup: [String] = []
-        var currentStartTime: Int = 0
         var formattedTranscript = ""
         
         for event in events {
             if let segs = event["segs"] as? [[String: Any]],
-               let startTime = event["tStartMs"] as? Int {
+               let _ = event["tStartMs"] as? Int {
                 
                 // Combine all segments in this event
                 let textParts = segs.compactMap { seg -> String? in
@@ -173,7 +171,7 @@ final class YouTubeTranscriptService {
                 if !textParts.isEmpty {
                     let combinedText = textParts.joined(separator: " ")
                     
-                    let seconds = startTime / 1000
+                    let seconds = 0 / 1000
                     let minutes = seconds / 60
                     let remainingSeconds = seconds % 60
                     

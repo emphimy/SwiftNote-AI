@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		C950AFAC2D5D0AD600558875 /* AIProxy in Frameworks */ = {isa = PBXBuildFile; productRef = C950AFAB2D5D0AD600558875 /* AIProxy */; };
+		C950B0352D5E1EAC00558875 /* Down in Frameworks */ = {isa = PBXBuildFile; productRef = C950B0342D5E1EAC00558875 /* Down */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -69,6 +70,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C950B0352D5E1EAC00558875 /* Down in Frameworks */,
 				C950AFAC2D5D0AD600558875 /* AIProxy in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -131,6 +133,7 @@
 			name = "SwiftNote AI";
 			packageProductDependencies = (
 				C950AFAB2D5D0AD600558875 /* AIProxy */,
+				C950B0342D5E1EAC00558875 /* Down */,
 			);
 			productName = "SwiftNote AI";
 			productReference = C9F047082CF92F080031419E /* SwiftNote AI.app */;
@@ -216,6 +219,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				C950AFAA2D5D0AD600558875 /* XCRemoteSwiftPackageReference "AIProxySwift" */,
+				C950B0332D5E1EAC00558875 /* XCRemoteSwiftPackageReference "Down" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C9F047092CF92F080031419E /* Products */;
@@ -608,6 +612,14 @@
 				minimumVersion = 0.70.0;
 			};
 		};
+		C950B0332D5E1EAC00558875 /* XCRemoteSwiftPackageReference "Down" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/johnxnguyen/Down";
+			requirement = {
+				branch = master;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -615,6 +627,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C950AFAA2D5D0AD600558875 /* XCRemoteSwiftPackageReference "AIProxySwift" */;
 			productName = AIProxy;
+		};
+		C950B0342D5E1EAC00558875 /* Down */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C950B0332D5E1EAC00558875 /* XCRemoteSwiftPackageReference "Down" */;
+			productName = Down;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

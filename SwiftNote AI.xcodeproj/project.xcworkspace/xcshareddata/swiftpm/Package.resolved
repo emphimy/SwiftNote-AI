@@ -1,5 +1,5 @@
 {
-  "originHash" : "549522aff5b19c3c30f7abf1ea54364ae499b20b64e1f69406734aead8963969",
+  "originHash" : "4e5c319137b1108377ebd00fb3ab74dbc865debe485ad0395eb3f1806345afd2",
   "pins" : [
     {
       "identity" : "aiproxyswift",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "03e4570ee7e16b6c44d41aa431d557352a82641b",
         "version" : "0.70.0"
+      }
+    },
+    {
+      "identity" : "down",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/johnxnguyen/Down",
+      "state" : {
+        "branch" : "master",
+        "revision" : "e754ab1c80920dd51a8e08290c912ac1c2ac8b58"
       }
     }
   ],

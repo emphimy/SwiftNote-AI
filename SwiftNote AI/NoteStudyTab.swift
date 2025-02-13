@@ -368,40 +368,132 @@ private struct ContentBlockView: View {
         switch block.type {
         case .heading1:
             Text(block.content)
-                .font(.system(size: fontSize + 8, weight: .bold))
+                .font(.system(size: fontSize * 2, weight: .bold))
+                .padding(.vertical, 8)
         case .heading2:
             Text(block.content)
-                .font(.system(size: fontSize + 4, weight: .semibold))
+                .font(.system(size: fontSize * 1.5, weight: .bold))
+                .padding(.vertical, 6)
+        case .heading3:
+            Text(block.content)
+                .font(.system(size: fontSize * 1.25, weight: .bold))
+                .padding(.vertical, 4)
+        case .heading4:
+            Text(block.content)
+                .font(.system(size: fontSize * 1.1, weight: .bold))
+                .padding(.vertical, 4)
+        case .heading5:
+            Text(block.content)
+                .font(.system(size: fontSize, weight: .bold))
+                .padding(.vertical, 4)
+        case .heading6:
+            Text(block.content)
+                .font(.system(size: fontSize * 0.9, weight: .bold))
+                .padding(.vertical, 4)
         case .paragraph:
             Text(block.content)
                 .font(.system(size: fontSize))
+                .padding(.vertical, 2)
         case .bulletList:
-            HStack(alignment: .top) {
+            HStack(alignment: .top, spacing: 8) {
                 Text("•")
+                    .font(.system(size: fontSize))
                 Text(block.content)
+                    .font(.system(size: fontSize))
             }
-            .font(.system(size: fontSize))
+            .padding(.vertical, 2)
         case .numberedList:
             Text(block.content)
                 .font(.system(size: fontSize))
+                .padding(.vertical, 2)
+        case .taskList(let checked):
+            HStack(spacing: 8) {
+                Image(systemName: checked ? "checkmark.square" : "square")
+                Text(block.content)
+                    .font(.system(size: fontSize))
+            }
+            .padding(.vertical, 2)
         case .codeBlock(let language):
-            VStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 4) {
                 if let language = language {
                     Text(language)
-                        .font(.caption)
-                        .foregroundColor(Theme.Colors.secondaryText)
+                        .font(.system(size: fontSize * 0.8))
+                        .foregroundColor(.secondary)
                 }
                 Text(block.content)
                     .font(.system(size: fontSize, design: .monospaced))
+                    .padding(8)
+                    .background(Color(.systemGray6))
+                    .cornerRadius(8)
             }
-            .padding()
-            .background(Theme.Colors.secondaryBackground)
-            .cornerRadius(Theme.Layout.cornerRadius)
+            .padding(.vertical, 4)
         case .quote:
-            Text(block.content)
-                .font(.system(size: fontSize, weight: .regular, design: .serif))
-                .italic()
-                .padding(.leading)
+            HStack {
+                Rectangle()
+                    .fill(Color.gray)
+                    .frame(width: 4)
+                Text(block.content)
+                    .font(.system(size: fontSize))
+                    .italic()
+            }
+            .padding(.vertical, 4)
+        case .horizontalRule:
+            Rectangle()
+                .fill(Color.gray)
+                .frame(height: 1)
+                .padding(.vertical, 8)
+        case .table(let headers, let rows):
+            VStack(alignment: .leading, spacing: 8) {
+                // Headers
+                HStack {
+                    ForEach(headers, id: \.self) { header in
+                        Text(header)
+                            .font(.system(size: fontSize, weight: .bold))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                
+                // Rows
+                ForEach(rows, id: \.self) { row in
+                    HStack {
+                        ForEach(row, id: \.self) { cell in
+                            Text(cell)
+                                .font(.system(size: fontSize))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        case .formattedText(let style):
+            switch style {
+            case .bold:
+                Text(block.content)
+                    .font(.system(size: fontSize, weight: .bold))
+            case .italic:
+                Text(block.content)
+                    .font(.system(size: fontSize))
+                    .italic()
+            case .boldItalic:
+                Text(block.content)
+                    .font(.system(size: fontSize, weight: .bold))
+                    .italic()
+            case .strikethrough:
+                Text(block.content)
+                    .font(.system(size: fontSize))
+                    .strikethrough()
+            case .link(let url):
+                Link(block.content, destination: URL(string: url) ?? URL(string: "about:blank")!)
+                    .font(.system(size: fontSize))
+            case .image(let url, _):
+                AsyncImage(url: URL(string: url)) { image in
+                    image
+                        .resizable()
+                        .scaledToFit()
+                } placeholder: {
+                    ProgressView()
+                }
+            }
         }
     }
 }
