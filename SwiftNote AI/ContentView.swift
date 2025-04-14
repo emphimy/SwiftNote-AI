@@ -194,7 +194,6 @@ private struct NotesGridListView: View {
     
     var body: some View {
         ListGridContainer(viewMode: $viewModel.viewMode) {
-
             AnyView(
                 ForEach(viewModel.notes, id: \.title) { note in
                     NoteCardView(
@@ -522,9 +521,17 @@ struct ContentView: View {
         }
         .onAppear {
             #if DEBUG
-            print("🏠 ContentView: View appeared")
+            print("📱 ContentView appeared - Starting fetch")
             #endif
             viewModel.fetchNotes()
+        }
+        .onChange(of: viewModel.isShowingYouTubeInput) { isShowing in
+            if !isShowing {
+                #if DEBUG
+                print("📱 YouTube input dismissed - Refreshing notes")
+                #endif
+                viewModel.fetchNotes()
+            }
         }
     }
     

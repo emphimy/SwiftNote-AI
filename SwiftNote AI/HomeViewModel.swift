@@ -75,20 +75,35 @@ final class HomeViewModel: ObservableObject {
         }
     }
     
-    init(context: NSManagedObjectContext) {
+    init(context: NSManagedObjectContext = PersistenceController.shared.container.viewContext) {
         self.viewContext = context
         
         #if DEBUG
         print("📝 HomeViewModel: Initializing with context")
         #endif
         
-        // Add search text observation
+        // Setup search text observation
         $searchText
             .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.filterNotes()
+                self?.fetchNotes()
             }
             .store(in: &cancellables)
+            
+        // Listen for note refresh notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(refreshNotes),
+            name: .init("RefreshNotes"),
+            object: nil
+        )
+        
+        // Initial fetch
+        fetchNotes()
+    }
+    
+    @objc private func refreshNotes() {
+        fetchNotes()
     }
     
     // MARK: - SQL Debug Logging
@@ -119,77 +134,60 @@ final class HomeViewModel: ObservableObject {
     // MARK: - Core Data Operations
     func fetchNotes() {
         #if DEBUG
-        print("""
-        🏠 HomeViewModel: Starting fetch
-        - Current folder: \(currentFolder?.name ?? "All")
-        - Folder ID: \(currentFolder?.id?.uuidString ?? "nil")
-        """)
+        print("🏠 HomeViewModel: Starting fetch with search: \(searchText)")
         #endif
         
         isLoading = true
         
         let request = NSFetchRequest<Note>(entityName: "Note")
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.timestamp, ascending: false)]
         
-        // Add folder predicate
-        if let folderId = currentFolderId {
-                request.predicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
-                
-                #if DEBUG
-                print("""
-                🏠 HomeViewModel: Fetching notes for folder
-                - FolderID: \(folderId)
-                - Predicate: \(String(describing: request.predicate))
-                """)
-                #endif
-            }
-        
-        // Add search predicate if needed
-        if !searchText.isEmpty {
-            let searchPredicate = NSPredicate(
-                format: "title CONTAINS[cd] %@ OR content CONTAINS[cd] %@ OR tags CONTAINS[cd] %@",
-                searchText, searchText, searchText
-            )
-            
-            // Combine with folder predicate if exists
-            if let existingPredicate = request.predicate {
-                request.predicate = NSCompoundPredicate(
-                    type: .and,
-                    subpredicates: [existingPredicate, searchPredicate]
-                )
-            } else {
-                request.predicate = searchPredicate
-            }
-        }
-
-        logSQLQuery(request)
-
         do {
             let results = try viewContext.fetch(request)
-            self.notes = results.compactMap { note in
-                guard let title = note.title,
-                      let timestamp = note.timestamp,
-                      let content = note.originalContent, // Changed from content
-                      let sourceTypeStr = note.sourceType else {
-                    return nil
+            #if DEBUG
+            print("📊 Fetched \(results.count) notes")
+            #endif
+            
+            let validNotes: [NoteCardConfiguration] = results.filter { note in
+                // Filter out invalid notes
+                guard note.title != nil,
+                      note.timestamp != nil,
+                      note.originalContent != nil,
+                      note.sourceType != nil else {
+                    #if DEBUG
+                    print("""
+                    🏠 HomeViewModel: Invalid note detected:
+                    - ID: \(note.id?.uuidString ?? "unknown")
+                    - Title: \(note.title ?? "missing")
+                    - Timestamp: \(note.timestamp?.description ?? "missing")
+                    """)
+                    #endif
+                    return false
                 }
-                
+                return true
+            }.map { note -> NoteCardConfiguration in
+                // Explicitly typed closure return
                 return NoteCardConfiguration(
-                    title: title,
-                    date: timestamp,
-                    preview: String(decoding: content, as: UTF8.self), // Convert Data to String
-                    sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
+                    title: note.title!,
+                    date: note.timestamp!,
+                    preview: String(decoding: note.originalContent!, as: UTF8.self),
+                    sourceType: NoteSourceType(rawValue: note.sourceType!) ?? .text,
                     isFavorite: note.isFavorite,
-                    tags: note.tags?.components(separatedBy: ",").filter { !$0.isEmpty } ?? [],
+                    tags: note.tags?.components(separatedBy: ",") ?? [],
                     folder: note.folder
                 )
             }
             
+            self.notes = validNotes
+            
             #if DEBUG
-            print("🏠 HomeViewModel: Fetched \(self.notes.count) notes for folder: \(currentFolder?.name ?? "All")")
+            print("🏠 HomeViewModel: Converted \(self.notes.count) notes to view models")
             #endif
+            
         } catch {
             #if DEBUG
-            print("🏠 HomeViewModel: Error fetching notes - \(error)")
+            print("❌ HomeViewModel: Error fetching notes - \(error)")
+            print("Error details: \((error as NSError).userInfo)")
             #endif
         }
         

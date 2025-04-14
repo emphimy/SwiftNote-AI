@@ -196,29 +196,49 @@ class YouTubeViewModel: ObservableObject {
             loadingState = .loading(message: "Generating title...")
             let title = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: language)
             
+            // Save to Core Data
+            loadingState = .loading(message: "Saving note...")
+            let context = PersistenceController.shared.container.viewContext
+            
+            try context.performAndWait {
+                let note = Note(context: context)
+                note.id = UUID()
+                note.title = title
+                note.timestamp = Date()
+                note.lastModified = Date()
+                note.originalContent = transcript.data(using: .utf8)  // Store the raw transcript
+                note.aiGeneratedContent = noteContent.data(using: .utf8)  // Store the AI-generated note
+                note.sourceType = "video"
+                note.isFavorite = false
+                note.processingStatus = "completed"
+                
+                try context.save()
+                print("📝 YouTubeViewModel: Note saved successfully")
+                
+                #if DEBUG
+                // Verify save
+                let request = Note.fetchRequest()
+                let count = try context.count(for: request)
+                print("- Total notes in CoreData: \(count)")
+                #endif
+            }
+            
             generatedNote = NoteCardConfiguration(
                 title: title,
                 date: Date(),
                 preview: noteContent,
                 sourceType: .video,
-                tags: ["YouTube", "AI Generated"],
-                metadata: [
-                    "rawTranscript": transcript,
-                    "videoId": videoId,
-                    "videoTitle": metadata.title,
-                    "aiGeneratedContent": noteContent
-                ]
+                tags: ["YouTube", "AI Generated"]
             )
+            
+            loadingState = .success(message: "Note created successfully")
+            shouldNavigateToNote = true
             
             #if DEBUG
             print("🎥 YouTubeViewModel: Note generation completed")
-            print("- Title: \(title)")
+            print("- Title: \"\(title)\"")
             print("- Content Length: \(noteContent.count)")
             #endif
-            
-            shouldNavigateToNote = true
-            loadingState = .success(message: "Note created successfully")
-            
         } catch {
             #if DEBUG
             print("🎥 YouTubeViewModel: Error processing video - \(error)")

@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import CoreData
 
 // MARK: - YouTube Transcript ViewModel
 @MainActor
@@ -13,17 +14,23 @@ final class YouTubeTranscriptViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var isLoading = false
     
-    // MARK: - Private Properties
-    private let transcriptService: YouTubeTranscriptService
+    // MARK: - Services
     private let noteGenerationService: NoteGenerationService
+    private let context: NSManagedObjectContext
+    private let transcriptService: YouTubeTranscriptService
     private var cancellables = Set<AnyCancellable>()
     
     // MARK: - Initialization
-    init(initialURL: String = "") {
-        self.transcriptService = YouTubeTranscriptService()
-        self.noteGenerationService = NoteGenerationService()
-
+    init(initialURL: String = "", context: NSManagedObjectContext = PersistenceController.shared.container.viewContext) {
         self.urlInput = initialURL
+        self.noteGenerationService = NoteGenerationService()
+        self.context = context
+        self.transcriptService = YouTubeTranscriptService()
+        
+        #if DEBUG
+        print("🎥 YouTubeViewModel: Initialized with URL: \(initialURL)")
+        #endif
+        
         setupURLInputSubscriber()
         
         if !initialURL.isEmpty {
@@ -120,13 +127,53 @@ final class YouTubeTranscriptViewModel: ObservableObject {
         let title = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: language)
         let content = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: language)
         
-        generatedNote = NoteCardConfiguration(
-            title: title,
-            date: Date(),
-            preview: String(content.prefix(100)),
-            sourceType: .video,
-            tags: ["YouTube"]
-        )
+        // Create the note in CoreData using the provided context
+        try context.performAndWait {
+            let note = Note(context: context)
+            note.id = UUID()
+            note.title = title
+            note.timestamp = Date()
+            note.lastModified = Date()
+            note.originalContent = transcript.data(using: .utf8)  // Store the raw transcript
+            note.aiGeneratedContent = content.data(using: .utf8)  // Store the AI-generated note
+            note.sourceType = "video"
+            note.isFavorite = false
+            note.processingStatus = "completed"
+            
+            do {
+                try context.save()
+                print("📝 YouTubeTranscriptVM: Note saved successfully")
+                
+                #if DEBUG
+                // Verify save
+                let request = Note.fetchRequest()
+                let count = try context.count(for: request)
+                print("- Total notes in CoreData: \(count)")
+                #endif
+                
+                // Update UI on main thread
+                DispatchQueue.main.async {
+                    self.generatedNote = NoteCardConfiguration(
+                        title: title,
+                        date: Date(),
+                        preview: content,
+                        sourceType: .video,
+                        tags: ["YouTube", "AI Generated"],
+                        metadata: [
+                            "rawTranscript": transcript,
+                            "aiGeneratedContent": content
+                        ]
+                    )
+                    print("📝 YouTubeTranscriptVM: Updated UI with generated note")
+                    
+                    // Trigger a refresh of the home view
+                    NotificationCenter.default.post(name: .init("RefreshNotes"), object: nil)
+                }
+            } catch {
+                print("❌ YouTubeTranscriptVM: Failed to save note - \(error.localizedDescription)")
+                throw error
+            }
+        }
     }
 }
 
@@ -149,11 +196,12 @@ enum TranscriptProcessState {
 
 // MARK: - YouTube Transcript View
 struct YouTubeTranscriptView: View {
-    @StateObject private var viewModel: YouTubeTranscriptViewModel
     @Environment(\.dismiss) private var dismiss
+    @StateObject private var viewModel: YouTubeTranscriptViewModel
+    @Environment(\.toastManager) private var toastManager
     
-    init(initialURL: String = "") {
-        _viewModel = StateObject(wrappedValue: YouTubeTranscriptViewModel(initialURL: initialURL))
+    init(context: NSManagedObjectContext = PersistenceController.shared.container.viewContext) {
+        _viewModel = StateObject(wrappedValue: YouTubeTranscriptViewModel(context: context))
     }
     
     var body: some View {
