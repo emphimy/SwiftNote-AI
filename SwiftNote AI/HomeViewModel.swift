@@ -238,16 +238,8 @@ final class HomeViewModel: ObservableObject {
             print("📝 HomeViewModel: Forced save to persistent store")
             #endif
             
-            // Backup to file storage as an additional safety measure
-            if let contentData = note.originalContent {
-                NotePersistenceManager.shared.backupNote(
-                    id: noteId,
-                    title: title,
-                    content: contentData,
-                    sourceType: sourceType.rawValue,
-                    timestamp: note.timestamp!
-                )
-            }
+            // Save to UserDefaults for guaranteed persistence
+            SimpleNotePersistence.shared.saveNote(note)
             
             // Refresh notes list
             self.fetchNotes()
@@ -260,6 +252,17 @@ final class HomeViewModel: ObservableObject {
             print("📝 HomeViewModel: Error creating note - \(error)")
             print("Error details: \((error as NSError).userInfo)")
             #endif
+            
+            // Even if CoreData fails, still try to save to UserDefaults
+            SimpleNotePersistence.shared.saveNote(SimpleNote(
+                id: noteId,
+                title: title,
+                content: content,
+                sourceType: sourceType.rawValue,
+                timestamp: Date(),
+                lastModified: Date(),
+                folderID: folder?.id
+            ))
         }
     }
     
