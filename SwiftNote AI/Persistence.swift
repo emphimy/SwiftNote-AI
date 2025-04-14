@@ -1,5 +1,4 @@
 import CoreData
-import CloudKit
 
 // MARK: - Persistence Controller
 final class PersistenceController: NSObject {
@@ -44,12 +43,12 @@ final class PersistenceController: NSObject {
     #endif
     
     // MARK: - Properties
-    let container: NSPersistentCloudKitContainer
+    let container: NSPersistentContainer
     private let storeDescription: NSPersistentStoreDescription
     
     // MARK: - Initialization
     init(inMemory: Bool = false) {
-        container = NSPersistentCloudKitContainer(name: Self.modelName)
+        container = NSPersistentContainer(name: Self.modelName)
         
         // Configure store description
         storeDescription = container.persistentStoreDescriptions.first!
@@ -66,50 +65,138 @@ final class PersistenceController: NSObject {
         super.init()
         
         // Now we can safely call instance methods
-        configureStoreDescription()
+        if !inMemory {
+            configureLocalStoreDescription()
+        }
+        
+        // Configure migration
         configureMigration()
         
         // Load persistent stores
-        container.loadPersistentStores { description, error in
+        container.loadPersistentStores { [weak self] description, error in
             if let error = error as NSError? {
                 #if DEBUG
                 print("🗄️ Persistence: Failed to load persistent stores - \(error), \(error.userInfo)")
                 #endif
-                fatalError("Failed to load persistent stores: \(error)")
+                
+                // Try to recover from common errors
+                if error.domain == NSCocoaErrorDomain {
+                    switch error.code {
+                    case NSPersistentStoreIncompatibleVersionHashError,
+                         NSMigrationMissingSourceModelError:
+                        self?.attemptStoreRecovery(at: description.url)
+                    default:
+                        fatalError("Unresolved error \(error), \(error.userInfo)")
+                    }
+                } else {
+                    fatalError("Failed to load persistent stores: \(error)")
+                }
+            } else {
+                #if DEBUG
+                print("🗄️ Persistence: Successfully loaded persistent store at: \(description.url?.absoluteString ?? "unknown")")
+                #endif
             }
-            #if DEBUG
-            print("🗄️ Persistence: Successfully loaded persistent store at: \(description.url?.absoluteString ?? "unknown")")
-            #endif
         }
         
+        // Setup container
         setupContainer()
+        
+        // Register for notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleStoreRemoteChange(_:)),
+            name: .NSPersistentStoreRemoteChange,
+            object: container.persistentStoreCoordinator
+        )
+    }
+    
+    // Attempt to recover from store errors
+    private func attemptStoreRecovery(at url: URL?) {
+        guard let storeURL = url else { return }
+        
+        #if DEBUG
+        print("🗄️ Persistence: Attempting to recover store at \(storeURL.path)")
+        #endif
+        
+        let fileManager = FileManager.default
+        
+        do {
+            // If the store exists, try to delete it
+            if fileManager.fileExists(atPath: storeURL.path) {
+                try fileManager.removeItem(at: storeURL)
+                #if DEBUG
+                print("🗄️ Persistence: Removed corrupted store")
+                #endif
+            }
+            
+            // Also remove -shm and -wal files if they exist (for SQLite WAL mode)
+            let shmURL = storeURL.appendingPathExtension("sqlite-shm")
+            if fileManager.fileExists(atPath: shmURL.path) {
+                try fileManager.removeItem(at: shmURL)
+            }
+            
+            let walURL = storeURL.appendingPathExtension("sqlite-wal")
+            if fileManager.fileExists(atPath: walURL.path) {
+                try fileManager.removeItem(at: walURL)
+            }
+            
+            // Try to recreate the store
+            container.loadPersistentStores { description, error in
+                if let error = error {
+                    #if DEBUG
+                    print("🗄️ Persistence: Recovery failed - \(error)")
+                    #endif
+                    fatalError("Recovery failed: \(error)")
+                } else {
+                    #if DEBUG
+                    print("🗄️ Persistence: Store recovery successful")
+                    #endif
+                }
+            }
+        } catch {
+            #if DEBUG
+            print("🗄️ Persistence: Error during recovery - \(error)")
+            #endif
+            fatalError("Recovery failed: \(error)")
+        }
     }
     
     // MARK: - Store Configuration
-    private func configureStoreDescription() {
-        // Enable remote notifications
-        storeDescription.setOption(true as NSNumber,
-                                 forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+    private func configureLocalStoreDescription() {
+        #if DEBUG
+        print("🗄️ Persistence: Configuring local store")
+        #endif
         
-        // Enable history tracking for cross-device sync
-        storeDescription.setOption(true as NSNumber,
-                                 forKey: NSPersistentHistoryTrackingKey)
+        // Ensure we're using SQLite store type
+        storeDescription.type = NSSQLiteStoreType
         
-        // Configure automatic cloud sync
-        storeDescription.cloudKitContainerOptions = NSPersistentCloudKitContainerOptions(
-            containerIdentifier: "iCloud.com.yourapp.swiftnote"
-        )
+        // Make sure the URL is correctly set to a persistent location
+        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let storeURL = documentsDirectory.appendingPathComponent("\(Self.modelName).sqlite")
+        storeDescription.url = storeURL
         
-        print("🗄️ Persistence: Store description configured with CloudKit support")
+        #if DEBUG
+        print("🗄️ Persistence: Setting store URL to \(storeURL.path)")
+        #endif
+        
+        // Configure options for better persistence
+        storeDescription.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+        storeDescription.shouldMigrateStoreAutomatically = true
+        storeDescription.shouldInferMappingModelAutomatically = true
+        
+        // Add additional options for better durability
+        storeDescription.setOption(FileProtectionType.completeUntilFirstUserAuthentication as NSObject, 
+                                 forKey: NSPersistentStoreFileProtectionKey)
+        
+        // Set journal_mode to WAL for better performance and reliability
+        let pragmaOptions = ["journal_mode": "WAL" as NSObject]
+        storeDescription.setOption(pragmaOptions as NSDictionary, forKey: NSSQLitePragmasOption)
     }
     
     // MARK: - Container Setup
     private func setupContainer() {
         container.viewContext.automaticallyMergesChangesFromParent = true
         container.viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
-        
-        // Enable automatic cloud sync
-        container.viewContext.automaticallyMergesChangesFromParent = true
         
         // Set up fetch batch size
         if let store = container.persistentStoreCoordinator.persistentStores.first {
@@ -132,9 +219,6 @@ final class PersistenceController: NSObject {
             print("🗄️ Persistence: No persistent store found to set batch size")
             #endif
         }
-        
-        setupNotificationHandling()
-        print("🗄️ Persistence: Container setup completed")
     }
     
     // MARK: - Background Context
@@ -145,21 +229,24 @@ final class PersistenceController: NSObject {
     }
     
     // MARK: - Notification Handling
-    private func setupNotificationHandling() {
-        NotificationCenter.default.addObserver(
-            forName: .NSPersistentStoreRemoteChange,
-            object: container.persistentStoreCoordinator,
-            queue: .main
-        ) { notification in
-            print("🗄️ Persistence: Remote change notification received")
-            self.handleStoreRemoteChange(notification)
-        }
-    }
-    
-    private func handleStoreRemoteChange(_ notification: Notification) {
-        container.viewContext.perform {
+    @objc private func handleStoreRemoteChange(_ notification: Notification) {
+        #if DEBUG
+        print("🗄️ Persistence: Received store remote change notification")
+        #endif
+        
+        // Ensure we're on the main thread for UI updates
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            
+            // Refresh all objects in the view context
             self.container.viewContext.refreshAllObjects()
+            
+            // Post a notification for views to refresh their data
+            NotificationCenter.default.post(name: .init("RefreshNotes"), object: nil)
+            
+            #if DEBUG
             print("🗄️ Persistence: Context refreshed after remote change")
+            #endif
         }
     }
     
@@ -169,11 +256,19 @@ final class PersistenceController: NSObject {
         if context.hasChanges {
             do {
                 try context.save()
+                #if DEBUG
                 print("🗄️ Persistence: Context saved successfully")
+                #endif
             } catch {
                 let nsError = error as NSError
+                #if DEBUG
                 print("🗄️ Persistence: Error saving context - \(nsError), \(nsError.userInfo)")
+                #endif
             }
+        } else {
+            #if DEBUG
+            print("🗄️ Persistence: No changes to save in context")
+            #endif
         }
     }
     
@@ -212,6 +307,13 @@ final class PersistenceController: NSObject {
     private func handleStoreTimeout() {
         print("🗄️ Persistence: Handling store timeout")
         // Implementation for timeout recovery
+    }
+    
+    deinit {
+        #if DEBUG
+        print("🗄️ Persistence: Controller being deinitialized, saving context")
+        #endif
+        saveContext()
     }
 }
 
@@ -320,14 +422,6 @@ extension PersistenceController {
         #if DEBUG
         print("🗄️ Migration: Configuring automatic migration options")
         #endif
-        
-        // Update notification name
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleMigrationProgress(_:)),
-            name: NSNotification.Name.NSPersistentStoreRemoteChange,
-            object: container.persistentStoreCoordinator
-        )
         
         container.persistentStoreDescriptions = [options]
     }

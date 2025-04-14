@@ -209,26 +209,57 @@ final class HomeViewModel: ObservableObject {
         print("📝 HomeViewModel: Creating note - Title: \(title), Type: \(sourceType)")
         #endif
         
-        viewContext.performAndWait {
-            let note = Note(context: self.viewContext)
-            note.title = title
-            note.originalContent = content.data(using: .utf8)
-            note.sourceType = sourceType.rawValue
-            note.timestamp = Date()
-            note.folder = folder
+        // Create a new note directly in the view context
+        let note = Note(context: viewContext)
+        
+        // Set all required attributes
+        let noteId = UUID()
+        note.id = noteId
+        note.title = title
+        note.originalContent = content.data(using: .utf8)
+        note.sourceType = sourceType.rawValue
+        note.timestamp = Date()
+        note.lastModified = Date()
+        note.processingStatus = "completed"
+        note.folder = folder
+        note.isFavorite = false
+        
+        // Save in multiple steps to ensure persistence
+        do {
+            // First save to the view context
+            try viewContext.save()
+            #if DEBUG
+            print("📝 HomeViewModel: Initial save successful")
+            #endif
             
-            do {
-                try self.viewContext.save()
-                self.fetchNotes()
-                
-                #if DEBUG
-                print("📝 HomeViewModel: Note created successfully")
-                #endif
-            } catch {
-                #if DEBUG
-                print("📝 HomeViewModel: Error creating note - \(error)")
-                #endif
+            // Force save to the persistent store
+            PersistenceController.shared.saveContext()
+            #if DEBUG
+            print("📝 HomeViewModel: Forced save to persistent store")
+            #endif
+            
+            // Backup to file storage as an additional safety measure
+            if let contentData = note.originalContent {
+                NotePersistenceManager.shared.backupNote(
+                    id: noteId,
+                    title: title,
+                    content: contentData,
+                    sourceType: sourceType.rawValue,
+                    timestamp: note.timestamp!
+                )
             }
+            
+            // Refresh notes list
+            self.fetchNotes()
+            
+            #if DEBUG
+            print("📝 HomeViewModel: Note created successfully with ID: \(note.id?.uuidString ?? "unknown")")
+            #endif
+        } catch {
+            #if DEBUG
+            print("📝 HomeViewModel: Error creating note - \(error)")
+            print("Error details: \((error as NSError).userInfo)")
+            #endif
         }
     }
     
@@ -238,34 +269,43 @@ final class HomeViewModel: ObservableObject {
         print("📝 HomeViewModel: Updating note - Title: \(note.title)")
         #endif
         
-        viewContext.performAndWait {
-            let request = NSFetchRequest<Note>(entityName: "Note")
-            request.predicate = NSPredicate(format: "title == %@ AND timestamp == %@", note.title, note.date as CVarArg)
-            
-            do {
-                guard let existingNote = try self.viewContext.fetch(request).first else {
-                    #if DEBUG
-                    print("📝 HomeViewModel: Error - Note not found for update")
-                    #endif
-                    return
-                }
-                
-                if let newContent = newContent {
-                    existingNote.originalContent = newContent.data(using: .utf8)
-                }
-                existingNote.lastModified = Date()
-                
-                try self.viewContext.save()
-                self.fetchNotes()
-                
+        let request = NSFetchRequest<Note>(entityName: "Note")
+        request.predicate = NSPredicate(format: "title == %@ AND timestamp == %@", note.title, note.date as CVarArg)
+        
+        do {
+            guard let existingNote = try viewContext.fetch(request).first else {
                 #if DEBUG
-                print("📝 HomeViewModel: Note updated successfully")
+                print("📝 HomeViewModel: Error - Note not found for update")
                 #endif
-            } catch {
-                #if DEBUG
-                print("📝 HomeViewModel: Error updating note - \(error)")
-                #endif
+                return
             }
+            
+            if let newContent = newContent {
+                try PersistenceController.shared.updateNote(
+                    existingNote,
+                    title: existingNote.title,
+                    content: newContent
+                )
+            } else {
+                // Just update the lastModified timestamp
+                existingNote.lastModified = Date()
+                try viewContext.save()
+            }
+            
+            // Force save to persistent store
+            PersistenceController.shared.saveContext()
+            
+            // Refresh notes list
+            self.fetchNotes()
+            
+            #if DEBUG
+            print("📝 HomeViewModel: Note updated successfully")
+            #endif
+        } catch {
+            #if DEBUG
+            print("📝 HomeViewModel: Error updating note - \(error)")
+            print("Error details: \((error as NSError).userInfo)")
+            #endif
         }
     }
     
@@ -404,7 +444,7 @@ final class HomeViewModel: ObservableObject {
         print("🏠 HomeViewModel: Deleting note: \(note.title)")
         #endif
         
-        let request = NSFetchRequest<NSManagedObject>(entityName: "Note")
+        let request = NSFetchRequest<Note>(entityName: "Note")
         request.predicate = NSPredicate(format: "title == %@ AND timestamp == %@", note.title, note.date as CVarArg)
         
         do {
@@ -413,8 +453,13 @@ final class HomeViewModel: ObservableObject {
                 throw CoreDataError(message: "Note not found")
             }
             
-            viewContext.delete(noteObject)
-            try viewContext.save()
+            // Use PersistenceController's delete operation
+            try PersistenceController.shared.deleteNote(noteObject)
+            
+            // Force save to persistent store
+            PersistenceController.shared.saveContext()
+            
+            // Refresh notes list
             fetchNotes()
             
             #if DEBUG
