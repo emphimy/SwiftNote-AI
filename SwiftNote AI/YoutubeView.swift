@@ -228,7 +228,12 @@ class YouTubeViewModel: ObservableObject {
                 date: Date(),
                 preview: noteContent,
                 sourceType: .video,
-                tags: ["YouTube", "AI Generated"]
+                tags: ["YouTube", "AI Generated"],
+                metadata: [
+                    "rawTranscript": transcript,  // Make sure the transcript is saved in metadata
+                    "aiGeneratedContent": noteContent,
+                    "videoId": videoId  // Include video ID for possible player embedding
+                ]
             )
             
             loadingState = .success(message: "Note created successfully")

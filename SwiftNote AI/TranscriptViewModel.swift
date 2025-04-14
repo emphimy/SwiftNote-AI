@@ -65,6 +65,7 @@ final class TranscriptViewModel: ObservableObject {
         do {
             // For now, we'll use the raw transcript stored in the note's metadata
             if let rawTranscript = note.metadata?["rawTranscript"] as? String {
+                // Process the transcript for better display
                 let lines = rawTranscript.components(separatedBy: CharacterSet.newlines)
                 var currentMinute = -1
                 var currentText = ""
@@ -73,17 +74,17 @@ final class TranscriptViewModel: ObservableObject {
                 for line in lines {
                     if line.isEmpty { continue }
                     
-                    // Updated regex to handle any number of digits for minutes
+                    // Look for timestamp patterns like [MM:SS]
                     if let timeRange = line.range(of: "\\[(\\d+):\\d{2}\\]", options: [.regularExpression]) {
                         let timeStr = String(line[timeRange])
                         let text = String(line[line.index(after: timeRange.upperBound)...])
                             .trimmingCharacters(in: CharacterSet.whitespaces)
                         
-                        // Extract minute from timestamp
+                        // Extract minute from timestamp to group by minute
                         if let minuteRange = timeStr.range(of: "\\d+", options: .regularExpression) {
                             if let minute = Int(timeStr[minuteRange]) {
                                 if minute != currentMinute {
-                                    // Save current paragraph if exists
+                                    // Save current paragraph if exists and start a new one
                                     if !currentText.isEmpty {
                                         formattedParagraphs.append(currentText)
                                         currentText = ""

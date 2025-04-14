@@ -62,10 +62,6 @@ final class ReadTabViewModel: ObservableObject {
                     highlights: []
                 )
             }
-            
-            #if DEBUG
-            print("📖 ReadTabViewModel: Content loaded successfully with \(content?.formattedContent.count ?? 0) blocks")
-            #endif
         } catch {
             #if DEBUG
             print("📖 ReadTabViewModel: Error loading content - \(error)")

@@ -170,11 +170,19 @@ final class HomeViewModel: ObservableObject {
                 return NoteCardConfiguration(
                     title: note.title!,
                     date: note.timestamp!,
-                    preview: String(decoding: note.originalContent!, as: UTF8.self),
+                    // Use aiGeneratedContent for preview if available, otherwise fallback to originalContent
+                    preview: note.aiGeneratedContent != nil ?
+                        String(decoding: note.aiGeneratedContent!, as: UTF8.self) :
+                        String(decoding: note.originalContent!, as: UTF8.self),
                     sourceType: NoteSourceType(rawValue: note.sourceType!) ?? .text,
                     isFavorite: note.isFavorite,
                     tags: note.tags?.components(separatedBy: ",") ?? [],
-                    folder: note.folder
+                    folder: note.folder,
+                    metadata: [
+                        "rawTranscript": String(decoding: note.originalContent!, as: UTF8.self),
+                        "aiGeneratedContent": note.aiGeneratedContent != nil ?
+                            String(decoding: note.aiGeneratedContent!, as: UTF8.self) : nil
+                    ].compactMapValues { $0 }
                 )
             }
             
