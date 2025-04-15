@@ -49,8 +49,7 @@ final class NoteDetailsViewModel: ObservableObject {
         #endif
         
         let request = NSFetchRequest<NSManagedObject>(entityName: "Note")
-        request.predicate = NSPredicate(format: "title == %@ AND timestamp == %@",
-                                      note.title, note.date as CVarArg)
+        request.predicate = NSPredicate(format: "id == %@", note.id as CVarArg)
         
         do {
             guard let noteObject = try viewContext.fetch(request).first else {

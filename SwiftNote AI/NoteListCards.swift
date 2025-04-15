@@ -279,8 +279,7 @@ struct NoteCards_Previews: PreviewProvider {
             date: Date(),
             preview: "Discussed the new project timeline and key deliverables...",
             sourceType: .audio,
-            isFavorite: true,
-            tags: ["Work", "Project", "Meeting"]
+            isFavorite: true
         )
     }
     

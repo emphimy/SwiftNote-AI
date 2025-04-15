@@ -177,7 +177,6 @@ final class HomeViewModel: ObservableObject {
                         String(decoding: note.originalContent!, as: UTF8.self),
                     sourceType: NoteSourceType(rawValue: note.sourceType!) ?? .text,
                     isFavorite: note.isFavorite,
-                    tags: note.tags?.components(separatedBy: ",") ?? [],
                     folder: note.folder,
                     metadata: [
                         "rawTranscript": String(decoding: note.originalContent!, as: UTF8.self),
@@ -188,7 +187,8 @@ final class HomeViewModel: ObservableObject {
                 )
             }
             
-            self.notes = validNotes
+            // Sort notes with favorites at the top
+            self.notes = sortNotesByFavorite(validNotes)
             
             #if DEBUG
             print("🏠 HomeViewModel: Converted \(self.notes.count) notes to view models")
@@ -251,7 +251,7 @@ final class HomeViewModel: ObservableObject {
             #endif
             
             // Refresh notes list
-            self.notes = [NoteCardConfiguration(id: noteId, title: title, date: Date(), preview: content, sourceType: sourceType, isFavorite: false, tags: [], folder: folder, metadata: [:])]
+            self.notes = [NoteCardConfiguration(id: noteId, title: title, date: Date(), preview: content, sourceType: sourceType, isFavorite: false, folder: folder, metadata: [:])]
             self.fetchNotes()
             
             #if DEBUG
@@ -382,11 +382,15 @@ final class HomeViewModel: ObservableObject {
         do {
             let results = try viewContext.fetch(request)
             self.notes = results.compactMap { note in
+                // Instead of returning nil, we'll skip notes with missing required properties
                 guard let title = note.title,
                       let timestamp = note.timestamp,
                       let content = note.originalContent,
                       let sourceTypeStr = note.sourceType else {
-                    return nil
+                    #if DEBUG
+                    print("📝 HomeViewModel: Skipping note with missing required properties")
+                    #endif
+                    return nil // This will be filtered out by compactMap
                 }
                 
                 return NoteCardConfiguration(
@@ -395,7 +399,6 @@ final class HomeViewModel: ObservableObject {
                     preview: String(decoding: content, as: UTF8.self),
                     sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
                     isFavorite: note.isFavorite,
-                    tags: note.tags?.components(separatedBy: ",") ?? [],
                     folder: note.folder
                 )
             }
@@ -428,6 +431,8 @@ final class HomeViewModel: ObservableObject {
             noteObject.setValue(!currentValue, forKey: "isFavorite")
             
             try viewContext.save()
+            
+            // Fetch notes and sort them with favorites at the top
             fetchNotes()
             
             #if DEBUG
@@ -472,6 +477,22 @@ final class HomeViewModel: ObservableObject {
             #endif
             
             throw CoreDataError(message: "Failed to delete note: \(error.localizedDescription)")
+        }
+    }
+    
+    // MARK: - Helper Methods
+    
+    /// Sorts notes with favorites at the top, then by date (newest first)
+    private func sortNotesByFavorite(_ notes: [NoteCardConfiguration]) -> [NoteCardConfiguration] {
+        return notes.sorted { first, second in
+            if first.isFavorite && !second.isFavorite {
+                return true
+            } else if !first.isFavorite && second.isFavorite {
+                return false
+            } else {
+                // If both have the same favorite status, sort by date (newest first)
+                return first.date > second.date
+            }
         }
     }
 }
