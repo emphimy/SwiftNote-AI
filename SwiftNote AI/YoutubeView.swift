@@ -199,9 +199,12 @@ class YouTubeViewModel: ObservableObject {
             loadingState = .loading(message: "Saving note...")
             let context = PersistenceController.shared.container.viewContext
             
+            var savedNoteId: UUID?
+            
             try context.performAndWait {
                 let note = Note(context: context)
                 note.id = UUID()
+                savedNoteId = note.id
                 note.title = title
                 note.timestamp = Date()
                 note.lastModified = Date()
@@ -211,8 +214,13 @@ class YouTubeViewModel: ObservableObject {
                 note.isFavorite = false
                 note.processingStatus = "completed"
                 
+                // Store video ID directly
+                note.videoId = videoId
+                
                 try context.save()
                 print("📝 YouTubeViewModel: Note saved successfully")
+                print("📝 YouTubeViewModel: Note ID: \(note.id?.uuidString ?? "unknown")")
+                print("📝 YouTubeViewModel: Video ID: \(videoId)")
                 
                 #if DEBUG
                 // Verify save
@@ -223,6 +231,7 @@ class YouTubeViewModel: ObservableObject {
             }
             
             generatedNote = NoteCardConfiguration(
+                id: savedNoteId ?? UUID(),
                 title: title,
                 date: Date(),
                 preview: noteContent,

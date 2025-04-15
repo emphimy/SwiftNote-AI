@@ -10,10 +10,6 @@ struct NoteListCard: View {
         self.configuration = configuration
         self.actions = actions
         self.onTap = onTap
-        
-#if DEBUG
-        print("📝 NoteListCard: Creating card with configuration:\n\(configuration.debugDescription)")
-#endif
     }
     
     var body: some View {
@@ -137,10 +133,6 @@ struct NoteListCard: View {
             self.configuration = configuration
             self.actions = actions
             self.onTap = onTap
-            
-#if DEBUG
-            print("📝 NoteGridCard: Creating card with configuration:\n\(configuration.debugDescription)")
-#endif
         }
         
         var body: some View {

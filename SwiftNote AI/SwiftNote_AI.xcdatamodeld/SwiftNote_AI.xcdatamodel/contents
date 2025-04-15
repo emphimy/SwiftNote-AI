@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23507" systemVersion="23F79" minimumToolsVersion="Xcode 15.0" sourceLanguage="Swift" usedWithCloudKit="YES" userDefinedModelVersionIdentifier="">
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23605" systemVersion="24B2083" minimumToolsVersion="Xcode 15.0" sourceLanguage="Swift" usedWithCloudKit="YES" userDefinedModelVersionIdentifier="">
     <entity name="Folder" representedClassName="Folder" syncable="YES" codeGenerationType="class">
         <attribute name="color" attributeType="String" defaultValueString="blue"/>
         <attribute name="id" attributeType="UUID" defaultValueString="00000000-0000-0000-0000-000000000000"/>
@@ -33,6 +33,7 @@
         <attribute name="title" attributeType="String" defaultValueString="Untitled Note"/>
         <attribute name="transcript" optional="YES" attributeType="String"/>
         <attribute name="transcriptLanguage" optional="YES" attributeType="String"/>
+        <attribute name="videoId" optional="YES" attributeType="String"/>
         <relationship name="analytics" optional="YES" maxCount="1" deletionRule="Cascade" destinationEntity="QuizAnalytics" inverseName="note" inverseEntity="QuizAnalytics"/>
         <relationship name="folder" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="Folder" inverseName="notes" inverseEntity="Folder"/>
         <relationship name="quizProgress" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="QuizProgress" inverseName="note" inverseEntity="QuizProgress"/>

@@ -2,7 +2,7 @@ import SwiftUI
 
 // MARK: - Note Card Configuration
 struct NoteCardConfiguration: Identifiable {
-    let id = UUID()
+    let id: UUID
     var title: String
     let date: Date
     var preview: String
@@ -34,6 +34,7 @@ struct NoteCardConfiguration: Identifiable {
     
     // MARK: - Initialization
     init(
+        id: UUID = UUID(),
         title: String,
         date: Date,
         preview: String,
@@ -43,6 +44,7 @@ struct NoteCardConfiguration: Identifiable {
         folder: Folder? = nil,
         metadata: [String: Any]? = nil
     ) {
+        self.id = id
         self.title = title
         self.date = date
         self.preview = preview
@@ -55,6 +57,7 @@ struct NoteCardConfiguration: Identifiable {
         #if DEBUG
         print("""
         📝 NoteCardConfiguration: Created new configuration
+        - ID: \(id.uuidString)
         - Title: \(title)
         - Source Type: \(sourceType)
         - Tags Count: \(tags.count)
@@ -63,22 +66,6 @@ struct NoteCardConfiguration: Identifiable {
         #endif
     }
 
-    
-    // MARK: - Debug Description
-    var debugDescription: String {
-        """
-        NoteCard:
-        - ID: \(id)
-        - Title: \(title)
-        - Date: \(date)
-        - Preview: \(preview)
-        - Source: \(sourceType)
-        - Favorite: \(isFavorite)
-        - Tags: \(tags.joined(separator: ", "))
-        - Audio URL: \(audioURL?.absoluteString ?? "none")
-        - Metadata: \(String(describing: metadata))
-        """
-    }
 
     // MARK: - Quiz Components
     struct QuizContent: View {

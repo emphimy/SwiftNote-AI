@@ -168,6 +168,7 @@ final class HomeViewModel: ObservableObject {
             }.map { note -> NoteCardConfiguration in
                 // Explicitly typed closure return
                 return NoteCardConfiguration(
+                    id: note.id ?? UUID(), // Use the CoreData note's ID
                     title: note.title!,
                     date: note.timestamp!,
                     // Use aiGeneratedContent for preview if available, otherwise fallback to originalContent
@@ -181,7 +182,8 @@ final class HomeViewModel: ObservableObject {
                     metadata: [
                         "rawTranscript": String(decoding: note.originalContent!, as: UTF8.self),
                         "aiGeneratedContent": note.aiGeneratedContent != nil ?
-                            String(decoding: note.aiGeneratedContent!, as: UTF8.self) : nil
+                            String(decoding: note.aiGeneratedContent!, as: UTF8.self) : nil,
+                        "videoId": note.videoId
                     ].compactMapValues { $0 }
                 )
             }
@@ -245,12 +247,11 @@ final class HomeViewModel: ObservableObject {
             PersistenceController.shared.saveContext()
             #if DEBUG
             print("📝 HomeViewModel: Forced save to persistent store")
+            print("📝 HomeViewModel: Note created with ID: \(noteId.uuidString)")
             #endif
             
-            // Save to UserDefaults for guaranteed persistence
-            SimpleNotePersistence.shared.saveNote(note)
-            
             // Refresh notes list
+            self.notes = [NoteCardConfiguration(id: noteId, title: title, date: Date(), preview: content, sourceType: sourceType, isFavorite: false, tags: [], folder: folder, metadata: [:])]
             self.fetchNotes()
             
             #if DEBUG
@@ -261,20 +262,6 @@ final class HomeViewModel: ObservableObject {
             print("📝 HomeViewModel: Error creating note - \(error)")
             print("Error details: \((error as NSError).userInfo)")
             #endif
-            
-            // Even if CoreData fails, still try to save to UserDefaults
-            SimpleNotePersistence.shared.saveNote(SimpleNote(
-                id: noteId,
-                title: title,
-                content: content,
-                sourceType: sourceType.rawValue,
-                timestamp: Date(),
-                lastModified: Date(),
-                folderID: folder?.id,
-                processingStatus: "completed",
-                isFavorite: false,
-                aiGeneratedContent: sourceType == .text ? content : nil
-            ))
         }
     }
     
@@ -463,27 +450,27 @@ final class HomeViewModel: ObservableObject {
         request.predicate = NSPredicate(format: "title == %@ AND timestamp == %@", note.title, note.date as CVarArg)
         
         do {
-            let results = try viewContext.fetch(request)
-            guard let noteObject = results.first else {
-                throw CoreDataError(message: "Note not found")
+            guard let noteObject = try viewContext.fetch(request).first else {
+                throw CoreDataError(message: "Note not found for deletion")
             }
             
-            // Use PersistenceController's delete operation
             try PersistenceController.shared.deleteNote(noteObject)
             
             // Force save to persistent store
             PersistenceController.shared.saveContext()
             
             // Refresh notes list
-            fetchNotes()
+            self.fetchNotes()
             
             #if DEBUG
-            print("🏠 HomeViewModel: Successfully deleted note")
+            print("🏠 HomeViewModel: Note deleted successfully")
             #endif
         } catch {
             #if DEBUG
-            print("🏠 HomeViewModel: Error deleting note: \(error.localizedDescription)")
+            print("🏠 HomeViewModel: Error deleting note - \(error)")
+            print("Error details: \((error as NSError).userInfo)")
             #endif
+            
             throw CoreDataError(message: "Failed to delete note: \(error.localizedDescription)")
         }
     }
