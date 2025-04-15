@@ -44,36 +44,44 @@ final class PersistenceController: NSObject {
     
     // MARK: - Properties
     let container: NSPersistentContainer
-    private let storeDescription: NSPersistentStoreDescription
     
     // MARK: - Initialization
     init(inMemory: Bool = false) {
-        container = NSPersistentContainer(name: Self.modelName)
+        let storeURL: URL
         
-        // Configure store description
-        storeDescription = container.persistentStoreDescriptions.first!
-        
-        // In-memory store configuration
         if inMemory {
-            container.persistentStoreDescriptions.first?.url = URL(fileURLWithPath: "/dev/null")
+            storeURL = URL(fileURLWithPath: "/dev/null")
             #if DEBUG
             print("🗄️ Persistence: Initializing in-memory store")
             #endif
+        } else {
+            let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            storeURL = documentsDirectory.appendingPathComponent("\(Self.modelName).sqlite")
+            #if DEBUG
+            print("🗄️ Persistence: Setting store URL to \(storeURL.path)")
+            #endif
         }
         
-        // Call super.init before any instance methods
+        // Create store description with the URL
+        let description = NSPersistentStoreDescription(url: storeURL)
+        description.type = NSSQLiteStoreType
+        description.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+        description.shouldMigrateStoreAutomatically = true
+        description.shouldInferMappingModelAutomatically = true
+        description.setOption(FileProtectionType.completeUntilFirstUserAuthentication as NSObject, 
+                            forKey: NSPersistentStoreFileProtectionKey)
+        let pragmaOptions = ["journal_mode": "WAL" as NSObject]
+        description.setOption(pragmaOptions as NSDictionary, forKey: NSSQLitePragmasOption)
+        
+        // Create container with the description
+        container = NSPersistentContainer(name: Self.modelName)
+        container.persistentStoreDescriptions = [description]
+        
+        // Call super.init
         super.init()
         
-        // Now we can safely call instance methods
-        if !inMemory {
-            configureLocalStoreDescription()
-        }
-        
-        // Configure migration
-        configureMigration()
-        
         // Load persistent stores
-        container.loadPersistentStores { [weak self] description, error in
+        container.loadPersistentStores { description, error in
             if let error = error as NSError? {
                 #if DEBUG
                 print("🗄️ Persistence: Failed to load persistent stores - \(error), \(error.userInfo)")
@@ -84,7 +92,7 @@ final class PersistenceController: NSObject {
                     switch error.code {
                     case NSPersistentStoreIncompatibleVersionHashError,
                          NSMigrationMissingSourceModelError:
-                        self?.attemptStoreRecovery(at: description.url)
+                        self.attemptStoreRecovery(at: description.url)
                     default:
                         fatalError("Unresolved error \(error), \(error.userInfo)")
                     }
@@ -159,38 +167,6 @@ final class PersistenceController: NSObject {
             #endif
             fatalError("Recovery failed: \(error)")
         }
-    }
-    
-    // MARK: - Store Configuration
-    private func configureLocalStoreDescription() {
-        #if DEBUG
-        print("🗄️ Persistence: Configuring local store")
-        #endif
-        
-        // Ensure we're using SQLite store type
-        storeDescription.type = NSSQLiteStoreType
-        
-        // Make sure the URL is correctly set to a persistent location
-        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let storeURL = documentsDirectory.appendingPathComponent("\(Self.modelName).sqlite")
-        storeDescription.url = storeURL
-        
-        #if DEBUG
-        print("🗄️ Persistence: Setting store URL to \(storeURL.path)")
-        #endif
-        
-        // Configure options for better persistence
-        storeDescription.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
-        storeDescription.shouldMigrateStoreAutomatically = true
-        storeDescription.shouldInferMappingModelAutomatically = true
-        
-        // Add additional options for better durability
-        storeDescription.setOption(FileProtectionType.completeUntilFirstUserAuthentication as NSObject, 
-                                 forKey: NSPersistentStoreFileProtectionKey)
-        
-        // Set journal_mode to WAL for better performance and reliability
-        let pragmaOptions = ["journal_mode": "WAL" as NSObject]
-        storeDescription.setOption(pragmaOptions as NSDictionary, forKey: NSSQLitePragmasOption)
     }
     
     // MARK: - Container Setup
@@ -457,12 +433,18 @@ extension PersistenceController {
             print("🗄️ Migration: Starting manual migration")
             #endif
             
+            guard let storeURL = container.persistentStoreDescriptions.first?.url else {
+                throw MigrationError.migrationFailed(NSError(domain: "PersistenceController",
+                                                           code: -1,
+                                                           userInfo: [NSLocalizedDescriptionKey: "Store URL not found"]))
+            }
+            
             try migrationManager.migrateStore(
-                from: storeDescription.url!,
+                from: storeURL,
                 sourceType: NSSQLiteStoreType,
                 options: nil,
                 with: mapping,
-                toDestinationURL: storeDescription.url!,
+                toDestinationURL: storeURL,
                 destinationType: NSSQLiteStoreType,
                 destinationOptions: nil
             )
