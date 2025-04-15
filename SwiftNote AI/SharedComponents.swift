@@ -32,23 +32,7 @@ struct HomeHeaderView: View {
             HStack {
                 Spacer()
                 
-                Button(action: {
-                    #if DEBUG
-                    print("🏠 HomeHeader: Toggle view mode to: \(viewMode == .list ? "grid" : "list")")
-                    #endif
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        viewMode = viewMode == .list ? .grid : .list
-                    }
-                }) {
-                    Image(systemName: viewMode == .list ? "square.grid.2x2" : "list.bullet")
-                        .font(.system(size: 24))
-                        .foregroundColor(Theme.Colors.primary)
-                        .padding(Theme.Spacing.xs)
-                        .background(
-                            Circle()
-                                .fill(Theme.Colors.primary.opacity(0.1))
-                        )
-                }
+                // View toggle button removed as per user request
             }
             .padding(.horizontal, Theme.Spacing.lg)
         }
