@@ -217,6 +217,15 @@ final class HomeViewModel: ObservableObject {
         note.id = noteId
         note.title = title
         note.originalContent = content.data(using: .utf8)
+        
+        // For notes that should appear as transcripts, don't set aiGeneratedContent initially
+        // This ensures they appear in the "Process" section rather than the "Read" section
+        if sourceType == .text {
+            // For manual text notes, we can generate AI content immediately
+            // In a real app, you'd likely do more processing here
+            note.aiGeneratedContent = content.data(using: .utf8)
+        }
+        
         note.sourceType = sourceType.rawValue
         note.timestamp = Date()
         note.lastModified = Date()
@@ -261,7 +270,10 @@ final class HomeViewModel: ObservableObject {
                 sourceType: sourceType.rawValue,
                 timestamp: Date(),
                 lastModified: Date(),
-                folderID: folder?.id
+                folderID: folder?.id,
+                processingStatus: "completed",
+                isFavorite: false,
+                aiGeneratedContent: sourceType == .text ? content : nil
             ))
         }
     }

@@ -10,8 +10,12 @@ struct SimpleNote: Codable {
     let timestamp: Date
     let lastModified: Date
     let folderID: UUID?
+    let processingStatus: String
+    let isFavorite: Bool
+    let aiGeneratedContent: String?
     
-    init(id: UUID, title: String, content: String, sourceType: String, timestamp: Date, lastModified: Date, folderID: UUID?) {
+    init(id: UUID, title: String, content: String, sourceType: String, timestamp: Date, lastModified: Date, folderID: UUID?, 
+         processingStatus: String = "completed", isFavorite: Bool = false, aiGeneratedContent: String? = nil) {
         self.id = id
         self.title = title
         self.content = content
@@ -19,6 +23,9 @@ struct SimpleNote: Codable {
         self.timestamp = timestamp
         self.lastModified = lastModified
         self.folderID = folderID
+        self.processingStatus = processingStatus
+        self.isFavorite = isFavorite
+        self.aiGeneratedContent = aiGeneratedContent
     }
     
     init(from note: Note) {
@@ -29,6 +36,9 @@ struct SimpleNote: Codable {
         self.timestamp = note.timestamp ?? Date()
         self.lastModified = note.lastModified ?? Date()
         self.folderID = note.folder?.id
+        self.processingStatus = note.processingStatus ?? "completed"
+        self.isFavorite = note.isFavorite
+        self.aiGeneratedContent = note.aiGeneratedContent != nil ? String(decoding: note.aiGeneratedContent!, as: UTF8.self) : nil
     }
 }
 
@@ -67,7 +77,10 @@ class SimpleNotePersistence {
             sourceType: sourceType,
             timestamp: note.timestamp ?? Date(),
             lastModified: note.lastModified ?? Date(),
-            folderID: note.folder?.id
+            folderID: note.folder?.id,
+            processingStatus: note.processingStatus ?? "completed",
+            isFavorite: note.isFavorite,
+            aiGeneratedContent: note.aiGeneratedContent != nil ? String(decoding: note.aiGeneratedContent!, as: UTF8.self) : nil
         )
         
         saveNote(simpleNote)
@@ -154,6 +167,9 @@ class SimpleNotePersistence {
                     existingNote.title = simpleNote.title
                     existingNote.originalContent = simpleNote.content.data(using: .utf8)
                     existingNote.lastModified = simpleNote.lastModified
+                    existingNote.processingStatus = simpleNote.processingStatus
+                    existingNote.isFavorite = simpleNote.isFavorite
+                    existingNote.aiGeneratedContent = simpleNote.aiGeneratedContent?.data(using: .utf8)
                     #if DEBUG
                     print("📝 SimpleNotePersistence: Updated existing note \(simpleNote.id.uuidString)")
                     #endif
@@ -166,7 +182,9 @@ class SimpleNotePersistence {
                     note.sourceType = simpleNote.sourceType
                     note.timestamp = simpleNote.timestamp
                     note.lastModified = simpleNote.lastModified
-                    note.processingStatus = "completed"
+                    note.processingStatus = simpleNote.processingStatus
+                    note.isFavorite = simpleNote.isFavorite
+                    note.aiGeneratedContent = simpleNote.aiGeneratedContent?.data(using: .utf8)
                     
                     // Try to set folder if folderID exists
                     if let folderID = simpleNote.folderID {
@@ -194,7 +212,9 @@ class SimpleNotePersistence {
                 note.sourceType = simpleNote.sourceType
                 note.timestamp = simpleNote.timestamp
                 note.lastModified = simpleNote.lastModified
-                note.processingStatus = "completed"
+                note.processingStatus = simpleNote.processingStatus
+                note.isFavorite = simpleNote.isFavorite
+                note.aiGeneratedContent = simpleNote.aiGeneratedContent?.data(using: .utf8)
             }
         }
         
