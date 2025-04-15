@@ -51,23 +51,25 @@ actor NoteGenerationService {
         
         Add 1-2 table into different section of the note if anything can be represented better in table. Notes are always between summary and conclusion sections.
         No need another header before summary. If you have to use ##
+        
+        Only use the detected language even for the base headers and subheaders. 
 
-        ## Summary
+        ## Summary (with custom header)
         Create a detailed summary with a couple of paragraphs.
 
-        ## Key Points
+        ## Key Points (with custom header)
         - Use bullet points for key points. 
 
         ## Important Details (with custom header)
         as many topic as you need with the topic format below
         
-        ### Topic
+        ### Topic (with custom header)
         Content for topic
 
-        ## Notable Quotes (only impactful and important ones, 
+        ## Notable Quotes (only impactful and important ones, with custom header)
         > Include quotes if any
 
-        ## Conclusion
+        ## Conclusion (with custom header)
         Detailed conclusion based on the whole content with a couple of paragraph.
 
         Use proper markdown formatting:
