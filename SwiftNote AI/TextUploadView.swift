@@ -75,12 +75,10 @@ final class TextUploadViewModel: ObservableObject {
     @Published var textContent: String = ""
     @Published var selectedFileName: String?
     @Published var stats: TextStats?
-    @Published var isLoading = false
-    @Published var processingStatus: String = ""
-    @Published var aiGeneratedContent: Data?
     @Published var errorMessage: String?
     @Published var saveLocally = false
     @Published private(set) var loadingState: LoadingState = .idle
+    @Published var aiGeneratedContent: Data?
     
     // MARK: - Private Properties
     private let viewContext: NSManagedObjectContext
@@ -101,8 +99,7 @@ final class TextUploadViewModel: ObservableObject {
     
     // MARK: - File Processing
     func processSelectedFile(_ url: URL) async throws {
-        isLoading = true
-        processingStatus = "Reading file..."
+        loadingState = .loading(message: "Reading file...")
         
         do {
             // Start accessing security-scoped resource
@@ -136,23 +133,20 @@ final class TextUploadViewModel: ObservableObject {
                 
                 // Process with AI if content is not empty
                 if !textContent.isEmpty {
-                    processingStatus = "Analyzing content with AI..."
+                    loadingState = .loading(message: "Analyzing content with AI...")
                     aiGeneratedContent = try await processWithAI(text: textContent)
                 }
                 
                 // Calculate stats
                 stats = TextStats(text: textContent, fileSize: Int64(fileSize))
                 
-                isLoading = false
-                processingStatus = ""
+                loadingState = .success(message: "File processed successfully")
             } catch {
-                isLoading = false
-                processingStatus = ""
+                loadingState = .error(message: error.localizedDescription)
                 throw error
             }
         } catch {
-            isLoading = false
-            processingStatus = ""
+            loadingState = .error(message: error.localizedDescription)
             throw error
         }
     }
@@ -290,34 +284,46 @@ final class TextUploadViewModel: ObservableObject {
         No need another header before summary. If you have to use ##
         
         Only use the detected language even for the base headers and subheaders. 
-
-        ## Summary (with custom header)
+        
+        ## Summary
         Create a detailed summary with a couple of paragraphs.
-
-        ## Key Points (with custom header)
-        - Use bullet points for key points. 
-
-        ## Important Details (with custom header)
+        
+        ## Key Points
+        - Use bullet points for key points
+        - Use **bold** for emphasis
+        - Use _italic_ for technical terms
+        
+        ## Important Details
         as many topic as you need with the topic format below
         
-        ### Topic (with custom header)
-        Content for topic
-
-        ## Notable Quotes (only impactful and important ones, with custom header)
-        > Include quotes if any
-
-        ## Conclusion (with custom header)
-        Detailed conclusion based on the whole content with a couple of paragraph.
-
+        ### Topic
+        Content for topic with proper formatting:
+        - Use **bold** for important terms
+        - Use _italic_ for definitions
+        - Use `code` for technical terms
+        - Use > for quotes
+        - Use tables for structured data
+        
+        ## Notable Quotes
+        > Include quotes with proper attribution
+        > Format with proper markdown quote syntax
+        
+        ## Conclusion
+        Detailed conclusion with:
+        - **Key takeaways** in bold
+        - _Important concepts_ in italic
+        - `Technical terms` in code blocks
+        
         Use proper markdown formatting:
         1. Use ## for main headers
         2. Use ### for subheaders
-        3. Use proper table formatting with | and -
+        3. Use | for tables with header row
         4. Use > for quotes
         5. Use - for bullet points
         6. Use ` for code or technical terms
-        7. Use ** for emphasis
-
+        7. Use ** for bold emphasis
+        8. Use _ for italic text
+        
         \(text)
         """
         
@@ -330,6 +336,8 @@ final class TextUploadViewModel: ObservableObject {
         guard !textContent.isEmpty else {
             throw TextUploadError.emptyContent
         }
+        
+        loadingState = .loading(message: "Saving note...")
         
         try await viewContext.perform { [weak self] in
             guard let self = self else { return }
@@ -368,6 +376,8 @@ final class TextUploadViewModel: ObservableObject {
             print("📄 TextUploadVM: Note saved successfully")
             #endif
         }
+        
+        loadingState = .success(message: "Note saved successfully")
     }
     
     // MARK: - Type Checking
@@ -428,53 +438,18 @@ struct TextUploadView: View {
     @Environment(\.toastManager) private var toastManager
     @State private var showingFilePicker = false
     @State private var showingSaveDialog = false
-    @State private var noteTitle: String = ""
-    @State private var documentStats: DocumentStats = .empty
     @State private var selectedFile: URL?
+    @State private var noteTitle = ""
+    @State private var documentStats: DocumentStats?
     
+    // MARK: - Initialization
     init(context: NSManagedObjectContext) {
-        self._viewModel = StateObject(wrappedValue: TextUploadViewModel(context: context))
-    }
-    
-    var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: Theme.Spacing.xl) {
-                    headerSection
-                    
-                    if selectedFile == nil {
-                        fileSelectionSection
-                    } else if let file = selectedFile {
-                        previewSection(for: file)
-                    }
-                    
-                    Spacer()
-                }
-                .padding()
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-            }
-            .sheet(isPresented: $showingFilePicker) {
-                DocumentPicker(types: viewModel.supportedTypes, onResult: handleSelectedFile)
-            }
-            .alert("Save Note", isPresented: $showingSaveDialog) {
-                TextField("Note Title", text: $noteTitle)
-                Button("Cancel", role: .cancel) { }
-                Button("Save") { saveNote() }
-            }
-        }
+        _viewModel = StateObject(wrappedValue: TextUploadViewModel(context: context))
     }
     
     // MARK: - View Components
-    
     private var headerSection: some View {
-        VStack(spacing: Theme.Spacing.md) {
+        VStack(spacing: Theme.Spacing.sm) {
             Image(systemName: "doc.circle.fill")
                 .font(.system(size: 60))
                 .foregroundStyle(
@@ -484,21 +459,143 @@ struct TextUploadView: View {
                         endPoint: .bottomTrailing
                     )
                 )
-                .padding(.top, Theme.Spacing.xl)
+                .scaleEffect(1.0)
+                .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: UUID())
             
             Text("Import Text Document")
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(Theme.Typography.h2)
                 .foregroundColor(Theme.Colors.text)
             
             Text("Import text from files like TXT, RTF, DOC or PDF")
-                .font(.body)
+                .font(Theme.Typography.body)
                 .foregroundColor(Theme.Colors.secondaryText)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal)
+        }
+        .padding(.top, Theme.Spacing.xl)
+    }
+    
+    // MARK: - Body
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: Theme.Spacing.lg) {
+                    headerSection
+                    
+                    if viewModel.loadingState.isLoading {
+                        loadingSection
+                    } else if let file = selectedFile {
+                        previewSection(for: file)
+                    } else {
+                        fileSelectionSection
+                    }
+                    
+                    Spacer()
+                }
+                .padding()
+            }
+            .navigationTitle("Import Text")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .disabled(viewModel.loadingState.isLoading)
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if !viewModel.textContent.isEmpty {
+                        Button("Save") {
+                            showingSaveDialog = true
+                        }
+                        .disabled(viewModel.loadingState.isLoading)
+                    }
+                }
+            }
+            .sheet(isPresented: $showingFilePicker) {
+                DocumentPicker(types: viewModel.supportedTypes, onResult: handleSelectedFile)
+            }
+            .alert("Save Note", isPresented: $showingSaveDialog) {
+                TextField("Note Title", text: $noteTitle)
+                Button("Cancel", role: .cancel) { }
+                Button("Save") {
+                    Task {
+                        do {
+                            try await viewModel.saveNote(title: noteTitle)
+                            toastManager.show("Note saved successfully", type: .success)
+                            dismiss()
+                        } catch {
+                            toastManager.show(error.localizedDescription, type: .error)
+                        }
+                    }
+                }
+                .disabled(noteTitle.isEmpty)
+            } message: {
+                Text("Enter a title for your note")
+            }
         }
     }
     
+    // MARK: - Loading Section
+    private var loadingSection: some View {
+        VStack(spacing: Theme.Spacing.lg) {
+            ProgressView()
+                .scaleEffect(1.5)
+                .frame(height: 100)
+            
+            if case let .loading(message) = viewModel.loadingState {
+                HStack(spacing: 12) {
+                    Text(message ?? "Processing...")
+                        .font(Theme.Typography.body)
+                        .fontWeight(.medium)
+                        .foregroundColor(Theme.Colors.text)
+                        .lineLimit(1)
+                }
+                .frame(minWidth: 200)
+            } else if case let .success(message) = viewModel.loadingState {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    Text(message)
+                        .font(Theme.Typography.body)
+                        .foregroundColor(.green)
+                }
+            } else if case let .error(message) = viewModel.loadingState {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(.red)
+                    Text(message)
+                        .font(Theme.Typography.body)
+                        .foregroundColor(.red)
+                }
+            }
+            
+            if let file = selectedFile {
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    Text("Processing File:")
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.secondaryText)
+                    
+                    HStack {
+                        Image(systemName: "doc.text")
+                            .foregroundStyle(Theme.Colors.primary)
+                        Text(file.lastPathComponent)
+                            .lineLimit(1)
+                            .font(Theme.Typography.body)
+                            .foregroundColor(Theme.Colors.text)
+                    }
+                }
+                .padding()
+                .background(Theme.Colors.secondaryBackground)
+                .cornerRadius(Theme.Layout.cornerRadius)
+                .shadow(radius: 2)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding()
+    }
+    
+    // MARK: - File Selection Section
     private var fileSelectionSection: some View {
         VStack(spacing: Theme.Spacing.md) {
             Button(action: { showingFilePicker = true }) {
@@ -529,22 +626,70 @@ struct TextUploadView: View {
                 )
             }
             
-            // Supported Formats Section
-            VStack(spacing: Theme.Spacing.sm) {
-                Text("Supported Formats")
+            supportedFormatsSection
+        }
+    }
+    
+    private var supportedFormatsSection: some View {
+        VStack(spacing: Theme.Spacing.sm) {
+            Text("Supported Formats")
+                .font(Theme.Typography.caption)
+                .foregroundColor(Theme.Colors.secondaryText)
+            
+            HStack(spacing: Theme.Spacing.md) {
+                ForEach(["TXT", "RTF", "DOC", "DOCX", "PDF"], id: \.self) { format in
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green.gradient)
+                        Text(format)
+                    }
                     .font(Theme.Typography.caption)
                     .foregroundColor(Theme.Colors.secondaryText)
-                
-                HStack(spacing: Theme.Spacing.md) {
-                    ForEach(["TXT", "RTF", "DOC", "DOCX", "PDF"], id: \.self) { format in
-                        HStack(spacing: Theme.Spacing.xs) {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green.gradient)
-                            Text(format)
-                        }
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.secondaryText)
+                }
+            }
+        }
+        .padding()
+        .background(Theme.Colors.secondaryBackground)
+        .cornerRadius(Theme.Layout.cornerRadius)
+    }
+    
+    // MARK: - Preview Section
+    private func previewSection(for file: URL) -> some View {
+        VStack(spacing: Theme.Spacing.md) {
+            // File Info Section
+            fileInfoSection(for: file)
+            
+            // Document Stats Section
+            documentStatsSection
+            
+            // Save Options
+            localStorageToggle
+            
+            importButton
+        }
+    }
+    
+    private func fileInfoSection(for file: URL) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            HStack {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text(file.lastPathComponent)
+                        .font(Theme.Typography.h3)
+                        .foregroundColor(Theme.Colors.text)
+                    
+                    if let fileSize = viewModel.getFileSize(for: file) {
+                        Text(fileSize)
+                            .font(Theme.Typography.caption)
+                            .foregroundColor(Theme.Colors.secondaryText)
                     }
+                }
+                
+                Spacer()
+                
+                Button(action: { showingFilePicker = true }) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.blue.gradient)
                 }
             }
             .padding()
@@ -553,78 +698,73 @@ struct TextUploadView: View {
         }
     }
     
-    private func previewSection(for file: URL) -> some View {
-        VStack(spacing: Theme.Spacing.md) {
-            // File Info Section
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                HStack {
-                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                        Text(file.lastPathComponent)
-                            .font(Theme.Typography.h3)
-                            .foregroundColor(Theme.Colors.text)
-                        
-                        if let fileSize = viewModel.getFileSize(for: file) {
-                            Text(fileSize)
-                                .font(Theme.Typography.caption)
-                                .foregroundColor(Theme.Colors.secondaryText)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: { showingFilePicker = true }) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 20))
-                            .foregroundStyle(.blue.gradient)
-                    }
-                }
-                .padding()
-                .background(Theme.Colors.secondaryBackground)
-                .cornerRadius(Theme.Layout.cornerRadius)
-            }
+    private var documentStatsSection: some View {
+        HStack(spacing: Theme.Spacing.lg) {
+            StatItem(title: "Words", value: "\(documentStats?.wordCount ?? 0)")
             
-            // Document Stats Section
-            HStack(spacing: Theme.Spacing.lg) {
-                StatItem(title: "Words", value: "\(documentStats.wordCount)")
-                
-                Divider()
-                    .frame(height: 40)
-                
-                StatItem(title: "Characters", value: "\(documentStats.characterCount)")
-                
-                Divider()
-                    .frame(height: 40)
-                
-                StatItem(title: "Pages", value: String(format: "%.1f", documentStats.pageCount))
-            }
+            Divider()
+                .frame(height: 40)
+            
+            StatItem(title: "Characters", value: "\(documentStats?.characterCount ?? 0)")
+            
+            Divider()
+                .frame(height: 40)
+            
+            StatItem(title: "Pages", value: String(format: "%.1f", documentStats?.pageCount ?? 0))
+        }
+        .padding()
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                .fill(Theme.Colors.secondaryBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                        .stroke(Theme.Colors.tertiaryBackground, lineWidth: 1)
+                )
+        )
+    }
+    
+    private var localStorageToggle: some View {
+        Toggle("Save original file locally", isOn: $viewModel.saveLocally)
             .padding()
             .background(Theme.Colors.secondaryBackground)
             .cornerRadius(Theme.Layout.cornerRadius)
-            
-            // Save Options
-            Toggle("Save original file locally", isOn: $viewModel.saveLocally)
-                .padding()
-                .background(Theme.Colors.secondaryBackground)
-                .cornerRadius(Theme.Layout.cornerRadius)
-            
-            Button(action: { showingSaveDialog = true }) {
-                if viewModel.isLoading {
+    }
+    
+    private var importButton: some View {
+        Button(action: { showingSaveDialog = true }) {
+            if viewModel.loadingState.isLoading {
+                HStack(spacing: 12) {
                     ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                } else {
-                    HStack {
-                        Text("Import Document")
-                        Image(systemName: "arrow.right.circle.fill")
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .scaleEffect(0.8)
+                        .tint(.white)
+                    
+                    if case let .loading(message) = viewModel.loadingState {
+                        Text(message ?? "Processing...")
+                            .font(Theme.Typography.body)
+                            .fontWeight(.medium)
+                            .foregroundColor(.white)
+                            .lineLimit(1)
                     }
                 }
+                .frame(minWidth: 200)
+            } else {
+                HStack(spacing: 8) {
+                    Text("Import Document")
+                        .font(Theme.Typography.body)
+                        .fontWeight(.semibold)
+                    
+                    Image(systemName: "arrow.right.circle.fill")
+                        .font(.system(size: 16))
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(viewModel.isLoading ? Theme.Colors.primary.opacity(0.5) : Theme.Colors.primary)
-            .foregroundColor(.white)
-            .cornerRadius(Theme.Layout.cornerRadius)
-            .disabled(viewModel.isLoading)
         }
+        .frame(maxWidth: .infinity)
+        .padding()
+        .background(viewModel.loadingState.isLoading ? Theme.Colors.primary.opacity(0.5) : Theme.Colors.primary)
+        .foregroundColor(.white)
+        .cornerRadius(Theme.Layout.cornerRadius)
+        .disabled(viewModel.loadingState.isLoading)
     }
     
     // MARK: - Helper Methods
@@ -656,37 +796,20 @@ struct TextUploadView: View {
         }
     }
     
-    private func saveNote() {
-        guard !noteTitle.isEmpty else {
-            toastManager.show("Please enter a title", type: .warning)
-            return
-        }
+    // MARK: - Stat Item View
+    private struct StatItem: View {
+        let title: String
+        let value: String
         
-        Task {
-            do {
-                try await viewModel.saveNote(title: noteTitle)
-                toastManager.show("Text imported successfully", type: .success)
-                dismiss()
-            } catch {
-                toastManager.show(error.localizedDescription, type: .error)
+        var body: some View {
+            VStack(spacing: Theme.Spacing.xxs) {
+                Text(title)
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.secondaryText)
+                Text(value)
+                    .font(Theme.Typography.body)
+                    .foregroundColor(Theme.Colors.text)
             }
-        }
-    }
-}
-
-// MARK: - Stat Item View
-private struct StatItem: View {
-    let title: String
-    let value: String
-    
-    var body: some View {
-        VStack(spacing: Theme.Spacing.xxs) {
-            Text(title)
-                .font(Theme.Typography.caption)
-                .foregroundColor(Theme.Colors.secondaryText)
-            Text(value)
-                .font(Theme.Typography.body)
-                .foregroundColor(Theme.Colors.text)
         }
     }
 }
