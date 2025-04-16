@@ -218,8 +218,12 @@ final class HomeViewModel: ObservableObject {
                 // Get the default folder if none is specified
                 var targetFolder = folder
                 if targetFolder == nil {
+                    // Create a FolderListViewModel to access the All Notes folder
                     let folderViewModel = FolderListViewModel(context: viewContext)
+                    // Ensure the All Notes folder exists and get a reference to it
+                    folderViewModel.ensureAllNotesFolder()
                     targetFolder = folderViewModel.getDefaultFolder()
+                    
                     #if DEBUG
                     print("📝 HomeViewModel: Using default folder: \(targetFolder?.name ?? "nil")")
                     #endif
@@ -233,9 +237,17 @@ final class HomeViewModel: ObservableObject {
                 )
                 
                 // Assign to folder
-                newNote.folder = targetFolder
-                
-                try viewContext.save()
+                if let targetFolder = targetFolder {
+                    #if DEBUG
+                    print("📝 HomeViewModel: Assigning note to folder: \(targetFolder.name ?? "unnamed")")
+                    #endif
+                    newNote.folder = targetFolder
+                    try viewContext.save()
+                } else {
+                    #if DEBUG
+                    print("📝 HomeViewModel: Warning - No target folder found, note will not be in any folder")
+                    #endif
+                }
                 
                 #if DEBUG
                 print("📝 HomeViewModel: Note created successfully and added to folder: \(targetFolder?.name ?? "nil")")
