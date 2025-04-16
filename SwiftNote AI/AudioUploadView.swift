@@ -10,6 +10,8 @@ enum AudioUploadError: LocalizedError {
     case readError(Error)
     case unsupportedFileType(String)
     case durationTooLong(TimeInterval)
+    case transcriptionFailed(String)
+    case noteGenerationFailed(String)
     
     var errorDescription: String? {
         switch self {
@@ -23,6 +25,10 @@ enum AudioUploadError: LocalizedError {
             return "Unsupported file type: \(ext)"
         case .durationTooLong(let duration):
             return "Audio duration too long (\(Int(duration))s). Maximum 2 hours allowed."
+        case .transcriptionFailed(let error):
+            return "Failed to transcribe audio: \(error)"
+        case .noteGenerationFailed(let error):
+            return "Failed to generate note: \(error)"
         }
     }
 }
@@ -51,12 +57,18 @@ final class AudioUploadViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var saveLocally = false
     @Published private(set) var loadingState: LoadingState = .idle
+    @Published var recordedFiles: [URL] = []
+    @Published var showingRecordedFilesPicker = false
+    @Published var transcript = ""
+    @Published var transcriptSegments: [TranscriptSegment] = []
     
     // MARK: - Private Properties
     private let viewContext: NSManagedObjectContext
     private let maxFileSize: Int64 = 100_000_000 // 100MB
     private let maxDuration: TimeInterval = 7200 // 2 hours
     private var originalFileURL: URL?
+    private let transcriptionService = AudioTranscriptionService.shared
+    private let noteGenerationService = NoteGenerationService()
     
     let supportedTypes: [UTType] = {
         var types = [UTType.audio, UTType.mp3, UTType.wav]
@@ -110,6 +122,9 @@ final class AudioUploadViewModel: ObservableObject {
             let format = try await getAudioFormat(from: asset)
             let sampleRate = try await getSampleRate(from: asset)
             
+            // Create a local copy of the file in the app's documents directory
+            let localURL = try createLocalCopy(of: url)
+            
             await MainActor.run {
                 self.stats = AudioStats(
                     duration: duration,
@@ -118,7 +133,7 @@ final class AudioUploadViewModel: ObservableObject {
                     sampleRate: sampleRate
                 )
                 self.selectedFileName = url.lastPathComponent
-                self.originalFileURL = url
+                self.originalFileURL = localURL // Use the local URL instead of the original
                 self.loadingState = .success(message: "Audio file processed successfully")
             }
             
@@ -139,6 +154,19 @@ final class AudioUploadViewModel: ObservableObject {
             loadingState = .error(message: error.localizedDescription)
             throw error
         }
+    }
+    
+    // MARK: - File Management
+    private func createLocalCopy(of url: URL) throws -> URL {
+        let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let destinationURL = documentsDirectory.appendingPathComponent(UUID().uuidString + "-" + url.lastPathComponent)
+        
+        #if DEBUG
+        print("🎵 AudioUploadVM: Creating local copy at \(destinationURL.path)")
+        #endif
+        
+        try FileManager.default.copyItem(at: url, to: destinationURL)
+        return destinationURL
     }
     
     // MARK: - Audio Analysis
@@ -180,34 +208,189 @@ final class AudioUploadViewModel: ObservableObject {
             throw AudioUploadError.invalidFormat
         }
         
+        loadingState = .loading(message: "Processing audio file...")
+        
+        // Transcribe the audio file with timestamps
+        loadingState = .loading(message: "Transcribing audio...")
+        let transcription: String
+        do {
+            let result = try await transcriptionService.transcribeAudioWithTimestamps(fileURL: audioURL)
+            transcription = result.text
+            transcriptSegments = result.segments
+            transcript = transcription
+            
+            #if DEBUG
+            print("🎵 AudioUploadVM: Successfully transcribed audio with \(transcription.count) characters and \(transcriptSegments.count) segments")
+            #endif
+        } catch {
+            #if DEBUG
+            print("🎵 AudioUploadVM: Transcription failed - \(error)")
+            #endif
+            loadingState = .error(message: "Transcription failed: \(error.localizedDescription)")
+            throw AudioUploadError.transcriptionFailed(error.localizedDescription)
+        }
+        
+        // Generate a note from the transcription
+        loadingState = .loading(message: "Generating note content...")
+        let noteContent: String
+        do {
+            noteContent = try await noteGenerationService.generateNote(from: transcript)
+            
+            #if DEBUG
+            print("🎵 AudioUploadVM: Successfully generated note content with \(noteContent.count) characters")
+            #endif
+        } catch {
+            #if DEBUG
+            print("🎵 AudioUploadVM: Note generation failed - \(error)")
+            #endif
+            throw AudioUploadError.noteGenerationFailed(error.localizedDescription)
+        }
+        
+        // Save to Core Data
+        loadingState = .loading(message: "Saving note...")
         try await viewContext.perform { [weak self] in
             guard let self = self else { return }
             
             let note = NSEntityDescription.insertNewObject(forEntityName: "Note", into: self.viewContext)
+            
+            // Set required attributes
+            let noteId = UUID()
+            note.setValue(noteId, forKey: "id")
             note.setValue(title, forKey: "title")
             note.setValue(Date(), forKey: "timestamp")
+            note.setValue(Date(), forKey: "lastModified")
             note.setValue("audio", forKey: "sourceType")
+            note.setValue("completed", forKey: "processingStatus")
             
-            if self.saveLocally {
-                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                let destinationURL = documentsPath.appendingPathComponent("\(UUID().uuidString).m4a")
+            // Set audio-specific attributes
+            if let stats = self.stats {
+                note.setValue(stats.duration, forKey: "duration")
+            }
+            
+            // Store the transcription and generated note content
+            note.setValue(transcription, forKey: "transcript")
+            note.setValue(noteContent.data(using: .utf8), forKey: "aiGeneratedContent")
+            note.setValue(transcription.data(using: .utf8), forKey: "originalContent")
+            
+            // Skip storing transcript segments for now to avoid crashes
+            // We'll implement this properly after examining the Core Data model
+            #if DEBUG
+            print("🎵 AudioUploadVM: Skipping transcript segments storage to avoid crashes")
+            #endif
+            
+            // Save the audio file
+            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let fileName = "\(noteId.uuidString).\(audioURL.pathExtension)"
+            let destinationURL = documentsPath.appendingPathComponent(fileName)
+            
+            do {
+                // Check if file already exists at destination and remove it
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    try FileManager.default.removeItem(at: destinationURL)
+                }
+                
                 try FileManager.default.copyItem(at: audioURL, to: destinationURL)
+                
+                // Store the file reference as NSURL
+                note.setValue(destinationURL, forKey: "sourceURL")
+                
+                #if DEBUG
+                print("🎵 AudioUploadVM: Audio file copied to \(destinationURL)")
+                #endif
+            } catch {
+                #if DEBUG
+                print("🎵 AudioUploadVM: Failed to copy audio file - \(error)")
+                #endif
+                // Continue saving even if file copy fails
+                note.setValue(nil, forKey: "sourceURL")
             }
             
             try self.viewContext.save()
             
             #if DEBUG
-            print("🎵 AudioUploadVM: Note saved successfully")
+            print("🎵 AudioUploadVM: Note saved successfully with ID: \(note.value(forKey: "id") ?? "unknown")")
             #endif
+            
+            loadingState = .success(message: "Audio processed and note created successfully")
         }
     }
     
     // MARK: - Type Checking
     func canHandle(_ url: URL) -> Bool {
-        guard let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType else {
-            return false
+        #if DEBUG
+        print("🎵 AudioUploadVM: Checking if can handle file: \(url.lastPathComponent)")
+        #endif
+        
+        // First try using UTType
+        if let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType {
+            #if DEBUG
+            print("🎵 AudioUploadVM: File content type: \(type.identifier)")
+            #endif
+            
+            let canHandle = supportedTypes.contains { type.conforms(to: $0) }
+            
+            // If UTType check fails, fall back to extension check for common audio formats
+            if !canHandle {
+                let ext = url.pathExtension.lowercased()
+                if ["mp3", "wav", "m4a"].contains(ext) {
+                    #if DEBUG
+                    print("🎵 AudioUploadVM: UTType check failed but extension \(ext) is supported")
+                    #endif
+                    return true
+                }
+            }
+            
+            return canHandle
+        } else {
+            // If UTType check fails completely, check the extension
+            let ext = url.pathExtension.lowercased()
+            let isSupported = ["mp3", "wav", "m4a"].contains(ext)
+            
+            #if DEBUG
+            print("🎵 AudioUploadVM: UTType check failed, falling back to extension check: \(ext) - Supported: \(isSupported)")
+            #endif
+            
+            return isSupported
         }
-        return supportedTypes.contains { type.conforms(to: $0) }
+    }
+    
+    // MARK: - Recorded Files
+    func loadRecordedFiles() {
+        #if DEBUG
+        print("🎵 AudioUploadVM: Loading recorded audio files")
+        #endif
+        
+        do {
+            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let fileURLs = try FileManager.default.contentsOfDirectory(at: documentsPath, includingPropertiesForKeys: nil)
+            
+            // Filter for supported audio files
+            let supportedExtensions = ["mp3", "wav", "m4a"]
+            let audioFiles = fileURLs.filter { 
+                let ext = $0.pathExtension.lowercased()
+                return supportedExtensions.contains(ext)
+            }
+            
+            // Sort by creation date (newest first)
+            let sortedFiles = try audioFiles.sorted { (url1, url2) -> Bool in
+                let attr1 = try FileManager.default.attributesOfItem(atPath: url1.path)
+                let attr2 = try FileManager.default.attributesOfItem(atPath: url2.path)
+                let date1 = attr1[.creationDate] as? Date ?? Date.distantPast
+                let date2 = attr2[.creationDate] as? Date ?? Date.distantPast
+                return date1 > date2
+            }
+            
+            self.recordedFiles = sortedFiles
+            
+            #if DEBUG
+            print("🎵 AudioUploadVM: Found \(sortedFiles.count) recorded audio files")
+            #endif
+        } catch {
+            #if DEBUG
+            print("🎵 AudioUploadVM: Error loading recorded files - \(error)")
+            #endif
+            self.recordedFiles = []
+        }
     }
     
     // MARK: - Cleanup
@@ -307,6 +490,12 @@ struct AudioUploadView: View {
                 Button("Cancel", role: .cancel) { }
                 Button("Save") { saveAudio() }
             }
+            .sheet(isPresented: $viewModel.showingRecordedFilesPicker) {
+                recordedFilesPickerView
+            }
+            .onAppear {
+                viewModel.loadRecordedFiles()
+            }
         }
     }
     
@@ -341,6 +530,28 @@ struct AudioUploadView: View {
                         .foregroundStyle(.blue.gradient)
                     
                     Text("Select Audio File")
+                        .font(Theme.Typography.body)
+                        .foregroundColor(Theme.Colors.primary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Theme.Spacing.xl)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                        .fill(Theme.Colors.secondaryBackground)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                                .stroke(Theme.Colors.tertiaryBackground, lineWidth: 1)
+                        )
+                )
+            }
+            
+            Button(action: { viewModel.showingRecordedFilesPicker = true }) {
+                VStack(spacing: Theme.Spacing.md) {
+                    Image(systemName: "waveform.badge.plus")
+                        .font(.system(size: 48))
+                        .foregroundStyle(.orange.gradient)
+                    
+                    Text("Select Recorded Audio")
                         .font(Theme.Typography.body)
                         .foregroundColor(Theme.Colors.primary)
                 }
@@ -451,17 +662,128 @@ struct AudioUploadView: View {
     
     private var importButton: some View {
         Button(action: { showingSaveDialog = true }) {
-            if case .loading = viewModel.loadingState {
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle())
+            if case .loading(let message) = viewModel.loadingState {
+                HStack(spacing: 12) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .scaleEffect(0.8)
+                    
+                    Text(message ?? "Processing...")
+                        .font(Theme.Typography.body)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                }
+                .frame(minWidth: 200)
             } else {
                 Text("Import Audio")
                     .font(Theme.Typography.body)
                     .fontWeight(.semibold)
             }
         }
-        .buttonStyle(PrimaryButtonStyle())
-        .disabled(viewModel.loadingState.isLoading)
+        .buttonStyle(LoadingButtonStyle(isLoading: viewModel.loadingState.isLoading))
+        .disabled(viewModel.loadingState.isLoading || viewModel.selectedFileName == nil)
+    }
+    
+    // MARK: - Recorded Files Picker
+    private var recordedFilesPickerView: some View {
+        NavigationView {
+            VStack {
+                if viewModel.recordedFiles.isEmpty {
+                    VStack(spacing: Theme.Spacing.lg) {
+                        Image(systemName: "waveform.slash")
+                            .font(.system(size: 60))
+                            .foregroundStyle(.gray)
+                        
+                        Text("No Recordings Found")
+                            .font(Theme.Typography.h3)
+                            .foregroundColor(Theme.Colors.secondaryText)
+                        
+                        Text("Record audio using the voice recorder to see your recordings here.")
+                            .font(Theme.Typography.body)
+                            .foregroundColor(Theme.Colors.tertiaryText)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Theme.Colors.background)
+                } else {
+                    List {
+                        ForEach(viewModel.recordedFiles, id: \.self) { fileURL in
+                            Button(action: {
+                                selectRecordedFile(fileURL)
+                            }) {
+                                HStack {
+                                    Image(systemName: "waveform")
+                                        .foregroundStyle(.orange.gradient)
+                                        .font(.title2)
+                                    
+                                    VStack(alignment: .leading) {
+                                        Text(fileURL.lastPathComponent)
+                                            .font(Theme.Typography.body)
+                                            .foregroundColor(Theme.Colors.text)
+                                        
+                                        Text(formattedDate(for: fileURL))
+                                            .font(Theme.Typography.caption)
+                                            .foregroundColor(Theme.Colors.secondaryText)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    Image(systemName: "chevron.right")
+                                        .foregroundColor(Theme.Colors.tertiaryText)
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .navigationTitle("Your Recordings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        viewModel.showingRecordedFilesPicker = false
+                    }
+                }
+                
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button(action: {
+                        viewModel.loadRecordedFiles()
+                    }) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+            }
+        }
+    }
+    
+    private func formattedDate(for fileURL: URL) -> String {
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+            if let creationDate = attributes[.creationDate] as? Date {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .medium
+                formatter.timeStyle = .short
+                return formatter.string(from: creationDate)
+            }
+        } catch {
+            // Handle error silently
+        }
+        return "Unknown date"
+    }
+    
+    private func selectRecordedFile(_ fileURL: URL) {
+        Task {
+            do {
+                try await viewModel.processSelectedFile(fileURL)
+                viewModel.showingRecordedFilesPicker = false
+            } catch {
+                toastManager.show(error.localizedDescription, type: .error)
+            }
+        }
     }
     
     // MARK: - Helper Methods
@@ -491,7 +813,7 @@ struct AudioUploadView: View {
         Task {
             do {
                 try await viewModel.saveNote(title: noteTitle)
-                toastManager.show("Audio imported successfully", type: .success)
+                toastManager.show("Audio imported and transcribed successfully", type: .success)
                 dismiss()
             } catch {
                 toastManager.show(error.localizedDescription, type: .error)
@@ -517,6 +839,31 @@ private struct AudioDetailRow: View {
                 .font(Theme.Typography.caption)
                 .foregroundColor(Theme.Colors.text)
         }
+    }
+}
+
+// MARK: - Loading Button Style
+struct LoadingButtonStyle: ButtonStyle {
+    var isLoading: Bool
+    var backgroundColor: Color = Theme.Colors.primary
+    
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.vertical, 12)
+            .padding(.horizontal, 16)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                    .fill(isLoading ? backgroundColor.opacity(0.7) : backgroundColor)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+            )
+            .foregroundColor(.white)
+            .scaleEffect(configuration.isPressed && !isLoading ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: configuration.isPressed)
+            .animation(.easeInOut(duration: 0.2), value: isLoading)
     }
 }
 

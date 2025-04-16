@@ -103,6 +103,56 @@ final class AIProxyService {
         return try parseFlashcardsFromJSON(jsonResponse)
     }
     
+    /// Transcribe audio file using OpenAI's Whisper model
+    /// - Parameters:
+    ///   - fileURL: URL to the audio file
+    ///   - language: Optional language code to guide the transcription (e.g., "en", "es")
+    /// - Returns: Transcribed text
+    func transcribeAudio(fileURL: URL, language: String? = nil) async throws -> String {
+        #if DEBUG
+        print("🤖 AIProxyService: Transcribing audio file: \(fileURL.lastPathComponent)")
+        #endif
+        
+        do {
+            // Read file data
+            let audioData = try Data(contentsOf: fileURL)
+            
+            // Create the audio transcription request
+            let requestBody = OpenAICreateTranscriptionRequestBody(
+                file: audioData,
+                model: "whisper-1",
+                language: language
+            )
+            
+            let response = try await openAIService.createTranscriptionRequest(body: requestBody)
+            
+            // Check if we have a valid response with text
+            let transcription = response.text
+            if transcription.isEmpty {
+                #if DEBUG
+                print("🤖 AIProxyService: Invalid transcription response - empty text")
+                #endif
+                throw AIProxyError.invalidResponse
+            }
+            
+            #if DEBUG
+            print("🤖 AIProxyService: Successfully transcribed audio (\(transcription.count) characters)")
+            #endif
+            
+            return transcription
+        } catch {
+            #if DEBUG
+            print("🤖 AIProxyService: Audio transcription failed - \(error)")
+            #endif
+            
+            if let aiProxyError = error as? AIProxyError {
+                throw aiProxyError
+            } else {
+                throw AIProxyError.audioTranscriptionError(error.localizedDescription)
+            }
+        }
+    }
+    
     // MARK: - Private Methods
     
     /// Parse flashcards from JSON string
@@ -150,6 +200,7 @@ enum AIProxyError: Error {
     case invalidResponseFormat
     case invalidResponseData
     case invalidFlashcardFormat
+    case audioTranscriptionError(String)
 }
 
 extension AIProxyError: LocalizedError {
@@ -165,6 +216,8 @@ extension AIProxyError: LocalizedError {
             return "Invalid response data"
         case .invalidFlashcardFormat:
             return "Invalid flashcard format in response"
+        case .audioTranscriptionError(let message):
+            return "Audio transcription error: \(message)"
         }
     }
 }

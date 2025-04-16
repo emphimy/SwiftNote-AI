@@ -76,6 +76,8 @@ final class TextUploadViewModel: ObservableObject {
     @Published var selectedFileName: String?
     @Published var stats: TextStats?
     @Published var isLoading = false
+    @Published var processingStatus: String = ""
+    @Published var aiGeneratedContent: Data?
     @Published var errorMessage: String?
     @Published var saveLocally = false
     @Published private(set) var loadingState: LoadingState = .idle
@@ -87,6 +89,7 @@ final class TextUploadViewModel: ObservableObject {
                                    UTType("org.openxmlformats.wordprocessingml.document")!,
                                    UTType("net.daringfireball.markdown")!]
     private var originalFileURL: URL?
+    private let aiService = AIProxyService.shared
     
     init(context: NSManagedObjectContext) {
         self.viewContext = context
@@ -98,86 +101,165 @@ final class TextUploadViewModel: ObservableObject {
     
     // MARK: - File Processing
     func processSelectedFile(_ url: URL) async throws {
-        loadingState = .loading(message: "Reading file...")
+        isLoading = true
+        processingStatus = "Reading file..."
         
         do {
+            // Start accessing security-scoped resource
             guard url.startAccessingSecurityScopedResource() else {
-                throw TextUploadError.invalidFile
+                throw TextUploadError.readError(NSError(domain: "FileAccessError", 
+                                                      code: -1, 
+                                                      userInfo: [NSLocalizedDescriptionKey: "Failed to access file"]))
             }
             
             defer {
                 url.stopAccessingSecurityScopedResource()
             }
             
+            // Validate file size
             let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            
-            // Arbitrary 10MB limit for text files
-            if fileSize > 10_000_000 {
+            if fileSize > 50 * 1024 * 1024 { // 50MB limit
                 throw TextUploadError.fileTooBig(Int64(fileSize))
             }
             
-            // Read file content
-            let content = try await readFileContent(from: url)
-            guard !content.isEmpty else {
-                throw TextUploadError.emptyContent
-            }
+            // Store original URL for later use
+            originalFileURL = url
+            selectedFileName = url.lastPathComponent
             
-            await MainActor.run {
-                self.textContent = content
-                self.selectedFileName = url.lastPathComponent
-                self.stats = TextStats(text: content, fileSize: Int64(fileSize))
-                self.originalFileURL = url
-                self.loadingState = .success(message: "File loaded successfully")
+            do {
+                #if DEBUG
+                print("📄 TextUploadVM: Processing file: \(url.lastPathComponent)")
+                #endif
+                
+                // Read file content
+                textContent = try await readFileContent(from: url)
+                
+                // Process with AI if content is not empty
+                if !textContent.isEmpty {
+                    processingStatus = "Analyzing content with AI..."
+                    aiGeneratedContent = try await processWithAI(text: textContent)
+                }
+                
+                // Calculate stats
+                stats = TextStats(text: textContent, fileSize: Int64(fileSize))
+                
+                isLoading = false
+                processingStatus = ""
+            } catch {
+                isLoading = false
+                processingStatus = ""
+                throw error
             }
-            
-            #if DEBUG
-            print("📄 TextUploadVM: File processed successfully - Size: \(fileSize) bytes")
-            #endif
         } catch {
-            #if DEBUG
-            print("📄 TextUploadVM: Error processing file - \(error)")
-            #endif
-            loadingState = .error(message: error.localizedDescription)
+            isLoading = false
+            processingStatus = ""
             throw error
         }
     }
     
     // MARK: - File Reading
+    private func extractTextFromPDF(_ pdfDoc: PDFDocument) async throws -> String {
+        var extractedText = ""
+        let pageCount = pdfDoc.pageCount
+        
+        #if DEBUG
+        print("📄 TextUploadVM: PDF has \(pageCount) pages")
+        #endif
+        
+        for pageIndex in 0..<pageCount {
+            guard let page = pdfDoc.page(at: pageIndex) else { continue }
+            
+            // Try PDFKit text extraction first
+            if let pageText = page.string {
+                #if DEBUG
+                print("📄 TextUploadVM: Successfully extracted text from page \(pageIndex + 1)")
+                #endif
+                extractedText += pageText + "\n"
+                continue
+            }
+            
+            // If PDFKit fails, try OCR
+            let pageBounds = page.bounds(for: .mediaBox)
+            let pageImage = page.thumbnail(of: pageBounds.size, for: .mediaBox)
+            
+            // Convert CGImage to UIImage for Vision framework
+            if let cgImage = pageImage.cgImage {
+                let uiImage = UIImage(cgImage: cgImage)
+                let text = try await performOCR(on: uiImage)
+                extractedText += text + "\n"
+                #if DEBUG
+                print("📄 TextUploadVM: Successfully extracted text using OCR from page \(pageIndex + 1)")
+                #endif
+            } else {
+                #if DEBUG
+                print("📄 TextUploadVM: Failed to convert page \(pageIndex + 1) to image for OCR")
+                #endif
+            }
+            
+            if (pageIndex + 1) % 5 == 0 {
+                #if DEBUG
+                print("📄 TextUploadVM: Processed \(pageIndex + 1) of \(pageCount) pages")
+                #endif
+            }
+        }
+        
+        return extractedText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private func performOCR(on image: UIImage) async throws -> String {
+        let requestHandler = VNImageRequestHandler(cgImage: image.cgImage!, options: [:])
+        let request = VNRecognizeTextRequest()
+        request.recognitionLanguages = ["en-US"]
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        
+        try requestHandler.perform([request])
+        
+        guard let observations = request.results else {
+            throw TextUploadError.readError(NSError(domain: "OCRError",
+                                                  code: -1,
+                                                  userInfo: [NSLocalizedDescriptionKey: "Failed to perform OCR"]))
+        }
+        
+        return observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+    }
+
     private func readFileContent(from url: URL) async throws -> String {
-        // Handle different file types
-        switch url.pathExtension.lowercased() {
-        case "txt", "rtf", "md":
+        // Get content type
+        guard let contentType = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType else {
+            throw TextUploadError.invalidFile
+        }
+        
+        #if DEBUG
+        print("📄 TextUploadVM: Processing file with type: \(contentType.description)")
+        #endif
+        
+        if contentType.conforms(to: .pdf) {
+            #if DEBUG
+            print("📄 TextUploadVM: Processing PDF file: \(url.lastPathComponent)")
+            #endif
+            
+            guard let pdfDocument = PDFDocument(url: url) else {
+                throw TextUploadError.readError(NSError(domain: "PDFError",
+                                                      code: -1,
+                                                      userInfo: [NSLocalizedDescriptionKey: "Unable to open PDF"]))
+            }
+            
+            return try await extractTextFromPDF(pdfDocument)
+        } else if contentType.conforms(to: .text) {
             return try String(contentsOf: url, encoding: .utf8)
-            
-        case "pdf":
-            guard let pdf = CGPDFDocument(url as CFURL),
-                  let page = pdf.page(at: 1) else {
-                throw TextUploadError.readError(NSError(domain: "PDFError", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to read PDF"]))
+        } else if contentType.conforms(to: .rtf) {
+            // Handle RTF files
+            let options = [NSAttributedString.DocumentReadingOptionKey.documentType: NSAttributedString.DocumentType.rtf]
+            let data = try Data(contentsOf: url)
+            if let attributedString = try? NSAttributedString(data: data, options: options, documentAttributes: nil) {
+                return attributedString.string
             }
-            
-            let pageRect = page.getBoxRect(.mediaBox)
-            let renderer = UIGraphicsImageRenderer(size: pageRect.size)
-            let img = renderer.image { ctx in
-                UIColor.white.set()
-                ctx.fill(pageRect)
-                
-                ctx.cgContext.translateBy(x: 0.0, y: pageRect.size.height)
-                ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
-                
-                ctx.cgContext.drawPDFPage(page)
-            }
-            
-            let requestHandler = VNImageRequestHandler(cgImage: img.cgImage!, options: [:])
-            let request = VNRecognizeTextRequest()
-            try requestHandler.perform([request])
-            
-            guard let observations = request.results else {
-                throw TextUploadError.readError(NSError(domain: "OCRError", code: -1, userInfo: [NSLocalizedDescriptionKey: "No text found in PDF"]))
-            }
-            
-            return observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
-            
-        case "doc", "docx":
+            throw TextUploadError.readError(NSError(domain: "RTFError",
+                                                  code: -1,
+                                                  userInfo: [NSLocalizedDescriptionKey: "Unable to read RTF content"]))
+        } else if contentType.conforms(to: UTType("com.microsoft.word.doc")!) || 
+                  contentType.conforms(to: UTType("org.openxmlformats.wordprocessingml.document")!) {
             // For iOS, we'll use NSAttributedString to read Word documents
             let options = [NSAttributedString.DocumentReadingOptionKey.documentType: NSAttributedString.DocumentType.rtfd]
             let data = try Data(contentsOf: url)
@@ -195,10 +277,52 @@ final class TextUploadViewModel: ObservableObject {
             throw TextUploadError.readError(NSError(domain: "DocumentError", 
                                                   code: -1, 
                                                   userInfo: [NSLocalizedDescriptionKey: "Unable to read document content"]))
-            
-        default:
+        } else {
             throw TextUploadError.unsupportedFileType(url.pathExtension)
         }
+    }
+    
+    private func processWithAI(text: String) async throws -> Data {
+        let prompt = """
+        Please analyze this transcript and create a well-structured detailed note using proper markdown formatting:
+        
+        Add 1-2 table into different section of the note if anything can be represented better in table. Notes are always between summary and conclusion sections.
+        No need another header before summary. If you have to use ##
+        
+        Only use the detected language even for the base headers and subheaders. 
+
+        ## Summary (with custom header)
+        Create a detailed summary with a couple of paragraphs.
+
+        ## Key Points (with custom header)
+        - Use bullet points for key points. 
+
+        ## Important Details (with custom header)
+        as many topic as you need with the topic format below
+        
+        ### Topic (with custom header)
+        Content for topic
+
+        ## Notable Quotes (only impactful and important ones, with custom header)
+        > Include quotes if any
+
+        ## Conclusion (with custom header)
+        Detailed conclusion based on the whole content with a couple of paragraph.
+
+        Use proper markdown formatting:
+        1. Use ## for main headers
+        2. Use ### for subheaders
+        3. Use proper table formatting with | and -
+        4. Use > for quotes
+        5. Use - for bullet points
+        6. Use ` for code or technical terms
+        7. Use ** for emphasis
+
+        \(text)
+        """
+        
+        let aiResponse = try await aiService.generateCompletion(prompt: prompt)
+        return aiResponse.data(using: .utf8) ?? Data()
     }
     
     // MARK: - Save Note
@@ -211,16 +335,31 @@ final class TextUploadViewModel: ObservableObject {
             guard let self = self else { return }
             
             let note = NSEntityDescription.insertNewObject(forEntityName: "Note", into: self.viewContext)
+            note.setValue(UUID(), forKey: "id")
             note.setValue(title, forKey: "title")
             note.setValue(Date(), forKey: "timestamp")
+            note.setValue(Date(), forKey: "lastModified")
             note.setValue("text", forKey: "sourceType")
-            note.setValue(self.textContent, forKey: "content")
+            note.setValue("completed", forKey: "processingStatus")
+            note.setValue(textContent.data(using: .utf8), forKey: "originalContent") // Store as Binary
+            
+            // Save AI-generated content if available
+            if let aiContent = aiGeneratedContent {
+                note.setValue(aiContent, forKey: "aiGeneratedContent")
+            }
+            
+            // Create a preview from the first few lines
+            let preview = String(textContent.prefix(500))
+            note.setValue(preview, forKey: "transcript") // Using transcript for preview
             
             if self.saveLocally, let originalURL = self.originalFileURL {
                 // Save copy to app documents
                 let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 let destinationURL = documentsPath.appendingPathComponent(originalURL.lastPathComponent)
                 try FileManager.default.copyItem(at: originalURL, to: destinationURL)
+                
+                // Save file URL
+                note.setValue(destinationURL, forKey: "sourceURL")
             }
             
             try self.viewContext.save()
@@ -495,18 +634,23 @@ struct TextUploadView: View {
                 let urls = try result.get()
                 guard let url = urls.first else { return }
                 
-                if viewModel.canHandle(url) {
-                    try await viewModel.processSelectedFile(url)
-                    selectedFile = url
-                    
-                    // Calculate document stats
-                    if let content = try? String(contentsOf: url, encoding: .utf8) {
-                        documentStats = DocumentStats.calculate(from: content)
-                    }
-                } else {
-                    throw TextUploadError.unsupportedFileType(url.pathExtension)
+                #if DEBUG
+                print("📄 TextUploadView: Selected file: \(url.lastPathComponent)")
+                if let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType {
+                    print("📄 TextUploadView: File content type: \(type.description)")
                 }
+                #endif
+                
+                // Process the file first, which now includes proper type checking
+                try await viewModel.processSelectedFile(url)
+                selectedFile = url
+                
+                // Calculate document stats based on the processed content
+                documentStats = DocumentStats.calculate(from: viewModel.textContent)
             } catch {
+                #if DEBUG
+                print("📄 TextUploadView: Error handling file: \(error.localizedDescription)")
+                #endif
                 toastManager.show(error.localizedDescription, type: .error)
             }
         }
