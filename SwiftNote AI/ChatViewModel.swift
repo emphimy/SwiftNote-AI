@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import AIProxy
+import Down
 
 // MARK: - Chat View Model
 @MainActor
@@ -10,10 +11,16 @@ final class ChatViewModel: ObservableObject {
     @Published var inputMessage: String = ""
     @Published var chatState: ChatState = .idle
     @Published var error: String?
+    @Published var typingMessage: String = ""
+    @Published var isTyping: Bool = false
     
     // MARK: - Private Properties
     private let note: NoteCardConfiguration
     private var cancellables = Set<AnyCancellable>()
+    private var typingTimer: Timer?
+    private var fullResponse: String = ""
+    private var currentTypingIndex: Int = 0
+    private let typingSpeed: TimeInterval = 0.02 // Adjust for faster/slower typing
     
     // MARK: - Initialization
     init(note: NoteCardConfiguration) {
@@ -69,17 +76,8 @@ final class ChatViewModel: ObservableObject {
                 messages[index].status = .sent
             }
             
-            // Add AI response
-            let assistantMessage = ChatMessage(
-                content: response,
-                type: .assistant,
-                timestamp: Date()
-            )
-            messages.append(assistantMessage)
-            
-            // Reset chat state
-            chatState = .idle
-            error = nil
+            // Start typing animation
+            startTypingAnimation(response)
             
             #if DEBUG
             print("💬 ChatViewModel: Received response from AI")
@@ -100,7 +98,83 @@ final class ChatViewModel: ObservableObject {
         }
     }
     
+    /// Stop the current AI response generation and typing animation
+    func stopResponse() {
+        // Stop the typing animation
+        typingTimer?.invalidate()
+        typingTimer = nil
+        
+        // If we were in the middle of typing, add what we have so far
+        if isTyping && !typingMessage.isEmpty {
+            let partialMessage = ChatMessage(
+                content: typingMessage + "\n\n[Response stopped by user]",
+                type: .assistant,
+                timestamp: Date()
+            )
+            messages.append(partialMessage)
+        }
+        
+        // Reset typing state
+        isTyping = false
+        typingMessage = ""
+        fullResponse = ""
+        currentTypingIndex = 0
+        
+        // Reset chat state
+        chatState = .idle
+        error = nil
+    }
+    
     // MARK: - Private Methods
+    
+    /// Start the typing animation for the AI response
+    private func startTypingAnimation(_ fullText: String) {
+        // Store the full response
+        fullResponse = fullText
+        currentTypingIndex = 0
+        typingMessage = ""
+        isTyping = true
+        
+        // Create a timer to simulate typing
+        typingTimer = Timer.scheduledTimer(withTimeInterval: typingSpeed, repeats: true) { [weak self] timer in
+            guard let self = self else {
+                timer.invalidate()
+                return
+            }
+            
+            // Use Task to run on the main actor
+            Task { @MainActor in
+                if self.currentTypingIndex < self.fullResponse.count {
+                    let index = self.fullResponse.index(self.fullResponse.startIndex, offsetBy: self.currentTypingIndex)
+                    self.typingMessage.append(self.fullResponse[index])
+                    self.currentTypingIndex += 1
+                } else {
+                    // Typing finished, add the complete message
+                    self.finishTypingAnimation()
+                    timer.invalidate()
+                }
+            }
+        }
+    }
+    
+    /// Finish the typing animation and add the complete message
+    private func finishTypingAnimation() {
+        // Add AI response with the full text
+        let assistantMessage = ChatMessage(
+            content: fullResponse,
+            type: .assistant,
+            timestamp: Date()
+        )
+        messages.append(assistantMessage)
+        
+        // Reset typing state
+        isTyping = false
+        typingMessage = ""
+        
+        // Reset chat state
+        chatState = .idle
+        error = nil
+    }
     
     /// Generate an AI response based on the user message and note content
     private func generateResponse(to message: String) async throws -> String {
@@ -122,11 +196,88 @@ final class ChatViewModel: ObservableObject {
         Provide a helpful, educational response that helps the student understand the material better.
         Your response should be clear, concise, and focused on the student's question.
         If the question is not related to the note content, gently guide the student back to the topic.
-        Use examples and analogies when appropriate to aid understanding.
+        
+        IMPORTANT: Keep your responses SHORT and FOCUSED. Aim for 1-4 sentences maximum unless the question absolutely requires more detail.
+        
+        You can use Markdown formatting in your response:
+        - Use **bold** for emphasis
+        - Use *italic* for definitions or important terms
+        - Use bullet points or numbered lists for steps or multiple points
+        - Use headings with # or ## for organizing your response
+        - Use code blocks with ``` for code examples if relevant
+        - Use paragraph breaks when needed
+        
         """
         
         // Get response from AI service
         return try await AIProxyService.shared.generateCompletion(prompt: prompt)
+    }
+    
+    /// Parse markdown content to attributed string
+    func parseMarkdown(_ markdownText: String) -> AttributedString {
+        var attributedString = AttributedString(markdownText)
+        
+        // Simple markdown formatting
+        do {
+            // Bold text
+            let boldPattern = try NSRegularExpression(pattern: "\\*\\*(.*?)\\*\\*", options: [])
+            let boldMatches = boldPattern.matches(in: markdownText, options: [], range: NSRange(location: 0, length: markdownText.utf16.count))
+            
+            for match in boldMatches.reversed() {
+                if let range = Range(match.range(at: 1), in: markdownText) {
+                    let boldText = String(markdownText[range])
+                    if let attributedRange = attributedString.range(of: "**\(boldText)**") {
+                        attributedString[attributedRange].font = .boldSystemFont(ofSize: UIFont.systemFontSize)
+                        attributedString.replaceSubrange(attributedRange, with: AttributedString(boldText))
+                    }
+                }
+            }
+            
+            // Italic text
+            let italicPattern = try NSRegularExpression(pattern: "\\*(.*?)\\*", options: [])
+            let italicMatches = italicPattern.matches(in: markdownText, options: [], range: NSRange(location: 0, length: markdownText.utf16.count))
+            
+            for match in italicMatches.reversed() {
+                if let range = Range(match.range(at: 1), in: markdownText) {
+                    let italicText = String(markdownText[range])
+                    if let attributedRange = attributedString.range(of: "*\(italicText)*") {
+                        attributedString[attributedRange].font = .italicSystemFont(ofSize: UIFont.systemFontSize)
+                        attributedString.replaceSubrange(attributedRange, with: AttributedString(italicText))
+                    }
+                }
+            }
+            
+            // Headings (H1, H2, H3)
+            let headingPatterns = [
+                (pattern: "^# (.*?)$", size: UIFont.systemFontSize * 1.5),
+                (pattern: "^## (.*?)$", size: UIFont.systemFontSize * 1.3),
+                (pattern: "^### (.*?)$", size: UIFont.systemFontSize * 1.1)
+            ]
+            
+            for (pattern, size) in headingPatterns {
+                let headingRegex = try NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
+                let headingMatches = headingRegex.matches(in: markdownText, options: [], range: NSRange(location: 0, length: markdownText.utf16.count))
+                
+                for match in headingMatches.reversed() {
+                    if let range = Range(match.range(at: 1), in: markdownText),
+                       let fullRange = Range(match.range, in: markdownText) {
+                        let headingText = String(markdownText[range])
+                        let fullHeadingText = String(markdownText[fullRange])
+                        
+                        if let attributedRange = attributedString.range(of: fullHeadingText) {
+                            attributedString[attributedRange].font = .boldSystemFont(ofSize: size)
+                            attributedString.replaceSubrange(attributedRange, with: AttributedString(headingText))
+                        }
+                    }
+                }
+            }
+        } catch {
+            #if DEBUG
+            print("💬 ChatViewModel: Error parsing markdown - \(error)")
+            #endif
+        }
+        
+        return attributedString
     }
     
     // MARK: - Cleanup
@@ -134,6 +285,7 @@ final class ChatViewModel: ObservableObject {
         #if DEBUG
         print("💬 ChatViewModel: Deinitializing")
         #endif
+        typingTimer?.invalidate()
         cancellables.forEach { $0.cancel() }
     }
 }

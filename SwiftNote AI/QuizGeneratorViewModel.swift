@@ -263,7 +263,7 @@ final class QuizGeneratorViewModel: ObservableObject {
         var questions: [QuizQuestion] = []
         
         // Create questions about main topics
-        for (index, topic) in potentialTopics.prefix(5).enumerated() {
+        for (_, topic) in potentialTopics.prefix(5).enumerated() {
             let question = "What is the main idea discussed in this excerpt: \"\(topic)\""
             
             // Generate options
@@ -359,7 +359,7 @@ final class QuizGeneratorViewModel: ObservableObject {
         var questions: [QuizQuestion] = []
         
         // Create application questions based on the content
-        for paragraph in paragraphs.prefix(3) {
+        for _ in paragraphs.prefix(3) {
             let question = "Based on the information in the note, which of the following would be the most appropriate application?"
             
             // Generate options

@@ -158,7 +158,6 @@ final class YouTubeTranscriptViewModel: ObservableObject {
                         date: Date(),
                         preview: content,
                         sourceType: .video,
-                        tags: ["YouTube", "AI Generated"],
                         metadata: [
                             "rawTranscript": transcript,
                             "aiGeneratedContent": content

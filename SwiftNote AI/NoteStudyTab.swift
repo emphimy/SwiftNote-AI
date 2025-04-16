@@ -33,7 +33,7 @@ struct NoteStudyTabs: View {
         VStack(spacing: 0) {
             // Tab Bar
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: Theme.Spacing.md) {
+                HStack(spacing: Theme.Spacing.xs) {
                     ForEach(StudyTab.allCases, id: \.self) { tab in
                         TabButton(
                             title: tab.rawValue,
@@ -49,8 +49,8 @@ struct NoteStudyTabs: View {
                         }
                     }
                 }
-                .padding(.horizontal, Theme.Spacing.lg)
-                .padding(.vertical, Theme.Spacing.md)
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.xs)
             }
             .background(Theme.Colors.secondaryBackground)
             .cornerRadius(Theme.Layout.cornerRadius)
@@ -122,15 +122,15 @@ private struct TabButton: View {
         }) {
             VStack(spacing: Theme.Spacing.xxs) {
                 Image(systemName: icon)
-                    .font(.system(size: 20))
+                    .font(.system(size: 16))
                     .foregroundColor(isSelected ? Theme.Colors.primary : Theme.Colors.secondaryText)
                 
                 Text(title)
                     .font(Theme.Typography.caption)
                     .foregroundColor(isSelected ? Theme.Colors.primary : Theme.Colors.secondaryText)
             }
-            .padding(.horizontal, Theme.Spacing.sm)
-            .padding(.vertical, Theme.Spacing.xs)
+            .padding(.horizontal, Theme.Spacing.xs)
+            .padding(.vertical, Theme.Spacing.xxs)
             .background(
                 RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
                     .fill(isSelected ? Theme.Colors.primary.opacity(0.1) : Color.clear)
@@ -398,6 +398,7 @@ struct ChatTabView: View {
     let note: NoteCardConfiguration
     @StateObject private var viewModel: ChatViewModel
     @FocusState private var isInputFocused: Bool
+    @State private var keyboardHeight: CGFloat = 0
     
     init(note: NoteCardConfiguration) {
         self.note = note
@@ -405,102 +406,184 @@ struct ChatTabView: View {
     }
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("AI Study Assistant")
-                    .font(Theme.Typography.h2)
-                    .foregroundColor(Theme.Colors.primary)
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Text("AI Study Assistant")
+                        .font(Theme.Typography.h2)
+                        .foregroundColor(Theme.Colors.primary)
+                    
+                    Spacer()
+                }
+                .padding(.horizontal)
+                .padding(.bottom, Theme.Spacing.sm)
+                
+                Divider()
+                
+                // Chat Messages
+                ScrollViewReader { scrollProxy in
+                    ScrollView {
+                        LazyVStack(spacing: Theme.Spacing.md) {
+                            ForEach(viewModel.messages) { message in
+                                ChatMessageBubble(message: message, viewModel: viewModel)
+                                    .id(message.id)
+                            }
+                            
+                            // Typing indicator
+                            if viewModel.isTyping {
+                                HStack {
+                                    // AI avatar
+                                    Image(systemName: "sparkles")
+                                        .foregroundColor(Theme.Colors.primary)
+                                        .padding(8)
+                                        .background(Theme.Colors.background)
+                                        .clipShape(Circle())
+                                    
+                                    // Message bubble with typing animation
+                                    VStack(alignment: .leading) {
+                                        Text(viewModel.parseMarkdown(viewModel.typingMessage))
+                                            .padding()
+                                            .background(Theme.Colors.secondaryBackground)
+                                            .foregroundColor(Theme.Colors.text)
+                                            .cornerRadius(Theme.Layout.cornerRadius)
+                                    }
+                                    
+                                    Spacer()
+                                }
+                                .id("typingIndicator")
+                            }
+                            
+                            // Spacer at the bottom to ensure content can scroll above the input bar
+                            Color.clear
+                                .frame(height: 60)
+                                .id("bottomSpacer")
+                        }
+                        .padding()
+                    }
+                    .onChange(of: viewModel.messages.count) { _ in
+                        if let lastMessage = viewModel.messages.last {
+                            withAnimation {
+                                scrollProxy.scrollTo(lastMessage.id, anchor: .bottom)
+                            }
+                        }
+                    }
+                    .onChange(of: viewModel.typingMessage) { _ in
+                        if viewModel.isTyping {
+                            withAnimation {
+                                scrollProxy.scrollTo("typingIndicator", anchor: .bottom)
+                            }
+                        }
+                    }
+                    .onChange(of: keyboardHeight) { _ in
+                        withAnimation {
+                            scrollProxy.scrollTo("bottomSpacer", anchor: .bottom)
+                        }
+                    }
+                }
                 
                 Spacer()
+            }
+            
+            VStack(spacing: 0) {
+                // Error message if present
+                if let error = viewModel.error {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(Theme.Colors.error)
+                        
+                        Text(error)
+                            .font(Theme.Typography.caption)
+                            .foregroundColor(Theme.Colors.error)
+                        
+                        Spacer()
+                        
+                        Button {
+                            viewModel.error = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(Theme.Colors.error)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Theme.Colors.errorBackground)
+                }
                 
-                // Status indicator
-                if viewModel.chatState.isProcessing {
+                // Thinking indicator (moved to bottom)
+                if viewModel.chatState.isProcessing && !viewModel.isTyping {
                     HStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: "sparkles")
+                            .foregroundColor(Theme.Colors.primary)
+                        
                         ProgressView()
                             .scaleEffect(0.8)
                         
-                        Text("Thinking...")
+                        Text("AI is thinking...")
                             .font(Theme.Typography.caption)
                             .foregroundColor(Theme.Colors.secondaryText)
+                        
+                        Spacer()
                     }
+                    .padding(.horizontal)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(Theme.Colors.secondaryBackground)
                 }
-            }
-            .padding(.horizontal)
-            .padding(.bottom, Theme.Spacing.sm)
-            
-            Divider()
-            
-            // Chat Messages
-            ScrollViewReader { scrollProxy in
-                ScrollView {
-                    LazyVStack(spacing: Theme.Spacing.md) {
-                        ForEach(viewModel.messages) { message in
-                            ChatMessageBubble(message: message)
-                                .id(message.id)
-                        }
-                    }
-                    .padding()
-                }
-                .onChange(of: viewModel.messages.count) { _ in
-                    if let lastMessage = viewModel.messages.last {
-                        withAnimation {
-                            scrollProxy.scrollTo(lastMessage.id, anchor: .bottom)
-                        }
-                    }
-                }
-            }
-            
-            // Error message if present
-            if let error = viewModel.error {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundColor(Theme.Colors.error)
-                    
-                    Text(error)
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.error)
-                    
-                    Spacer()
-                    
-                    Button {
-                        viewModel.error = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(Theme.Colors.error)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.vertical, Theme.Spacing.sm)
-                .background(Theme.Colors.errorBackground)
-            }
-            
-            // Input Bar
-            HStack(spacing: Theme.Spacing.md) {
-                TextField("Ask a question...", text: $viewModel.inputMessage, axis: .vertical)
-                    .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .focused($isInputFocused)
-                    .disabled(viewModel.chatState.isProcessing)
-                    .submitLabel(.send)
-                    .onSubmit {
-                        sendMessage()
-                    }
                 
-                Button(action: sendMessage) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(viewModel.inputMessage.isEmpty || viewModel.chatState.isProcessing ? 
-                                         Theme.Colors.secondaryText : Theme.Colors.primary)
+                // Input Bar
+                HStack(spacing: Theme.Spacing.md) {
+                    TextField("Ask a question...", text: $viewModel.inputMessage, axis: .vertical)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .focused($isInputFocused)
+                        .disabled(viewModel.chatState.isProcessing && !viewModel.isTyping)
+                        .submitLabel(.send)
+                        .onSubmit {
+                            sendMessage()
+                        }
+                    
+                    if viewModel.isTyping {
+                        // Stop button
+                        Button(action: {
+                            viewModel.stopResponse()
+                        }) {
+                            Image(systemName: "stop.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(Theme.Colors.error)
+                        }
+                    } else {
+                        // Send button
+                        Button(action: sendMessage) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(viewModel.inputMessage.isEmpty || viewModel.chatState.isProcessing ? 
+                                                Theme.Colors.secondaryText : Theme.Colors.primary)
+                        }
+                        .disabled(viewModel.inputMessage.isEmpty || (viewModel.chatState.isProcessing && !viewModel.isTyping))
+                    }
                 }
-                .disabled(viewModel.inputMessage.isEmpty || viewModel.chatState.isProcessing)
+                .padding()
+                .background(Theme.Colors.secondaryBackground)
             }
-            .padding()
-            .background(Theme.Colors.secondaryBackground)
         }
         .onAppear {
             #if DEBUG
             print("💬 ChatTab: View appeared for note: \(note.title)")
             #endif
+            
+            // Add keyboard observers
+            NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { notification in
+                if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                    keyboardHeight = keyboardFrame.height
+                }
+            }
+            
+            NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { _ in
+                keyboardHeight = 0
+            }
+        }
+        .onDisappear {
+            // Remove keyboard observers
+            NotificationCenter.default.removeObserver(self)
         }
     }
     
@@ -520,6 +603,7 @@ struct ChatTabView: View {
 // MARK: - Chat Message Bubble
 private struct ChatMessageBubble: View {
     let message: ChatMessage
+    let viewModel: ChatViewModel
     
     var body: some View {
         VStack(alignment: message.type == .user ? .trailing : .leading, spacing: 4) {
@@ -527,18 +611,20 @@ private struct ChatMessageBubble: View {
             HStack {
                 if message.type == .assistant {
                     // AI avatar
-                    Image(systemName: "brain.head.profile")
+                    Image(systemName: "sparkles")
                         .foregroundColor(Theme.Colors.primary)
                         .padding(8)
                         .background(Theme.Colors.background)
                         .clipShape(Circle())
                     
-                    // Message bubble
-                    Text(message.content)
-                        .padding()
-                        .background(Theme.Colors.secondaryBackground)
-                        .foregroundColor(Theme.Colors.text)
-                        .cornerRadius(Theme.Layout.cornerRadius)
+                    // Message bubble with markdown support
+                    VStack(alignment: .leading) {
+                        Text(viewModel.parseMarkdown(message.content))
+                            .padding()
+                            .background(Theme.Colors.secondaryBackground)
+                            .foregroundColor(Theme.Colors.text)
+                            .cornerRadius(Theme.Layout.cornerRadius)
+                    }
                     
                     Spacer()
                 } else {

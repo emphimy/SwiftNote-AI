@@ -115,9 +115,6 @@ struct NoteDetailsView: View {
                     
                     // Content Section
                     contentSection
-                    
-                    // Tags Section
-                    tagsSection
                 }
                 .padding(Theme.Spacing.md)
             }
@@ -199,26 +196,6 @@ struct NoteDetailsView: View {
     private var contentSection: some View {
         NoteStudyTabs(note: viewModel.note)
             .padding(.top, Theme.Spacing.md)
-    }
-    
-    // MARK: - Tags Section
-    private var tagsSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            Text("Tags")
-                .font(Theme.Typography.h3)
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack {
-                    ForEach(viewModel.note.tags, id: \.self) { tag in
-                        TagView(tag: tag) {
-                            #if DEBUG
-                            print("📝 NoteDetailsView: Tag selected: \(tag)")
-                            #endif
-                        }
-                    }
-                }
-            }
-        }
     }
     
     // MARK: - Helper Methods
