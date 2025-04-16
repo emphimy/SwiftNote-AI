@@ -12,6 +12,7 @@ final class FolderListViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published var errorMessage: String?
     @Published var errorState: LoadingState = .idle
+    @Published private(set) var allNotesFolder: Folder?
     
     
     // MARK: - Private Properties
@@ -30,6 +31,7 @@ final class FolderListViewModel: ObservableObject {
         #endif
         
         fetchFolders()
+        ensureAllNotesFolder()
     }
     
     // MARK: - Public Methods
@@ -71,6 +73,9 @@ final class FolderListViewModel: ObservableObject {
             #if DEBUG
             print("📁 FolderListViewModel: Fetched \(folders.count) folders")
             #endif
+            
+            // Update the allNotesFolder reference
+            allNotesFolder = folders.first(where: { $0.name == "All Notes" })
         } catch {
             #if DEBUG
             print("📁 FolderListViewModel: Error fetching folders - \(error)")
@@ -79,6 +84,65 @@ final class FolderListViewModel: ObservableObject {
         }
         
         isLoading = false
+    }
+    
+    /// Ensures that an "All Notes" folder exists in the system
+    func ensureAllNotesFolder() {
+        #if DEBUG
+        print("📁 FolderListViewModel: Ensuring All Notes folder exists")
+        #endif
+        
+        // Check if All Notes folder already exists
+        let request = NSFetchRequest<Folder>(entityName: "Folder")
+        request.predicate = NSPredicate(format: "name == %@", "All Notes")
+        
+        do {
+            let results = try viewContext.fetch(request)
+            
+            if let existingFolder = results.first {
+                #if DEBUG
+                print("📁 FolderListViewModel: All Notes folder already exists")
+                #endif
+                allNotesFolder = existingFolder
+                
+                // Ensure it has the lowest sort order
+                if existingFolder.sortOrder > 0 {
+                    existingFolder.sortOrder = 0
+                    try viewContext.save()
+                }
+            } else {
+                #if DEBUG
+                print("📁 FolderListViewModel: Creating All Notes folder")
+                #endif
+                
+                // Create All Notes folder
+                let folder = Folder(context: viewContext)
+                folder.id = UUID()
+                folder.name = "All Notes"
+                folder.color = "FolderBlue"
+                folder.timestamp = Date()
+                folder.sortOrder = 0
+                
+                try viewContext.save()
+                allNotesFolder = folder
+                
+                // Refresh folders list
+                fetchFolders()
+            }
+        } catch {
+            #if DEBUG
+            print("📁 FolderListViewModel: Error ensuring All Notes folder - \(error)")
+            #endif
+            errorMessage = "Failed to create All Notes folder: \(error.localizedDescription)"
+        }
+    }
+    
+    /// Returns the All Notes folder, creating it if needed
+    func getDefaultFolder() -> Folder? {
+        if allNotesFolder == nil {
+            ensureAllNotesFolder()
+        }
+        return allNotesFolder
     }
     
     func createFolder(name: String, color: String) throws {

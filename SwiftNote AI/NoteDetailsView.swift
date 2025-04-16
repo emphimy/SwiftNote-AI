@@ -27,6 +27,8 @@ final class NoteDetailsViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var isExporting = false
     @Published var exportURL: ExportURLWrapper?
+    @Published var isShowingFolderPicker = false
+    @Published var availableFolders: [Folder] = []
 
     private let viewContext: NSManagedObjectContext
     private let pdfExportService = PDFExportService()
@@ -38,6 +40,33 @@ final class NoteDetailsViewModel: ObservableObject {
         #if DEBUG
         print("📝 NoteDetailsViewModel: Initializing with note: \(note.title)")
         #endif
+        
+        // Fetch available folders
+        fetchAvailableFolders()
+    }
+    
+    func fetchAvailableFolders() {
+        #if DEBUG
+        print("📝 NoteDetailsViewModel: Fetching available folders")
+        #endif
+        
+        let request = NSFetchRequest<Folder>(entityName: "Folder")
+        request.sortDescriptors = [
+            NSSortDescriptor(keyPath: \Folder.sortOrder, ascending: true),
+            NSSortDescriptor(keyPath: \Folder.timestamp, ascending: false)
+        ]
+        
+        do {
+            availableFolders = try viewContext.fetch(request)
+            #if DEBUG
+            print("📝 NoteDetailsViewModel: Fetched \(availableFolders.count) folders")
+            #endif
+        } catch {
+            #if DEBUG
+            print("📝 NoteDetailsViewModel: Error fetching folders - \(error)")
+            #endif
+            errorMessage = "Failed to load folders: \(error.localizedDescription)"
+        }
     }
     
     func saveChanges() async throws {
@@ -59,8 +88,6 @@ final class NoteDetailsViewModel: ObservableObject {
             
             // Update note properties
             noteObject.setValue(note.title, forKey: "title")
-            noteObject.setValue(note.tags.joined(separator: ","), forKey: "tags")
-            
             try viewContext.save()
             
             #if DEBUG
@@ -89,6 +116,58 @@ final class NoteDetailsViewModel: ObservableObject {
         #if DEBUG
         print("📄 NoteDetailsViewModel: PDF export completed successfully")
         #endif
+    }
+    
+    func moveToFolder(_ folder: Folder?) async throws {
+        #if DEBUG
+        print("📝 NoteDetailsViewModel: Moving note to folder: \(folder?.name ?? "root")")
+        #endif
+        
+        isLoading = true
+        defer { isLoading = false }
+        
+        let request = NSFetchRequest<NSManagedObject>(entityName: "Note")
+        request.predicate = NSPredicate(format: "id == %@", note.id as CVarArg)
+        
+        do {
+            let results = try viewContext.fetch(request)
+            
+            guard let noteObject = results.first as? Note else {
+                throw NSError(domain: "NoteDetailsViewModel", code: -1, userInfo: [
+                    NSLocalizedDescriptionKey: "Could not find note with ID \(note.id)"
+                ])
+            }
+            
+            // Update folder
+            noteObject.folder = folder
+            
+            // Save changes
+            try viewContext.save()
+            
+            // Update the note configuration
+            note = NoteCardConfiguration(
+                id: note.id,
+                title: note.title,
+                date: note.date,
+                preview: note.preview,
+                sourceType: note.sourceType,
+                isFavorite: note.isFavorite,
+                folder: folder,
+                metadata: note.metadata
+            )
+            
+            #if DEBUG
+            print("📝 NoteDetailsViewModel: Successfully moved note to folder: \(folder?.name ?? "root")")
+            #endif
+            
+            // Notify that notes should be refreshed
+            NotificationCenter.default.post(name: .init("RefreshNotes"), object: nil)
+        } catch {
+            #if DEBUG
+            print("📝 NoteDetailsViewModel: Error moving note - \(error)")
+            #endif
+            throw error
+        }
     }
 }
 
@@ -131,6 +210,17 @@ struct NoteDetailsView: View {
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: Theme.Spacing.sm) {
+                        // Folder button
+                        Button(action: {
+                            #if DEBUG
+                            print("📁 NoteDetailsView: Folder button tapped")
+                            #endif
+                            viewModel.isShowingFolderPicker = true
+                        }) {
+                            Image(systemName: "folder")
+                                .foregroundColor(Theme.Colors.primary)
+                        }
+                        
                         Button(action: {
                             #if DEBUG
                             print("📄 NoteDetailsView: Export button tapped")
@@ -150,12 +240,29 @@ struct NoteDetailsView: View {
             }
             .overlay {
                 if viewModel.isLoading {
-                    LoadingIndicator(message: "Saving changes...")
+                    ProgressView("Loading...")
+                        .padding()
+                        .background(Color.white.opacity(0.8))
+                        .cornerRadius(Theme.Layout.cornerRadius)
                 }
+            }
+            .sheet(isPresented: $viewModel.isShowingFolderPicker) {
+                FolderPickerView(
+                    folders: viewModel.availableFolders,
+                    currentFolderName: viewModel.note.folderName,
+                    onSelect: { selectedFolder in
+                        moveNoteToFolder(selectedFolder)
+                    }
+                )
             }
             .sheet(item: $viewModel.exportURL) { wrapper in
                 ShareSheet(items: [wrapper.url])
             }
+        }
+        .onAppear {
+            #if DEBUG
+            print("📝 NoteDetailsView: View appeared for note: \(viewModel.note.title)")
+            #endif
         }
     }
     
@@ -235,6 +342,24 @@ struct NoteDetailsView: View {
             }
         }
     }
+    
+    private func moveNoteToFolder(_ folder: Folder?) {
+        #if DEBUG
+        print("📝 NoteDetailsView: Moving note to folder: \(folder?.name ?? "root")")
+        #endif
+        
+        Task {
+            do {
+                try await viewModel.moveToFolder(folder)
+                toastManager.show("Note moved to \(folder?.name ?? "All Notes")", type: .success)
+            } catch {
+                #if DEBUG
+                print("📝 NoteDetailsView: Error moving note - \(error)")
+                #endif
+                toastManager.show("Failed to move note: \(error.localizedDescription)", type: .error)
+            }
+        }
+    }
 }
 
 // MARK: - Share Sheet
@@ -249,6 +374,71 @@ struct ShareSheet: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
+// MARK: - Folder Picker View
+struct FolderPickerView: View {
+    let folders: [Folder]
+    let currentFolderName: String?
+    let onSelect: (Folder?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            List {
+                // Option to remove from folder (root)
+                Button(action: {
+                    onSelect(nil)
+                    dismiss()
+                }) {
+                    HStack {
+                        Image(systemName: "tray")
+                            .foregroundColor(Theme.Colors.secondaryText)
+                        
+                        Text("No Folder")
+                        
+                        Spacer()
+                        
+                        if currentFolderName == nil {
+                            Image(systemName: "checkmark")
+                                .foregroundColor(Theme.Colors.primary)
+                        }
+                    }
+                }
+                
+                // List of folders
+                ForEach(folders) { folder in
+                    Button(action: {
+                        onSelect(folder)
+                        dismiss()
+                    }) {
+                        HStack {
+                            Image(systemName: "folder.fill")
+                                .foregroundColor(Color(folder.color ?? "FolderBlue"))
+                            
+                            Text(folder.name ?? "Unnamed Folder")
+                            
+                            Spacer()
+                            
+                            if currentFolderName == folder.name {
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(Theme.Colors.primary)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Select Folder")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Preview Provider
@@ -271,8 +461,7 @@ struct NoteDetailsView_Previews: PreviewProvider {
             3. Update project documentation
             """,
             sourceType: .audio,
-            isFavorite: true,
-            tags: ["Work", "Meeting", "Planning", "Q4"]
+            isFavorite: true
         )
     }
     

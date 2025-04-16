@@ -102,11 +102,6 @@ The app allows students to import content (audio, text, video) and automatically
   - Move notes between folders
   - Folder color coding
 
-- **Tags**:
-  - Add/remove tags
-  - Tag-based filtering
-  - Popular tags suggestion
-
 ### Settings Screen
 - **Sections**:
   - Account settings

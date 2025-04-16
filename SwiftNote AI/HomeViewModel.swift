@@ -211,57 +211,49 @@ final class HomeViewModel: ObservableObject {
         print("📝 HomeViewModel: Creating note - Title: \(title), Type: \(sourceType)")
         #endif
         
-        // Create a new note directly in the view context
-        let note = Note(context: viewContext)
+        isLoading = true
         
-        // Set all required attributes
-        let noteId = UUID()
-        note.id = noteId
-        note.title = title
-        note.originalContent = content.data(using: .utf8)
-        
-        // For notes that should appear as transcripts, don't set aiGeneratedContent initially
-        // This ensures they appear in the "Process" section rather than the "Read" section
-        if sourceType == .text {
-            // For manual text notes, we can generate AI content immediately
-            // In a real app, you'd likely do more processing here
-            note.aiGeneratedContent = content.data(using: .utf8)
-        }
-        
-        note.sourceType = sourceType.rawValue
-        note.timestamp = Date()
-        note.lastModified = Date()
-        note.processingStatus = "completed"
-        note.folder = folder
-        note.isFavorite = false
-        
-        // Save in multiple steps to ensure persistence
-        do {
-            // First save to the view context
-            try viewContext.save()
-            #if DEBUG
-            print("📝 HomeViewModel: Initial save successful")
-            #endif
-            
-            // Force save to the persistent store
-            PersistenceController.shared.saveContext()
-            #if DEBUG
-            print("📝 HomeViewModel: Forced save to persistent store")
-            print("📝 HomeViewModel: Note created with ID: \(noteId.uuidString)")
-            #endif
-            
-            // Refresh notes list
-            self.notes = [NoteCardConfiguration(id: noteId, title: title, date: Date(), preview: content, sourceType: sourceType, isFavorite: false, folder: folder, metadata: [:])]
-            self.fetchNotes()
-            
-            #if DEBUG
-            print("📝 HomeViewModel: Note created successfully with ID: \(note.id?.uuidString ?? "unknown")")
-            #endif
-        } catch {
-            #if DEBUG
-            print("📝 HomeViewModel: Error creating note - \(error)")
-            print("Error details: \((error as NSError).userInfo)")
-            #endif
+        Task {
+            do {
+                // Get the default folder if none is specified
+                var targetFolder = folder
+                if targetFolder == nil {
+                    let folderViewModel = FolderListViewModel(context: viewContext)
+                    targetFolder = folderViewModel.getDefaultFolder()
+                    #if DEBUG
+                    print("📝 HomeViewModel: Using default folder: \(targetFolder?.name ?? "nil")")
+                    #endif
+                }
+                
+                // Create the note
+                let newNote = try PersistenceController.shared.createNote(
+                    title: title,
+                    content: content,
+                    sourceType: sourceType.rawValue
+                )
+                
+                // Assign to folder
+                newNote.folder = targetFolder
+                
+                try viewContext.save()
+                
+                #if DEBUG
+                print("📝 HomeViewModel: Note created successfully and added to folder: \(targetFolder?.name ?? "nil")")
+                #endif
+                
+                // Refresh the notes list
+                await MainActor.run {
+                    self.fetchNotes()
+                    self.isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    #if DEBUG
+                    print("📝 HomeViewModel: Error creating note - \(error)")
+                    #endif
+                    self.isLoading = false
+                }
+            }
         }
     }
     
