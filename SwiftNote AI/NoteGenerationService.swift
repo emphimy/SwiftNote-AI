@@ -128,7 +128,7 @@ actor NoteGenerationService {
 
         do {
             let response = try await openAIService.chatCompletionRequest(body: .init(
-                model: "o3-mini",
+                model: "gpt-4.1",
                 messages: [
                     .system(content: .text("You are a helpful assistant that creates well-structured and detailed notes from the provided content. The notes will be used to study with feynman technique.")),
                     .user(content: .text(prompt))
@@ -148,11 +148,11 @@ actor NoteGenerationService {
             
             return content
 
-        } catch AIProxyError.unsuccessfulRequest(let statusCode, let responseBody) {
+        } catch AIProxyError.apiError(let message) {
             #if DEBUG
-            print("🤖 NoteGeneration: Request failed with status code: \(statusCode), body: \(responseBody)")
+            print("🤖 NoteGeneration: Request failed - \(message)")
             #endif
-            throw NoteGenerationError.apiError("Request failed with status \(statusCode)")
+            throw NoteGenerationError.apiError(message)
         } catch {
             #if DEBUG
             print("🤖 NoteGeneration: Request failed - \(error)")

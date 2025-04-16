@@ -239,57 +239,260 @@ struct WebView: UIViewRepresentable {
 struct FlashcardsTabView: View {
     @StateObject private var viewModel: FlashcardsViewModel = FlashcardsViewModel()
     let note: NoteCardConfiguration
+    @State private var showingInfo = false
     
     var body: some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            if viewModel.isLoading {
-                LoadingIndicator(message: "Generating flashcards...")
-            } else {
-                NoteCardConfiguration.FlashcardContent(
-                    flashcards: viewModel.flashcards
-                )
+        VStack(spacing: 0) {
+            // Header with title and info button
+            HStack {
+                Text("Flashcards")
+                    .font(Theme.Typography.h2)
+                    .foregroundColor(Theme.Colors.primary)
+                
+                Spacer()
+                
+                Button {
+                    showingInfo = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.title2)
+                        .foregroundColor(Theme.Colors.primary)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom, Theme.Spacing.md)
+            
+            // Progress indicator
+            if !viewModel.flashcards.isEmpty {
+                ProgressView(value: viewModel.progress)
+                    .tint(Theme.Colors.primary)
+                    .padding(.horizontal)
+                    .padding(.bottom, Theme.Spacing.md)
+            }
+            
+            // Main content
+            ZStack {
+                if viewModel.isLoading {
+                    LoadingIndicator(message: "Creating flashcards...")
+                } else if viewModel.flashcards.isEmpty {
+                    emptyStateView
+                } else {
+                    flashcardsView
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            
+            // Controls
+            if !viewModel.flashcards.isEmpty {
+                flashcardControls
             }
         }
-        .padding()
+        .padding(.vertical)
         .task {
             #if DEBUG
             print("🎴 FlashcardsTab: Generating flashcards for note: \(note.title)")
             #endif
             await viewModel.generateFlashcards(from: note)
         }
+        .alert("About Flashcards", isPresented: $showingInfo) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Tap a card to flip it and reveal the answer. Use the buttons below to navigate between cards.")
+        }
+    }
+    
+    // Empty state view when no flashcards are available
+    private var emptyStateView: some View {
+        VStack(spacing: Theme.Spacing.lg) {
+            Image(systemName: "rectangle.on.rectangle.slash")
+                .font(.system(size: 60))
+                .foregroundColor(Theme.Colors.secondaryText)
+            
+            Text("No Flashcards Available")
+                .font(Theme.Typography.h3)
+                .foregroundColor(Theme.Colors.text)
+            
+            Text("We couldn't create flashcards from this note. Try adding more structured content like terms and definitions.")
+                .font(Theme.Typography.body)
+                .foregroundColor(Theme.Colors.secondaryText)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Theme.Spacing.xl)
+            
+            Button {
+                Task {
+                    await viewModel.generateFlashcards(from: note)
+                }
+            } label: {
+                Text("Try Again")
+                    .padding(.horizontal, Theme.Spacing.lg)
+                    .padding(.vertical, Theme.Spacing.sm)
+            }
+            .buttonStyle(PrimaryButtonStyle())
+        }
+    }
+    
+    // Flashcards view when cards are available
+    private var flashcardsView: some View {
+        VStack {
+            // Card counter
+            Text("\(viewModel.currentIndex + 1) of \(viewModel.totalCards)")
+                .font(Theme.Typography.caption)
+                .foregroundColor(Theme.Colors.secondaryText)
+                .padding(.bottom, Theme.Spacing.sm)
+            
+            // Flashcard content
+            NoteCardConfiguration.FlashcardContent(
+                flashcards: viewModel.flashcards,
+                viewModel: viewModel
+            )
+        }
+    }
+    
+    // Navigation controls for flashcards
+    private var flashcardControls: some View {
+        HStack(spacing: Theme.Spacing.xl) {
+            Button {
+                viewModel.previousCard()
+            } label: {
+                HStack {
+                    Image(systemName: "chevron.left")
+                    Text("Previous")
+                }
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.sm)
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(viewModel.currentIndex == 0)
+            
+            Button {
+                viewModel.toggleCard()
+            } label: {
+                HStack {
+                    Image(systemName: "arrow.2.squarepath")
+                    Text("Flip")
+                }
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.sm)
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            
+            Button {
+                viewModel.nextCard()
+            } label: {
+                HStack {
+                    Text("Next")
+                    Image(systemName: "chevron.right")
+                }
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.sm)
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(viewModel.currentIndex == viewModel.totalCards - 1)
+        }
+        .padding(.top, Theme.Spacing.lg)
     }
 }
 
 // MARK: - Chat Tab View
 struct ChatTabView: View {
     let note: NoteCardConfiguration
-    @State private var message = ""
-    @State private var messages: [ChatMessage] = []
-    @State private var chatState: ChatState = .idle
+    @StateObject private var viewModel: ChatViewModel
+    @FocusState private var isInputFocused: Bool
+    
+    init(note: NoteCardConfiguration) {
+        self.note = note
+        self._viewModel = StateObject(wrappedValue: ChatViewModel(note: note))
+    }
     
     var body: some View {
         VStack(spacing: 0) {
-            // Chat Messages
-            ScrollView {
-                LazyVStack(spacing: Theme.Spacing.sm) {
-                    ForEach(messages) { message in
-                        ChatMessageBubble(message: message)
+            // Header
+            HStack {
+                Text("AI Study Assistant")
+                    .font(Theme.Typography.h2)
+                    .foregroundColor(Theme.Colors.primary)
+                
+                Spacer()
+                
+                // Status indicator
+                if viewModel.chatState.isProcessing {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        
+                        Text("Thinking...")
+                            .font(Theme.Typography.caption)
+                            .foregroundColor(Theme.Colors.secondaryText)
                     }
                 }
-                .padding()
+            }
+            .padding(.horizontal)
+            .padding(.bottom, Theme.Spacing.sm)
+            
+            Divider()
+            
+            // Chat Messages
+            ScrollViewReader { scrollProxy in
+                ScrollView {
+                    LazyVStack(spacing: Theme.Spacing.md) {
+                        ForEach(viewModel.messages) { message in
+                            ChatMessageBubble(message: message)
+                                .id(message.id)
+                        }
+                    }
+                    .padding()
+                }
+                .onChange(of: viewModel.messages.count) { _ in
+                    if let lastMessage = viewModel.messages.last {
+                        withAnimation {
+                            scrollProxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+            
+            // Error message if present
+            if let error = viewModel.error {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(Theme.Colors.error)
+                    
+                    Text(error)
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.error)
+                    
+                    Spacer()
+                    
+                    Button {
+                        viewModel.error = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(Theme.Colors.error)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, Theme.Spacing.sm)
+                .background(Theme.Colors.errorBackground)
             }
             
             // Input Bar
-            HStack(spacing: Theme.Spacing.sm) {
-                TextField("Ask a question...", text: $message)
+            HStack(spacing: Theme.Spacing.md) {
+                TextField("Ask a question...", text: $viewModel.inputMessage, axis: .vertical)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .focused($isInputFocused)
+                    .disabled(viewModel.chatState.isProcessing)
+                    .submitLabel(.send)
+                    .onSubmit {
+                        sendMessage()
+                    }
                 
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title2)
-                        .foregroundColor(Theme.Colors.primary)
+                        .foregroundColor(viewModel.inputMessage.isEmpty || viewModel.chatState.isProcessing ? 
+                                         Theme.Colors.secondaryText : Theme.Colors.primary)
                 }
-                .disabled(message.isEmpty || chatState.isProcessing)
+                .disabled(viewModel.inputMessage.isEmpty || viewModel.chatState.isProcessing)
             }
             .padding()
             .background(Theme.Colors.secondaryBackground)
@@ -302,33 +505,14 @@ struct ChatTabView: View {
     }
     
     private func sendMessage() {
+        guard !viewModel.inputMessage.isEmpty && !viewModel.chatState.isProcessing else { return }
+        
         #if DEBUG
-        print("💬 ChatTab: Sending message: \(message)")
+        print("💬 ChatTab: Sending message: \(viewModel.inputMessage)")
         #endif
         
-        // Add user message
-        let userMessage = ChatMessage(
-            content: message,
-            type: .user,
-            timestamp: Date()
-        )
-        messages.append(userMessage)
-        message = ""
-        
-        // Simulate AI response
-        chatState = .processing
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            let response = ChatMessage(
-                content: "This is a simulated response. AI chat functionality will be implemented later.",
-                type: .assistant,
-                timestamp: Date()
-            )
-            messages.append(response)
-            chatState = .idle
-            
-            #if DEBUG
-            print("💬 ChatTab: Received response")
-            #endif
+        Task {
+            await viewModel.sendMessage()
         }
     }
 }
@@ -338,24 +522,76 @@ private struct ChatMessageBubble: View {
     let message: ChatMessage
     
     var body: some View {
-        HStack {
-            if message.type == .assistant {
-                Spacer()
+        VStack(alignment: message.type == .user ? .trailing : .leading, spacing: 4) {
+            // Message content
+            HStack {
+                if message.type == .assistant {
+                    // AI avatar
+                    Image(systemName: "brain.head.profile")
+                        .foregroundColor(Theme.Colors.primary)
+                        .padding(8)
+                        .background(Theme.Colors.background)
+                        .clipShape(Circle())
+                    
+                    // Message bubble
+                    Text(message.content)
+                        .padding()
+                        .background(Theme.Colors.secondaryBackground)
+                        .foregroundColor(Theme.Colors.text)
+                        .cornerRadius(Theme.Layout.cornerRadius)
+                    
+                    Spacer()
+                } else {
+                    Spacer()
+                    
+                    // Message bubble
+                    Text(message.content)
+                        .padding()
+                        .background(Theme.Colors.primary)
+                        .foregroundColor(.white)
+                        .cornerRadius(Theme.Layout.cornerRadius)
+                    
+                    // User avatar
+                    Image(systemName: "person.circle.fill")
+                        .foregroundColor(Theme.Colors.primary)
+                        .padding(8)
+                        .background(Theme.Colors.background)
+                        .clipShape(Circle())
+                }
             }
             
-            Text(message.content)
-                .padding()
-                .background(
-                    message.type == .user ? Theme.Colors.primary : Theme.Colors.secondaryBackground
-                )
-                .foregroundColor(
-                    message.type == .user ? .white : Theme.Colors.text
-                )
-                .cornerRadius(Theme.Layout.cornerRadius)
-            
-            if message.type == .user {
-                Spacer()
+            // Message status and timestamp
+            HStack(spacing: 4) {
+                if message.type == .user {
+                    Spacer()
+                    
+                    // Message status
+                    switch message.status {
+                    case .sending:
+                        Image(systemName: "clock")
+                            .font(.caption2)
+                            .foregroundColor(Theme.Colors.secondaryText)
+                    case .sent:
+                        Image(systemName: "checkmark")
+                            .font(.caption2)
+                            .foregroundColor(Theme.Colors.success)
+                    case .failed:
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.caption2)
+                            .foregroundColor(Theme.Colors.error)
+                    }
+                }
+                
+                // Timestamp
+                Text(message.timestamp, style: .time)
+                    .font(.caption2)
+                    .foregroundColor(Theme.Colors.secondaryText)
+                
+                if message.type == .assistant {
+                    Spacer()
+                }
             }
+            .padding(.horizontal, 8)
         }
     }
 }

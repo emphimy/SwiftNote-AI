@@ -144,57 +144,32 @@ struct NoteCardConfiguration: Identifiable {
     // MARK: - Flashcard Components
     struct FlashcardContent: View {
         let flashcards: [FlashcardsViewModel.Flashcard]
-        @State private var currentIndex = 0
-        @State private var isShowingAnswer = false
+        @ObservedObject var viewModel: FlashcardsViewModel
         
         var body: some View {
-            VStack(spacing: Theme.Spacing.lg) {
-                if !flashcards.isEmpty {
-                    ZStack {
-                        ForEach(flashcards.indices, id: \.self) { index in
-                            if index == currentIndex {
-                                FlashcardView(
-                                    card: flashcards[index],
-                                    isShowingAnswer: $isShowingAnswer
+            if !flashcards.isEmpty {
+                ZStack {
+                    ForEach(flashcards.indices, id: \.self) { index in
+                        if index == viewModel.currentIndex {
+                            FlashcardView(
+                                card: flashcards[index],
+                                isShowingAnswer: Binding(
+                                    get: { flashcards[index].isRevealed },
+                                    set: { newValue in
+                                        if newValue != flashcards[index].isRevealed {
+                                            viewModel.toggleCard()
+                                        }
+                                    }
                                 )
-                                .transition(.asymmetric(
-                                    insertion: .move(edge: .trailing),
-                                    removal: .move(edge: .leading)
-                                ))
-                            }
+                            )
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .trailing),
+                                removal: .move(edge: .leading)
+                            ))
                         }
                     }
-                    .animation(.spring(), value: currentIndex)
-                    
-                    // Navigation controls
-                    HStack(spacing: Theme.Spacing.xl) {
-                        Button {
-                            withAnimation {
-                                currentIndex = max(0, currentIndex - 1)
-                                isShowingAnswer = false
-                            }
-                        } label: {
-                            Image(systemName: "arrow.left.circle.fill")
-                                .font(.title)
-                        }
-                        .disabled(currentIndex == 0)
-                        
-                        Text("\(currentIndex + 1)/\(flashcards.count)")
-                            .font(Theme.Typography.caption)
-                        
-                        Button {
-                            withAnimation {
-                                currentIndex = min(flashcards.count - 1, currentIndex + 1)
-                                isShowingAnswer = false
-                            }
-                        } label: {
-                            Image(systemName: "arrow.right.circle.fill")
-                                .font(.title)
-                        }
-                        .disabled(currentIndex == flashcards.count - 1)
-                    }
-                    .foregroundColor(Theme.Colors.primary)
                 }
+                .animation(.spring(), value: viewModel.currentIndex)
             }
         }
     }
@@ -203,28 +178,65 @@ struct NoteCardConfiguration: Identifiable {
         let card: FlashcardsViewModel.Flashcard
         @Binding var isShowingAnswer: Bool
         
+        // Fixed dimensions for consistent card size
+        private let cardWidth: CGFloat = 320
+        private let cardHeight: CGFloat = 200
+        private let cornerRadius: CGFloat = 16
+        
         var body: some View {
-            VStack {
-                Text(isShowingAnswer ? card.back : card.front)
-                    .font(Theme.Typography.body)
-                    .padding(Theme.Spacing.xl)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Theme.Colors.background)
-                    .cornerRadius(Theme.Layout.cornerRadius)
-                    .standardShadow()
-                    .rotation3DEffect(
-                        .degrees(isShowingAnswer ? 180 : 0),
-                        axis: (x: 0, y: 1, z: 0)
-                    )
-                    .onTapGesture {
-                        withAnimation(.spring()) {
-                            isShowingAnswer.toggle()
-                        }
-                    }
+            ZStack {
+                // Card front (question)
+                cardFace(card.front, isAnswer: false)
+                    .opacity(isShowingAnswer ? 0 : 1)
+                
+                // Card back (answer)
+                cardFace(card.back, isAnswer: true)
+                    .opacity(isShowingAnswer ? 1 : 0)
+                    .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
             }
+            .frame(width: cardWidth, height: cardHeight)
             .rotation3DEffect(
                 .degrees(isShowingAnswer ? 180 : 0),
                 axis: (x: 0, y: 1, z: 0)
+            )
+            .onTapGesture {
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                    isShowingAnswer.toggle()
+                }
+            }
+        }
+        
+        // Helper function to create consistent card faces
+        private func cardFace(_ content: String, isAnswer: Bool) -> some View {
+            VStack(spacing: 0) {
+                // Card header
+                ZStack {
+                    Rectangle()
+                        .fill(isAnswer ? Theme.Colors.success : Theme.Colors.primary)
+                        .frame(height: 40)
+                    
+                    Text(isAnswer ? "ANSWER" : "QUESTION")
+                        .font(Theme.Typography.caption)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                }
+                
+                // Card content
+                ScrollView {
+                    Text(content)
+                        .font(Theme.Typography.body)
+                        .multilineTextAlignment(.center)
+                        .padding(Theme.Spacing.lg)
+                        .frame(maxWidth: .infinity, minHeight: cardHeight - 40 - (Theme.Spacing.lg * 2))
+                }
+                .background(Theme.Colors.background)
+            }
+            .frame(width: cardWidth, height: cardHeight)
+            .cornerRadius(cornerRadius)
+            .standardShadow()
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .stroke(isAnswer ? Theme.Colors.success : Theme.Colors.primary, lineWidth: 1)
             )
         }
     }

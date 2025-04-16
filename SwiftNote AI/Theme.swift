@@ -85,6 +85,7 @@ enum Theme {
         static let success = Color("Success", bundle: .main)
         static let error = Color("Error", bundle: .main)
         static let warning = Color("Warning", bundle: .main)
+        static let errorBackground = Color.red.opacity(0.1)
         
         // MARK: - Color Scheme Specific
         static func adaptiveColor(light: Color, dark: Color) -> Color {
