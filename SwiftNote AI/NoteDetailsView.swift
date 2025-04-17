@@ -201,7 +201,8 @@ struct NoteDetailsView: View {
                     // Content Section
                     contentSection
                 }
-                .padding(Theme.Spacing.md)
+                .padding(.horizontal, Theme.Spacing.xs)
+                .padding(.vertical, Theme.Spacing.md)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -318,19 +319,6 @@ struct NoteDetailsView: View {
     // MARK: - Content Section
     private var contentSection: some View {
         VStack(spacing: Theme.Spacing.md) {
-            // Audio Player for audio, recording, and video notes
-            if (viewModel.note.sourceType == .audio || viewModel.note.sourceType == .recording || viewModel.note.sourceType == .video), let audioURL = viewModel.note.audioURL {
-                CompactAudioPlayerView(audioURL: audioURL)
-                    .id("audio-player-\(audioURL.lastPathComponent)-\(UUID())") // Force recreation on each appearance
-                    .padding(.bottom, Theme.Spacing.sm)
-                    .frame(maxWidth: .infinity)
-                    .onAppear {
-                        #if DEBUG
-                        print("📝 NoteDetailsView: Audio player appeared for URL: \(audioURL)")
-                        #endif
-                    }
-            }
-
             // Study Tabs
             NoteStudyTabs(note: viewModel.note)
         }
@@ -398,8 +386,8 @@ struct NoteDetailsView: View {
         print("📝 NoteDetailsView: Refreshing note audio URL")
         #endif
 
-        // Only proceed for audio-related notes
-        guard viewModel.note.sourceType == .audio || viewModel.note.sourceType == .recording || viewModel.note.sourceType == .video else {
+        // Only proceed for audio and recording notes
+        guard viewModel.note.sourceType == .audio || viewModel.note.sourceType == .recording else {
             return
         }
 

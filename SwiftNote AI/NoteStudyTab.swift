@@ -54,8 +54,8 @@ struct NoteStudyTabs: View {
             }
             .background(Theme.Colors.secondaryBackground)
             .cornerRadius(Theme.Layout.cornerRadius)
-            .padding(.horizontal, Theme.Spacing.md)
-            .padding(.vertical, Theme.Spacing.sm)
+            .padding(.horizontal, Theme.Spacing.xs)
+            .padding(.vertical, Theme.Spacing.xs)
 
             // Content Area
             Group {
@@ -184,18 +184,32 @@ struct ReadTabView: View {
                        let metadata = note.metadata,
                        let videoId = metadata["videoId"] as? String {
                         YouTubeVideoPlayerView(videoId: videoId)
-                            .padding(.bottom, Theme.Spacing.md)
+                            .padding(.bottom, Theme.Spacing.sm)
+                            .padding(.horizontal, -Theme.Spacing.xs) // Extend beyond the normal content padding
+                    }
+
+                    // Show audio player if it's an audio or recording note
+                    if (note.sourceType == .audio || note.sourceType == .recording), let audioURL = note.audioURL {
+                        CompactAudioPlayerView(audioURL: audioURL)
+                            .id("audio-player-\(audioURL.lastPathComponent)-\(UUID())") // Force recreation on each appearance
+                            .padding(.bottom, Theme.Spacing.sm)
+                            .padding(.horizontal, -Theme.Spacing.xs) // Extend beyond the normal content padding
+                            .onAppear {
+                                #if DEBUG
+                                print("📝 ReadTabView: Audio player appeared for URL: \(audioURL)")
+                                #endif
+                            }
                     }
 
                     ForEach(content.formattedContent) { block in
                         ContentBlockView(block: block, fontSize: viewModel.textSize)
                     }
                 }
-                .padding()
+                .padding(.horizontal, Theme.Spacing.xs)
             } else {
                 Text("No content available")
                     .foregroundColor(Theme.Colors.secondaryText)
-                    .padding()
+                    .padding(.horizontal, Theme.Spacing.xs)
             }
         }
         .task {
@@ -243,6 +257,19 @@ struct FlashcardsTabView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Audio Player for audio and recording notes
+            if (note.sourceType == .audio || note.sourceType == .recording), let audioURL = note.audioURL {
+                CompactAudioPlayerView(audioURL: audioURL)
+                    .id("audio-player-flashcards-\(audioURL.lastPathComponent)-\(UUID())") // Force recreation on each appearance
+                    .padding(.horizontal)
+                    .padding(.bottom, Theme.Spacing.sm)
+                    .onAppear {
+                        #if DEBUG
+                        print("🎴 FlashcardsTabView: Audio player appeared for URL: \(audioURL)")
+                        #endif
+                    }
+            }
+
             // Header with title and info button
             HStack {
                 Text("Flashcards")
@@ -408,6 +435,19 @@ struct ChatTabView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
+                // Audio Player for audio and recording notes
+                if (note.sourceType == .audio || note.sourceType == .recording), let audioURL = note.audioURL {
+                    CompactAudioPlayerView(audioURL: audioURL)
+                        .id("audio-player-chat-\(audioURL.lastPathComponent)-\(UUID())") // Force recreation on each appearance
+                        .padding(.horizontal)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .onAppear {
+                            #if DEBUG
+                            print("💬 ChatTabView: Audio player appeared for URL: \(audioURL)")
+                            #endif
+                        }
+                }
+
                 // Header
                 HStack {
                     Text("AI Study Assistant")

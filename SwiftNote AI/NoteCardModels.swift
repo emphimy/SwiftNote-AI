@@ -13,8 +13,8 @@ struct NoteCardConfiguration: Identifiable {
     var sourceURL: URL?
 
     var audioURL: URL? {
-        // For audio, video, and recording types, we need to find the audio file
-        if sourceType == .audio || sourceType == .video || sourceType == .recording {
+        // For audio and recording types, we need to find the audio file
+        if sourceType == .audio || sourceType == .recording {
             // First try to use the actual sourceURL if available
             if let url = sourceURL {
                 // Check if the file exists at the stored URL
@@ -368,9 +368,10 @@ enum NoteSourceType: String {
     var icon: Image {
         let iconName: String = {
             switch self {
-            case .audio, .recording: return "mic.fill"
-            case .text: return "doc.text.fill"
-            case .video: return "video.fill"
+            case .audio: return "waveform"
+            case .recording: return "mic"
+            case .text: return "doc"
+            case .video: return "play.circle.fill"
             case .upload: return "arrow.up.circle.fill"
             }
         }()

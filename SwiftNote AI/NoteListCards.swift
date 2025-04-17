@@ -5,13 +5,13 @@ struct NoteListCard: View {
     let configuration: NoteCardConfiguration
     let actions: CardActions
     let onTap: () -> Void
-    
+
     init(configuration: NoteCardConfiguration, actions: CardActions, onTap: @escaping () -> Void) {
         self.configuration = configuration
         self.actions = actions
         self.onTap = onTap
     }
-    
+
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
@@ -19,14 +19,14 @@ struct NoteListCard: View {
                 HStack {
                     configuration.sourceType.icon
                         .foregroundColor(configuration.sourceType.color)
-                    
+
                     Text(configuration.title)
                         .font(Theme.Typography.body.weight(.medium))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
-                    
+
                     Spacer()
-                    
+
                     Button(action: {
 #if DEBUG
                         print("📝 NoteListCard: Favorite button tapped")
@@ -37,15 +37,15 @@ struct NoteListCard: View {
                             .foregroundColor(configuration.isFavorite ? Theme.Colors.warning : Theme.Colors.secondaryText)
                     }
                 }
-                
+
                 // Footer
                 HStack {
                     Text(configuration.date, style: .date)
                         .font(Theme.Typography.caption)
                         .foregroundColor(Theme.Colors.tertiaryText)
-                    
+
                     Spacer()
-                    
+
                     HStack(spacing: Theme.Spacing.sm) {
                         Button(action: {
 #if DEBUG
@@ -56,7 +56,7 @@ struct NoteListCard: View {
                             Image(systemName: "square.and.arrow.up")
                                 .foregroundColor(Theme.Colors.secondaryText)
                         }
-                        
+
                         Button(action: {
 #if DEBUG
                             print("📝 NoteListCard: Delete button tapped")
@@ -95,13 +95,13 @@ struct NoteGridCard: View {
     let configuration: NoteCardConfiguration
     let actions: CardActions
     let onTap: () -> Void
-    
+
     init(configuration: NoteCardConfiguration, actions: CardActions, onTap: @escaping () -> Void) {
         self.configuration = configuration
         self.actions = actions
         self.onTap = onTap
     }
-    
+
     var body: some View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
@@ -109,14 +109,14 @@ struct NoteGridCard: View {
                 HStack {
                     configuration.sourceType.icon
                         .foregroundColor(configuration.sourceType.color)
-                    
+
                     Text(configuration.title)
                         .font(Theme.Typography.body.weight(.medium))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
-                    
+
                     Spacer()
-                    
+
                     Button(action: {
 #if DEBUG
                         print("📝 NoteGridCard: Favorite button tapped")
@@ -127,17 +127,17 @@ struct NoteGridCard: View {
                             .foregroundColor(configuration.isFavorite ? Theme.Colors.warning : Theme.Colors.secondaryText)
                     }
                 }
-                
+
                 Spacer()
-                
+
                 // Date and actions
                 HStack {
                     Text(configuration.date, style: .date)
                         .font(Theme.Typography.caption)
                         .foregroundColor(Theme.Colors.tertiaryText)
-                    
+
                     Spacer()
-                    
+
                     HStack(spacing: Theme.Spacing.sm) {
                         Button(action: {
 #if DEBUG
@@ -148,7 +148,7 @@ struct NoteGridCard: View {
                             Image(systemName: "square.and.arrow.up")
                                 .foregroundColor(Theme.Colors.secondaryText)
                         }
-                        
+
                         Button(action: {
 #if DEBUG
                             print("📝 NoteGridCard: Delete button tapped")
@@ -177,7 +177,7 @@ struct NoteGridCard: View {
 // MARK: - Action Card
 struct ActionCard: View {
     let items: [ActionCardItem]
-    
+
     // MARK: - Constants
     private let buttonWidth: CGFloat = 160
     private let buttonHeight: CGFloat = 100
@@ -185,16 +185,16 @@ struct ActionCard: View {
         GridItem(.fixed(160), spacing: Theme.Spacing.xl),
         GridItem(.fixed(160), spacing: Theme.Spacing.xl)
     ]
-    
+
     init(items: [ActionCardItem]) {
         self.items = items
-        
+
 #if DEBUG
         print("📝 ActionCard: Creating card with \(items.count) items")
         items.forEach { print($0.debugDescription) }
 #endif
     }
-    
+
     // MARK: - Body
     var body: some View {
         ScrollView {
@@ -214,7 +214,7 @@ struct ActionCard: View {
                                 .foregroundColor(item.color)
                                 .frame(height: 40)
                                 .accessibility(label: Text(item.title))
-                            
+
                             Text(item.title)
                                 .font(Theme.Typography.body.weight(.medium))
                                 .foregroundColor(Theme.Colors.text)
@@ -256,7 +256,7 @@ struct ScaleButtonStyle: ButtonStyle {
 struct TagView: View {
     let tag: String
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             Text(tag)
@@ -282,7 +282,7 @@ struct NoteCards_Previews: PreviewProvider {
             isFavorite: true
         )
     }
-    
+
     static var previewActions: CardActions {
         struct PreviewCardActions: CardActions {
             func onFavorite() { print("Favorite tapped") }
@@ -292,7 +292,7 @@ struct NoteCards_Previews: PreviewProvider {
         }
         return PreviewCardActions()
     }
-    
+
     static var previews: some View {
         Group {
             NoteListCard(
@@ -302,7 +302,7 @@ struct NoteCards_Previews: PreviewProvider {
             )
             .padding()
             .previewDisplayName("List Card")
-            
+
             NoteGridCard(
                 configuration: previewConfiguration,
                 actions: previewActions,
@@ -310,12 +310,12 @@ struct NoteCards_Previews: PreviewProvider {
             )
             .padding()
             .previewDisplayName("Grid Card")
-            
+
             ActionCard(items: [
-                ActionCardItem(title: "Record Audio", icon: "mic.fill", color: .blue) {},
-                ActionCardItem(title: "Scan Text", icon: "doc.text.fill", color: .green) {},
+                ActionCardItem(title: "Record Audio", icon: "mic", color: .blue) {},
+                ActionCardItem(title: "Scan Text", icon: "doc", color: .green) {},
                 ActionCardItem(title: "Upload File", icon: "arrow.up.circle.fill", color: .orange) {},
-                ActionCardItem(title: "YouTube Video", icon: "video.fill", color: .red) {}
+                ActionCardItem(title: "YouTube Video", icon: "play.circle.fill", color: .red) {}
             ])
             .padding()
             .previewDisplayName("Action Card")
