@@ -714,26 +714,26 @@ private struct ContentBlockView: View {
                 .font(.system(size: fontSize * 0.9, weight: .bold))
                 .padding(.vertical, 4)
         case .paragraph:
-            Text(block.content)
+            Text(LocalizedStringKey(block.content))
                 .font(.system(size: fontSize))
                 .padding(.vertical, 2)
         case .bulletList:
             HStack(alignment: .top, spacing: 8) {
                 Text("•")
                     .font(.system(size: fontSize))
-                Text(block.content)
+                Text(LocalizedStringKey(block.content))
                     .font(.system(size: fontSize))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.vertical, 2)
         case .numberedList:
-            Text(block.content)
+            Text(LocalizedStringKey(block.content))
                 .font(.system(size: fontSize))
                 .padding(.vertical, 2)
         case .taskList(let checked):
             HStack(spacing: 8) {
                 Image(systemName: checked ? "checkmark.square" : "square")
-                Text(block.content)
+                Text(LocalizedStringKey(block.content))
                     .font(.system(size: fontSize))
             }
             .padding(.vertical, 2)
@@ -756,7 +756,7 @@ private struct ContentBlockView: View {
                 Rectangle()
                     .fill(Color.gray)
                     .frame(width: 4)
-                Text(block.content)
+                Text(LocalizedStringKey(block.content))
                     .font(.system(size: fontSize))
                     .italic()
             }
@@ -771,7 +771,7 @@ private struct ContentBlockView: View {
                 // Headers
                 HStack {
                     ForEach(headers, id: \.self) { header in
-                        Text(header)
+                        Text(LocalizedStringKey(header))
                             .font(.system(size: fontSize, weight: .bold))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -781,7 +781,7 @@ private struct ContentBlockView: View {
                 ForEach(rows, id: \.self) { row in
                     HStack {
                         ForEach(row, id: \.self) { cell in
-                            Text(cell)
+                            Text(LocalizedStringKey(cell))
                                 .font(.system(size: fontSize))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }

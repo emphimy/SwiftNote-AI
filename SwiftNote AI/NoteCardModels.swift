@@ -223,7 +223,7 @@ struct NoteCardConfiguration: Identifiable {
                 
                 // Card content
                 ScrollView {
-                    Text(content)
+                    Text(LocalizedStringKey(content))
                         .font(Theme.Typography.body)
                         .multilineTextAlignment(.center)
                         .padding(Theme.Spacing.lg)
@@ -240,6 +240,7 @@ struct NoteCardConfiguration: Identifiable {
             )
         }
     }
+
 }
 
 extension NoteCardConfiguration: Equatable {

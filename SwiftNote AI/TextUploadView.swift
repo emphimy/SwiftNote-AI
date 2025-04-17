@@ -6,6 +6,7 @@ import PDFKit
 import Vision
 import UIKit
 import Foundation
+import Down
 
 // MARK: - Text Upload Error
 enum TextUploadError: LocalizedError {
@@ -278,52 +279,58 @@ final class TextUploadViewModel: ObservableObject {
     
     private func processWithAI(text: String) async throws -> Data {
         let prompt = """
-        Please analyze this transcript and create a well-structured detailed note using proper markdown formatting:
-        
-        Add 1-2 table into different section of the note if anything can be represented better in table. Notes are always between summary and conclusion sections.
-        No need another header before summary. If you have to use ##
-        
-        Only use the detected language even for the base headers and subheaders. 
+        Please analyze this text document and create a well-structured educational note using proper markdown formatting.
+
+        # Instructions:
+        - Detect and use the primary language of the document for all content
+        - Create a comprehensive yet concise educational note
+        - Use proper markdown formatting throughout
+        - Organize information in a logical, hierarchical structure
+        - Include tables where data can be better represented visually
+        - Highlight key concepts and important terminology
+
+        # Note Structure:
         
         ## Summary
-        Create a detailed summary with a couple of paragraphs.
+        Begin with a concise 2-3 paragraph summary that captures the main ideas and purpose of the document.
         
-        ## Key Points
-        - Use bullet points for key points
-        - Use **bold** for emphasis
-        - Use _italic_ for technical terms
+        ## Key Concepts
+        - List 5-7 essential concepts from the document
+        - Use **bold** for concept names
+        - Provide brief, clear explanations for each
+        - Include relevant relationships between concepts
         
-        ## Important Details
-        as many topic as you need with the topic format below
+        ## Main Content
+        Organize the main content into logical sections with appropriate headings.
+        For each important topic:
         
-        ### Topic
-        Content for topic with proper formatting:
-        - Use **bold** for important terms
-        - Use _italic_ for definitions
-        - Use `code` for technical terms
-        - Use > for quotes
-        - Use tables for structured data
+        ### [Topic Name]
+        - Present information clearly with proper context
+        - Use **bold** for important terms and definitions
+        - Use _italic_ for emphasis and technical terminology
+        - Use `code blocks` for formulas, equations, or code snippets
+        - Create tables for comparative data or structured information
+        - Include bullet points for lists of related items
+        - Use numbered lists for sequential steps or processes
         
-        ## Notable Quotes
-        > Include quotes with proper attribution
-        > Format with proper markdown quote syntax
+        ## Examples & Applications
+        If applicable, include practical examples, case studies, or applications of the concepts.
         
         ## Conclusion
-        Detailed conclusion with:
-        - **Key takeaways** in bold
-        - _Important concepts_ in italic
-        - `Technical terms` in code blocks
+        Summarize the key takeaways and their significance.
         
-        Use proper markdown formatting:
-        1. Use ## for main headers
-        2. Use ### for subheaders
-        3. Use | for tables with header row
-        4. Use > for quotes
-        5. Use - for bullet points
-        6. Use ` for code or technical terms
-        7. Use ** for bold emphasis
-        8. Use _ for italic text
+        # Formatting Guidelines:
+        - Use ## for main sections
+        - Use ### for subsections
+        - Use **bold** for important terms and definitions
+        - Use _italic_ for emphasis
+        - Use `code` for technical elements
+        - Use > for important quotes or highlights
+        - Use proper table formatting with headers
+        - Use bullet points (-) for unordered lists
+        - Use numbers (1.) for ordered lists
         
+        Document to analyze:
         \(text)
         """
         
@@ -393,6 +400,34 @@ final class TextUploadViewModel: ObservableObject {
             return nil
         }
         return ByteCountFormatter.string(fromByteCount: Int64(fileSize), countStyle: .file)
+    }
+}
+
+// MARK: - Markdown Preview
+struct MarkdownPreview: View {
+    let markdown: String
+    let maxHeight: CGFloat?
+    
+    init(markdown: String, maxHeight: CGFloat? = nil) {
+        self.markdown = markdown
+        self.maxHeight = maxHeight
+    }
+    
+    var body: some View {
+        if let attributedString = try? Down(markdownString: markdown).toAttributedString() {
+            ScrollView {
+                Text(AttributedString(attributedString))
+                    .padding(8)
+            }
+            .frame(maxHeight: maxHeight)
+            .background(Theme.Colors.background)
+            .cornerRadius(Theme.Layout.cornerRadius)
+        } else {
+            Text(markdown)
+                .frame(maxHeight: maxHeight)
+                .background(Theme.Colors.background)
+                .cornerRadius(Theme.Layout.cornerRadius)
+        }
     }
 }
 
@@ -662,6 +697,9 @@ struct TextUploadView: View {
             // Document Stats Section
             documentStatsSection
             
+            // Content Preview with Markdown Support
+            contentPreviewSection
+            
             // Save Options
             localStorageToggle
             
@@ -721,6 +759,32 @@ struct TextUploadView: View {
                         .stroke(Theme.Colors.tertiaryBackground, lineWidth: 1)
                 )
         )
+    }
+    
+    private var contentPreviewSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            Text("Content Preview")
+                .font(Theme.Typography.caption)
+                .foregroundColor(Theme.Colors.secondaryText)
+                .padding(.horizontal)
+            
+            ScrollView {
+                Text(LocalizedStringKey(formatMarkdown(viewModel.textContent.prefix(1000) + (viewModel.textContent.count > 1000 ? "\n\n*... content truncated ...*" : "")))
+                )
+                    .padding(.horizontal, Theme.Spacing.sm)
+                    .padding(.vertical, Theme.Spacing.xs)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 200)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                    .fill(Theme.Colors.secondaryBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                            .stroke(Theme.Colors.tertiaryBackground, lineWidth: 1)
+                    )
+            )
+        }
     }
     
     private var localStorageToggle: some View {
@@ -811,6 +875,13 @@ struct TextUploadView: View {
                     .foregroundColor(Theme.Colors.text)
             }
         }
+    }
+    
+    private func formatMarkdown(_ text: String.SubSequence) -> String {
+        // This uses SwiftUI's built-in markdown rendering capability
+        // by passing the text to a Text view with LocalizedStringKey
+        // which automatically renders basic markdown like ** for bold and * for italic
+        return String(text)
     }
 }
 

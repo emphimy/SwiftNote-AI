@@ -429,97 +429,42 @@ final class FlashcardsViewModel: ObservableObject {
         }
     }
     
-    // Helper function to clean markdown from text
+    // Helper method to process markdown for flashcards
     private func cleanMarkdown(_ text: String) -> String {
+        // For flashcards, we want to preserve the markdown formatting
+        // but clean up any problematic elements that might affect display
         var cleanedText = text
         
-        // First, specifically handle header markdown (## and ###)
-        let headerPattern = "(#{1,6})\\s+(.+?)(?:\\n|$)"
-        if let headerRegex = try? NSRegularExpression(pattern: headerPattern, options: [.anchorsMatchLines]) {
-            let range = NSRange(location: 0, length: cleanedText.utf16.count)
-            let matches = headerRegex.matches(in: cleanedText, options: [], range: range)
-            
-            for match in matches.reversed() {
-                if let contentRange = Range(match.range(at: 2), in: cleanedText),
-                   let matchRange = Range(match.range, in: cleanedText) {
-                    let headerContent = String(cleanedText[contentRange])
-                    cleanedText.replaceSubrange(matchRange, with: headerContent)
-                }
-            }
+        // Remove code blocks which don't render well on flashcards
+        let codeBlockPattern = "```[\\s\\S]*?```"
+        if let regex = try? NSRegularExpression(pattern: codeBlockPattern, options: []) {
+            cleanedText = regex.stringByReplacingMatches(
+                in: cleanedText,
+                options: [],
+                range: NSRange(location: 0, length: cleanedText.utf16.count),
+                withTemplate: ""
+            )
         }
         
-        // Remove markdown formatting with comprehensive patterns
-        let markdownPatterns = [
-            // Headers (already handled above, but keeping as fallback)
-            "#{1,6}\\s+(.+?)(?:\\n|$)",
-            
-            // Emphasis
-            "\\*\\*(.+?)\\*\\*", // Bold
-            "\\*(.+?)\\*",       // Italic
-            "__(.+?)__",         // Bold with underscores
-            "_(.+?)_",           // Italic with underscores
-            
-            // Code
-            "```[\\s\\S]*?```", // Code blocks
-            "`(.+?)`",       // Inline code
-            
-            // Links
-            "\\[(.+?)\\]\\(.+?\\)", // Links with text
-            "<(.+?)>",         // Bare links
-            
-            // Lists
-            "^\\s*[\\*\\-\\+]\\s+(.+?)$", // Unordered list items
-            "^\\s*\\d+\\.\\s+(.+?)$",     // Ordered list items
-            
-            // Blockquotes
-            "^\\s*>\\s+(.+?)$",
-            
-            // Horizontal rules
-            "^\\s*[\\*\\-\\_]{3,}\\s*$"
-        ]
-        
-        // Handle special cases that need specific replacements
-        if let linkRegex = try? NSRegularExpression(pattern: "\\[(.+?)\\]\\((.+?)\\)", options: []) {
-            let range = NSRange(location: 0, length: cleanedText.utf16.count)
-            let matches = linkRegex.matches(in: cleanedText, options: [], range: range)
-            
-            for match in matches.reversed() {
-                if let textRange = Range(match.range(at: 1), in: cleanedText),
-                   let matchRange = Range(match.range, in: cleanedText) {
-                    let linkText = String(cleanedText[textRange])
-                    cleanedText.replaceSubrange(matchRange, with: linkText)
-                }
-            }
+        // Remove horizontal rules
+        let hrPattern = "^\\s*[\\*\\-\\_]{3,}\\s*$"
+        if let regex = try? NSRegularExpression(pattern: hrPattern, options: [.anchorsMatchLines]) {
+            cleanedText = regex.stringByReplacingMatches(
+                in: cleanedText,
+                options: [],
+                range: NSRange(location: 0, length: cleanedText.utf16.count),
+                withTemplate: ""
+            )
         }
         
-        // Then handle general patterns
-        for pattern in markdownPatterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) {
-                let range = NSRange(location: 0, length: cleanedText.utf16.count)
-                let matches = regex.matches(in: cleanedText, options: [], range: range)
-                
-                for match in matches.reversed() {
-                    if match.numberOfRanges > 1, 
-                       let captureRange = Range(match.range(at: 1), in: cleanedText),
-                       let matchRange = Range(match.range, in: cleanedText) {
-                        let capturedText = String(cleanedText[captureRange])
-                        cleanedText.replaceSubrange(matchRange, with: capturedText)
-                    } else if let matchRange = Range(match.range, in: cleanedText) {
-                        // For patterns without capture groups, just remove the markdown
-                        cleanedText.replaceSubrange(matchRange, with: "")
-                    }
-                }
-            }
-        }
-        
-        // Simple direct replacement for any remaining ## or ### that might be escaped or not caught by regex
-        cleanedText = cleanedText.replacingOccurrences(of: "##", with: "")
-        cleanedText = cleanedText.replacingOccurrences(of: "###", with: "")
-        
-        // Clean up any remaining special characters and extra whitespace
-        cleanedText = cleanedText.replacingOccurrences(of: "\\", with: "")
-        cleanedText = cleanedText.replacingOccurrences(of: "  ", with: " ")
+        // Clean up excessive whitespace
+        cleanedText = cleanedText.replacingOccurrences(of: "\n\n\n+", with: "\n\n", options: .regularExpression)
         cleanedText = cleanedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Ensure the text isn't too long for a flashcard
+        if cleanedText.count > 500 {
+            cleanedText = String(cleanedText.prefix(497)) + "..."
+        }
         
         return cleanedText
     }

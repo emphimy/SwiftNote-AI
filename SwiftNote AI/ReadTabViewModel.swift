@@ -168,23 +168,7 @@ final class ReadTabViewModel: ObservableObject {
             }
             // Handle formatted text
             else {
-                // Process bold text
-                if trimmed.contains("**") {
-                    let parts = trimmed.components(separatedBy: "**")
-                    for (index, part) in parts.enumerated() {
-                        if !part.isEmpty {
-                            if index % 2 == 1 {
-                                // Bold text
-                                blocks.append(ContentBlock(type: .formattedText(style: .bold), content: part))
-                            } else {
-                                // Regular text
-                                blocks.append(ContentBlock(type: .paragraph, content: part))
-                            }
-                        }
-                    }
-                } else {
-                    blocks.append(ContentBlock(type: .paragraph, content: trimmed))
-                }
+                parseInlineFormatting(trimmed, fontSize: textSize, into: &blocks)
             }
         }
         
@@ -194,6 +178,91 @@ final class ReadTabViewModel: ObservableObject {
         }
         
         return blocks
+    }
+    
+    // Helper method to parse inline formatting (bold, italic, etc.)
+    private func parseInlineFormatting(_ text: String, fontSize: CGFloat, into blocks: inout [ContentBlock]) {
+        // Check for inline formatting
+        if text.contains("**") || text.contains("*") {
+            // Process text with regex to identify formatting
+            var currentIndex = text.startIndex
+            var currentText = ""
+            var inBold = false
+            var inItalic = false
+            
+            while currentIndex < text.endIndex {
+                let nextTwoChars = text[currentIndex...].prefix(2)
+                let nextChar = text[currentIndex]
+                
+                // Handle bold (** **)
+                if nextTwoChars == "**" {
+                    // Add current text if any
+                    if !currentText.isEmpty {
+                        let blockType: ContentBlock.BlockType
+                        if inBold && inItalic {
+                            blockType = .formattedText(style: .boldItalic)
+                        } else if inBold {
+                            blockType = .formattedText(style: .bold)
+                        } else if inItalic {
+                            blockType = .formattedText(style: .italic)
+                        } else {
+                            blockType = .paragraph
+                        }
+                        blocks.append(ContentBlock(type: blockType, content: currentText))
+                        currentText = ""
+                    }
+                    
+                    // Toggle bold state
+                    inBold.toggle()
+                    currentIndex = text.index(currentIndex, offsetBy: 2)
+                }
+                // Handle italic (* *)
+                else if nextChar == "*" && (currentIndex == text.startIndex || text[text.index(before: currentIndex)] != "*") && 
+                        (currentIndex == text.index(before: text.endIndex) || text[text.index(after: currentIndex)] != "*") {
+                    // Add current text if any
+                    if !currentText.isEmpty {
+                        let blockType: ContentBlock.BlockType
+                        if inBold && inItalic {
+                            blockType = .formattedText(style: .boldItalic)
+                        } else if inBold {
+                            blockType = .formattedText(style: .bold)
+                        } else if inItalic {
+                            blockType = .formattedText(style: .italic)
+                        } else {
+                            blockType = .paragraph
+                        }
+                        blocks.append(ContentBlock(type: blockType, content: currentText))
+                        currentText = ""
+                    }
+                    
+                    // Toggle italic state
+                    inItalic.toggle()
+                    currentIndex = text.index(after: currentIndex)
+                }
+                else {
+                    currentText.append(nextChar)
+                    currentIndex = text.index(after: currentIndex)
+                }
+            }
+            
+            // Add any remaining text
+            if !currentText.isEmpty {
+                let blockType: ContentBlock.BlockType
+                if inBold && inItalic {
+                    blockType = .formattedText(style: .boldItalic)
+                } else if inBold {
+                    blockType = .formattedText(style: .bold)
+                } else if inItalic {
+                    blockType = .formattedText(style: .italic)
+                } else {
+                    blockType = .paragraph
+                }
+                blocks.append(ContentBlock(type: blockType, content: currentText))
+            }
+        } else {
+            // No formatting, just add as paragraph
+            blocks.append(ContentBlock(type: .paragraph, content: text))
+        }
     }
     
     func adjustTextSize(_ delta: CGFloat) {
