@@ -31,12 +31,16 @@ final class NoteDetailsViewModel: ObservableObject {
     @Published var isShowingFolderPicker = false
     @Published var availableFolders: [Folder] = []
 
-    private let viewContext: NSManagedObjectContext
+    private let _viewContext: NSManagedObjectContext
     private let pdfExportService = PDFExportService()
+
+    var viewContext: NSManagedObjectContext {
+        return _viewContext
+    }
 
     init(note: NoteCardConfiguration, context: NSManagedObjectContext) {
         self.note = note
-        self.viewContext = context
+        self._viewContext = context
 
         #if DEBUG
         print("📝 NoteDetailsViewModel: Initializing with note: \(note.title)")
@@ -58,7 +62,7 @@ final class NoteDetailsViewModel: ObservableObject {
         ]
 
         do {
-            availableFolders = try viewContext.fetch(request)
+            availableFolders = try _viewContext.fetch(request)
             #if DEBUG
             print("📝 NoteDetailsViewModel: Fetched \(availableFolders.count) folders")
             #endif
@@ -82,14 +86,14 @@ final class NoteDetailsViewModel: ObservableObject {
         request.predicate = NSPredicate(format: "id == %@", note.id as CVarArg)
 
         do {
-            guard let noteObject = try viewContext.fetch(request).first else {
+            guard let noteObject = try _viewContext.fetch(request).first else {
                 throw NSError(domain: "NoteDetails", code: 404,
                             userInfo: [NSLocalizedDescriptionKey: "Note not found"])
             }
 
             // Update note properties
             noteObject.setValue(note.title, forKey: "title")
-            try viewContext.save()
+            try _viewContext.save()
 
             #if DEBUG
             print("📝 NoteDetailsViewModel: Successfully saved changes")
@@ -131,7 +135,7 @@ final class NoteDetailsViewModel: ObservableObject {
         request.predicate = NSPredicate(format: "id == %@", note.id as CVarArg)
 
         do {
-            let results = try viewContext.fetch(request)
+            let results = try _viewContext.fetch(request)
 
             guard let noteObject = results.first as? Note else {
                 throw NSError(domain: "NoteDetailsViewModel", code: -1, userInfo: [
@@ -143,7 +147,7 @@ final class NoteDetailsViewModel: ObservableObject {
             noteObject.folder = folder
 
             // Save changes
-            try viewContext.save()
+            try _viewContext.save()
 
             // Update the note configuration
             note = NoteCardConfiguration(
@@ -265,6 +269,11 @@ struct NoteDetailsView: View {
             #if DEBUG
             print("📝 NoteDetailsView: View appeared for note: \(viewModel.note.title)")
             #endif
+
+            // Refresh the note to ensure we have the latest audio URL
+            Task {
+                await refreshNoteAudioURL()
+            }
         }
         .onDisappear {
             #if DEBUG
@@ -309,12 +318,17 @@ struct NoteDetailsView: View {
     // MARK: - Content Section
     private var contentSection: some View {
         VStack(spacing: Theme.Spacing.md) {
-            // Audio Player for audio and video notes
-            if (viewModel.note.sourceType == .audio || viewModel.note.sourceType == .video), let audioURL = viewModel.note.audioURL {
+            // Audio Player for audio, recording, and video notes
+            if (viewModel.note.sourceType == .audio || viewModel.note.sourceType == .recording || viewModel.note.sourceType == .video), let audioURL = viewModel.note.audioURL {
                 CompactAudioPlayerView(audioURL: audioURL)
-                    .id(audioURL.absoluteString) // Ensure view is recreated if URL changes
+                    .id("audio-player-\(audioURL.lastPathComponent)-\(UUID())") // Force recreation on each appearance
                     .padding(.bottom, Theme.Spacing.sm)
                     .frame(maxWidth: .infinity)
+                    .onAppear {
+                        #if DEBUG
+                        print("📝 NoteDetailsView: Audio player appeared for URL: \(audioURL)")
+                        #endif
+                    }
             }
 
             // Study Tabs
@@ -377,6 +391,134 @@ struct NoteDetailsView: View {
                 toastManager.show("Failed to move note: \(error.localizedDescription)", type: .error)
             }
         }
+    }
+
+    private func refreshNoteAudioURL() async {
+        #if DEBUG
+        print("📝 NoteDetailsView: Refreshing note audio URL")
+        #endif
+
+        // Only proceed for audio-related notes
+        guard viewModel.note.sourceType == .audio || viewModel.note.sourceType == .recording || viewModel.note.sourceType == .video else {
+            return
+        }
+
+        // Fetch the note from Core Data to get the latest sourceURL
+        let request = NSFetchRequest<Note>(entityName: "Note")
+        request.predicate = NSPredicate(format: "id == %@", viewModel.note.id as CVarArg)
+
+        do {
+            let results = try viewModel.viewContext.fetch(request)
+
+            guard let noteObject = results.first else {
+                #if DEBUG
+                print("📝 NoteDetailsView: Note not found in database")
+                #endif
+                return
+            }
+
+            // Get the sourceURL from Core Data
+            if let sourceURL = noteObject.sourceURL {
+                #if DEBUG
+                print("📝 NoteDetailsView: Found sourceURL in database: \(sourceURL)")
+                #endif
+
+                // Check if the file exists at this URL
+                if FileManager.default.fileExists(atPath: sourceURL.path) {
+                    #if DEBUG
+                    print("📝 NoteDetailsView: File exists at sourceURL path")
+                    #endif
+
+                    // Update the note configuration with the correct URL
+                    await MainActor.run {
+                        var updatedNote = viewModel.note
+                        updatedNote.sourceURL = sourceURL
+                        viewModel.note = updatedNote
+                    }
+                } else {
+                    #if DEBUG
+                    print("📝 NoteDetailsView: File does not exist at sourceURL path, trying alternative")
+                    #endif
+
+                    // Try to find the file by UUID
+                    let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+
+                    // Try multiple possible filename formats
+                    let noteId = viewModel.note.id
+                    let originalFilename = sourceURL.lastPathComponent
+
+                    // Possible filenames to try
+                    var possibleFilenames = [
+                        "\(noteId).m4a",                      // Standard format for recorded files
+                        "\(noteId)-\(originalFilename)",      // Possible format with note ID prefix
+                        originalFilename                      // Original filename
+                    ]
+
+                    // If we can extract a UUID from the filename, try those formats too
+                    if let uuid = extractUUID(from: originalFilename) {
+                        let uuidFilenames = [
+                            "\(uuid).m4a",                     // Simple UUID format
+                            "\(uuid)-\(originalFilename)"      // UUID-prefixed format for imported files
+                        ]
+                        possibleFilenames.append(contentsOf: uuidFilenames)
+                    }
+
+                    #if DEBUG
+                    print("📝 NoteDetailsView: Trying multiple possible filenames: \(possibleFilenames)")
+                    #endif
+
+                    // Try each possible filename
+                    for filename in possibleFilenames {
+                        let alternativeURL = documentsPath.appendingPathComponent(filename)
+
+                        #if DEBUG
+                        print("📝 NoteDetailsView: Checking path: \(alternativeURL.path)")
+                        print("📝 NoteDetailsView: File exists: \(FileManager.default.fileExists(atPath: alternativeURL.path))")
+                        #endif
+
+                        if FileManager.default.fileExists(atPath: alternativeURL.path) {
+                            #if DEBUG
+                            print("📝 NoteDetailsView: File found at alternative path: \(alternativeURL.path)")
+                            #endif
+
+                            // Update the note in Core Data with the correct URL
+                            noteObject.sourceURL = alternativeURL
+                            try viewModel.viewContext.save()
+
+                            // Update the note configuration
+                            await MainActor.run {
+                                var updatedNote = viewModel.note
+                                updatedNote.sourceURL = alternativeURL
+                                viewModel.note = updatedNote
+                            }
+
+                            // Found a working file, no need to try more
+                            break
+                        }
+                    }
+                }
+            }
+        } catch {
+            #if DEBUG
+            print("📝 NoteDetailsView: Error refreshing audio URL - \(error)")
+            #endif
+        }
+    }
+
+    // Extract UUID from filename
+    private func extractUUID(from filename: String) -> UUID? {
+        // Try to find a UUID pattern in the filename
+        let pattern = "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"
+        let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+
+        if let match = regex?.firstMatch(in: filename, options: [], range: NSRange(location: 0, length: filename.count)) {
+            let matchRange = match.range
+            if let range = Range(matchRange, in: filename) {
+                let uuidString = String(filename[range])
+                return UUID(uuidString: uuidString)
+            }
+        }
+        return nil
     }
 }
 

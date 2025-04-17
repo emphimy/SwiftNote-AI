@@ -13,20 +13,85 @@ struct NoteCardConfiguration: Identifiable {
     var sourceURL: URL?
 
     var audioURL: URL? {
-        // First try to use the actual sourceURL if available
-        if let url = sourceURL, sourceType == .audio || sourceType == .video {
-            return url
-        }
+        // For audio, video, and recording types, we need to find the audio file
+        if sourceType == .audio || sourceType == .video || sourceType == .recording {
+            // First try to use the actual sourceURL if available
+            if let url = sourceURL {
+                // Check if the file exists at the stored URL
+                if FileManager.default.fileExists(atPath: url.path) {
+                    #if DEBUG
+                    print("📝 NoteCardConfiguration: Using stored sourceURL: \(url.path)")
+                    #endif
+                    return url
+                } else {
+                    #if DEBUG
+                    print("📝 NoteCardConfiguration: Stored sourceURL not found: \(url.path)")
+                    #endif
+                }
+            }
 
-        // Fallback to the computed path based on ID
-        switch sourceType {
-        case .audio, .video:
+            // Fallback to trying multiple possible paths
             let fileManager = FileManager.default
             let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            return documentsPath.appendingPathComponent("\(id).m4a")
-        case .text, .upload:
-            return nil
+
+            // Try multiple possible filename formats
+            var possibleFilenames = [
+                "\(id).m4a"  // Standard format for recorded files
+            ]
+
+            // If we have a sourceURL, also try variations based on its filename
+            if let originalURL = sourceURL {
+                let originalFilename = originalURL.lastPathComponent
+
+                // Add more possible filenames
+                possibleFilenames.append(contentsOf: [
+                    originalFilename,                    // Original filename
+                    "\(id)-\(originalFilename)"          // ID-prefixed format
+                ])
+
+                // If we can extract a UUID from the filename, try those formats too
+                if let uuid = extractUUID(from: originalFilename) {
+                    possibleFilenames.append(contentsOf: [
+                        "\(uuid).m4a",                   // Simple UUID format
+                        "\(uuid)-\(originalFilename)"    // UUID-prefixed format for imported files
+                    ])
+                }
+            }
+
+            #if DEBUG
+            print("📝 NoteCardConfiguration: Trying multiple possible filenames: \(possibleFilenames)")
+            #endif
+
+            // Try each possible filename
+            for filename in possibleFilenames {
+                let possibleURL = documentsPath.appendingPathComponent(filename)
+
+                #if DEBUG
+                print("📝 NoteCardConfiguration: Checking path: \(possibleURL.path)")
+                print("📝 NoteCardConfiguration: File exists: \(FileManager.default.fileExists(atPath: possibleURL.path))")
+                #endif
+
+                if FileManager.default.fileExists(atPath: possibleURL.path) {
+                    #if DEBUG
+                    print("📝 NoteCardConfiguration: Found file at: \(possibleURL.path)")
+                    #endif
+                    return possibleURL
+                }
+            }
+
+            // If we didn't find any existing file, return the standard path anyway
+            // (this maintains backward compatibility with the original implementation)
+            let standardURL = documentsPath.appendingPathComponent("\(id).m4a")
+
+            #if DEBUG
+            print("📝 NoteCardConfiguration: No existing file found, returning standard path: \(standardURL.path)")
+            #endif
+
+            return standardURL
         }
+
+        // For text and upload types, no audio URL
+        return nil
     }
 
     private var folder: Folder?
@@ -74,6 +139,22 @@ struct NoteCardConfiguration: Identifiable {
         - Folder: \(folder?.name ?? "nil")
         """)
         #endif
+    }
+
+    // Extract UUID from filename
+    private func extractUUID(from filename: String) -> UUID? {
+        // Try to find a UUID pattern in the filename
+        let pattern = "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"
+        let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+
+        if let match = regex?.firstMatch(in: filename, options: [], range: NSRange(location: 0, length: filename.count)) {
+            let matchRange = match.range
+            if let range = Range(matchRange, in: filename) {
+                let uuidString = String(filename[range])
+                return UUID(uuidString: uuidString)
+            }
+        }
+        return nil
     }
 
 
@@ -282,11 +363,12 @@ enum NoteSourceType: String {
     case text = "text"
     case video = "video"
     case upload = "upload"
+    case recording = "recording"
 
     var icon: Image {
         let iconName: String = {
             switch self {
-            case .audio: return "mic.fill"
+            case .audio, .recording: return "mic.fill"
             case .text: return "doc.text.fill"
             case .video: return "video.fill"
             case .upload: return "arrow.up.circle.fill"
@@ -297,7 +379,7 @@ enum NoteSourceType: String {
 
     var color: Color {
         switch self {
-        case .audio: return .blue
+        case .audio, .recording: return .blue
         case .text: return .green
         case .video: return .red
         case .upload: return .orange

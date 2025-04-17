@@ -12,7 +12,7 @@ enum AudioUploadError: LocalizedError {
     case durationTooLong(TimeInterval)
     case transcriptionFailed(String)
     case noteGenerationFailed(String)
-    
+
     var errorDescription: String? {
         switch self {
         case .fileTooBig(let size):
@@ -39,7 +39,7 @@ struct AudioStats {
     let fileSize: Int64
     let format: String
     let sampleRate: Double
-    
+
     var formattedDuration: String {
         let minutes = Int(duration) / 60
         let seconds = Int(duration) % 60
@@ -61,7 +61,7 @@ final class AudioUploadViewModel: ObservableObject {
     @Published var showingRecordedFilesPicker = false
     @Published var transcript = ""
     @Published var transcriptSegments: [TranscriptSegment] = []
-    
+
     // MARK: - Private Properties
     private let viewContext: NSManagedObjectContext
     private let maxFileSize: Int64 = 100_000_000 // 100MB
@@ -69,7 +69,7 @@ final class AudioUploadViewModel: ObservableObject {
     private var originalFileURL: URL?
     private let transcriptionService = AudioTranscriptionService.shared
     private let noteGenerationService = NoteGenerationService()
-    
+
     let supportedTypes: [UTType] = {
         var types = [UTType.audio, UTType.mp3, UTType.wav]
         if let m4aType = UTType("public.m4a-audio") {
@@ -80,51 +80,51 @@ final class AudioUploadViewModel: ObservableObject {
         #endif
         return types
     }()
-    
+
     init(context: NSManagedObjectContext) {
         self.viewContext = context
-        
+
         #if DEBUG
         print("🎵 AudioUploadVM: Initializing")
         #endif
-        
+
         guard context.persistentStoreCoordinator != nil else {
             fatalError("AudioUploadVM: Invalid Core Data context")
         }
     }
-    
+
     // MARK: - File Processing
     func processSelectedFile(_ url: URL) async throws {
         loadingState = .loading(message: "Processing audio file...")
-        
+
         do {
             guard url.startAccessingSecurityScopedResource() else {
                 throw AudioUploadError.invalidFormat
             }
-            
+
             defer {
                 url.stopAccessingSecurityScopedResource()
             }
-            
+
             let fileSize = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            
+
             if fileSize > maxFileSize {
                 throw AudioUploadError.fileTooBig(Int64(fileSize))
             }
-            
+
             let asset = AVAsset(url: url)
             let duration = try await asset.load(.duration).seconds
-            
+
             if duration > maxDuration {
                 throw AudioUploadError.durationTooLong(duration)
             }
-            
+
             let format = try await getAudioFormat(from: asset)
             let sampleRate = try await getSampleRate(from: asset)
-            
+
             // Create a local copy of the file in the app's documents directory
             let localURL = try createLocalCopy(of: url)
-            
+
             await MainActor.run {
                 self.stats = AudioStats(
                     duration: duration,
@@ -136,7 +136,7 @@ final class AudioUploadViewModel: ObservableObject {
                 self.originalFileURL = localURL // Use the local URL instead of the original
                 self.loadingState = .success(message: "Audio file processed successfully")
             }
-            
+
             #if DEBUG
             print("""
             🎵 AudioUploadVM: File processed successfully
@@ -146,7 +146,7 @@ final class AudioUploadViewModel: ObservableObject {
             - Sample Rate: \(sampleRate)Hz
             """)
             #endif
-            
+
         } catch {
             #if DEBUG
             print("🎵 AudioUploadVM: Error processing file - \(error)")
@@ -155,27 +155,34 @@ final class AudioUploadViewModel: ObservableObject {
             throw error
         }
     }
-    
+
     // MARK: - File Management
     private func createLocalCopy(of url: URL) throws -> URL {
         let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let destinationURL = documentsDirectory.appendingPathComponent(UUID().uuidString + "-" + url.lastPathComponent)
-        
+
+        // Create a UUID for this file
+        let fileUUID = UUID()
+
+        // Use a consistent naming pattern: UUID.m4a for all audio files
+        // This ensures we can find it later regardless of the original filename
+        let destinationURL = documentsDirectory.appendingPathComponent("\(fileUUID.uuidString).m4a")
+
         #if DEBUG
         print("🎵 AudioUploadVM: Creating local copy at \(destinationURL.path)")
+        print("🎵 AudioUploadVM: Original filename was: \(url.lastPathComponent)")
         #endif
-        
+
         try FileManager.default.copyItem(at: url, to: destinationURL)
         return destinationURL
     }
-    
+
     // MARK: - Audio Analysis
     private func getAudioFormat(from asset: AVAsset) async throws -> String {
         let tracks = try await asset.load(.tracks)
         guard let audioTrack = tracks.first else {
             throw AudioUploadError.invalidFormat
         }
-        
+
         if let format = try await audioTrack.load(.formatDescriptions).first {
             let formatDescription = CMFormatDescriptionGetMediaSubType(format)
             switch formatDescription {
@@ -191,25 +198,25 @@ final class AudioUploadViewModel: ObservableObject {
         }
         return "Audio"
     }
-    
+
     private func getSampleRate(from asset: AVAsset) async throws -> Double {
         let tracks = try await asset.load(.tracks)
         guard let audioTrack = tracks.first else {
             throw AudioUploadError.invalidFormat
         }
-        
+
         let timeScale = try await audioTrack.load(.naturalTimeScale)
         return Double(timeScale) // Convert Int32 to Double
     }
-    
+
     // MARK: - Save Note
     func saveNote(title: String) async throws {
         guard let audioURL = originalFileURL else {
             throw AudioUploadError.invalidFormat
         }
-        
+
         loadingState = .loading(message: "Processing audio file...")
-        
+
         // Transcribe the audio file with timestamps
         loadingState = .loading(message: "Transcribing audio...")
         let transcription: String
@@ -218,7 +225,7 @@ final class AudioUploadViewModel: ObservableObject {
             transcription = result.text
             transcriptSegments = result.segments
             transcript = transcription
-            
+
             #if DEBUG
             print("🎵 AudioUploadVM: Successfully transcribed audio with \(transcription.count) characters and \(transcriptSegments.count) segments")
             #endif
@@ -229,13 +236,13 @@ final class AudioUploadViewModel: ObservableObject {
             loadingState = .error(message: "Transcription failed: \(error.localizedDescription)")
             throw AudioUploadError.transcriptionFailed(error.localizedDescription)
         }
-        
+
         // Generate a note from the transcription
         loadingState = .loading(message: "Generating note content...")
         let noteContent: String
         do {
             noteContent = try await noteGenerationService.generateNote(from: transcript)
-            
+
             #if DEBUG
             print("🎵 AudioUploadVM: Successfully generated note content with \(noteContent.count) characters")
             #endif
@@ -245,14 +252,14 @@ final class AudioUploadViewModel: ObservableObject {
             #endif
             throw AudioUploadError.noteGenerationFailed(error.localizedDescription)
         }
-        
+
         // Save to Core Data
         loadingState = .loading(message: "Saving note...")
         try await viewContext.perform { [weak self] in
             guard let self = self else { return }
-            
+
             let note = NSEntityDescription.insertNewObject(forEntityName: "Note", into: self.viewContext)
-            
+
             // Set required attributes
             let noteId = UUID()
             note.setValue(noteId, forKey: "id")
@@ -261,39 +268,39 @@ final class AudioUploadViewModel: ObservableObject {
             note.setValue(Date(), forKey: "lastModified")
             note.setValue("audio", forKey: "sourceType")
             note.setValue("completed", forKey: "processingStatus")
-            
+
             // Set audio-specific attributes
             if let stats = self.stats {
                 note.setValue(stats.duration, forKey: "duration")
             }
-            
+
             // Store the transcription and generated note content
             note.setValue(transcription, forKey: "transcript")
             note.setValue(noteContent.data(using: .utf8), forKey: "aiGeneratedContent")
             note.setValue(transcription.data(using: .utf8), forKey: "originalContent")
-            
+
             // Skip storing transcript segments for now to avoid crashes
             // We'll implement this properly after examining the Core Data model
             #if DEBUG
             print("🎵 AudioUploadVM: Skipping transcript segments storage to avoid crashes")
             #endif
-            
+
             // Save the audio file
             let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let fileName = "\(noteId.uuidString).\(audioURL.pathExtension)"
+            let fileName = "\(noteId).\(audioURL.pathExtension)"
             let destinationURL = documentsPath.appendingPathComponent(fileName)
-            
+
             do {
                 // Check if file already exists at destination and remove it
                 if FileManager.default.fileExists(atPath: destinationURL.path) {
                     try FileManager.default.removeItem(at: destinationURL)
                 }
-                
+
                 try FileManager.default.copyItem(at: audioURL, to: destinationURL)
-                
+
                 // Store the file reference as NSURL
                 note.setValue(destinationURL, forKey: "sourceURL")
-                
+
                 #if DEBUG
                 print("🎵 AudioUploadVM: Audio file copied to \(destinationURL)")
                 #endif
@@ -304,31 +311,31 @@ final class AudioUploadViewModel: ObservableObject {
                 // Continue saving even if file copy fails
                 note.setValue(nil, forKey: "sourceURL")
             }
-            
+
             try self.viewContext.save()
-            
+
             #if DEBUG
             print("🎵 AudioUploadVM: Note saved successfully with ID: \(note.value(forKey: "id") ?? "unknown")")
             #endif
-            
+
             loadingState = .success(message: "Audio processed and note created successfully")
         }
     }
-    
+
     // MARK: - Type Checking
     func canHandle(_ url: URL) -> Bool {
         #if DEBUG
         print("🎵 AudioUploadVM: Checking if can handle file: \(url.lastPathComponent)")
         #endif
-        
+
         // First try using UTType
         if let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType {
             #if DEBUG
             print("🎵 AudioUploadVM: File content type: \(type.identifier)")
             #endif
-            
+
             let canHandle = supportedTypes.contains { type.conforms(to: $0) }
-            
+
             // If UTType check fails, fall back to extension check for common audio formats
             if !canHandle {
                 let ext = url.pathExtension.lowercased()
@@ -339,38 +346,38 @@ final class AudioUploadViewModel: ObservableObject {
                     return true
                 }
             }
-            
+
             return canHandle
         } else {
             // If UTType check fails completely, check the extension
             let ext = url.pathExtension.lowercased()
             let isSupported = ["mp3", "wav", "m4a"].contains(ext)
-            
+
             #if DEBUG
             print("🎵 AudioUploadVM: UTType check failed, falling back to extension check: \(ext) - Supported: \(isSupported)")
             #endif
-            
+
             return isSupported
         }
     }
-    
+
     // MARK: - Recorded Files
     func loadRecordedFiles() {
         #if DEBUG
         print("🎵 AudioUploadVM: Loading recorded audio files")
         #endif
-        
+
         do {
             let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let fileURLs = try FileManager.default.contentsOfDirectory(at: documentsPath, includingPropertiesForKeys: nil)
-            
+
             // Filter for supported audio files
             let supportedExtensions = ["mp3", "wav", "m4a"]
-            let audioFiles = fileURLs.filter { 
+            let audioFiles = fileURLs.filter {
                 let ext = $0.pathExtension.lowercased()
                 return supportedExtensions.contains(ext)
             }
-            
+
             // Sort by creation date (newest first)
             let sortedFiles = try audioFiles.sorted { (url1, url2) -> Bool in
                 let attr1 = try FileManager.default.attributesOfItem(atPath: url1.path)
@@ -379,9 +386,9 @@ final class AudioUploadViewModel: ObservableObject {
                 let date2 = attr2[.creationDate] as? Date ?? Date.distantPast
                 return date1 > date2
             }
-            
+
             self.recordedFiles = sortedFiles
-            
+
             #if DEBUG
             print("🎵 AudioUploadVM: Found \(sortedFiles.count) recorded audio files")
             #endif
@@ -392,13 +399,13 @@ final class AudioUploadViewModel: ObservableObject {
             self.recordedFiles = []
         }
     }
-    
+
     // MARK: - Cleanup
     func cleanup() {
         #if DEBUG
         print("🎵 AudioUploadVM: Starting cleanup")
         #endif
-        
+
         if let url = originalFileURL {
             do {
                 try FileManager.default.removeItem(at: url)
@@ -417,7 +424,7 @@ final class AudioUploadViewModel: ObservableObject {
         #if DEBUG
         print("🎵 AudioUploadVM: Starting deinit")
         #endif
-        
+
         // Create separate task that won't retain self
         let fileURL = originalFileURL
         Task {
@@ -445,27 +452,27 @@ struct AudioUploadView: View {
     @State private var showingFilePicker = false
     @State private var showingSaveDialog = false
     @State private var noteTitle: String = ""
-    
+
     init(context: NSManagedObjectContext) {
         _viewModel = StateObject(wrappedValue: AudioUploadViewModel(context: context))
-        
+
         #if DEBUG
         print("🎵 AudioUploadView: Initializing with context: \(context)")
         #endif
     }
-    
+
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(spacing: Theme.Spacing.lg) {
                     headerSection
-                    
+
                     if viewModel.selectedFileName == nil {
                         fileSelectionSection
                     } else {
                         audioPreviewSection
                     }
-                    
+
                     Spacer()
                 }
                 .padding()
@@ -498,9 +505,9 @@ struct AudioUploadView: View {
             }
         }
     }
-    
+
     // MARK: - View Components
-    
+
     private var headerSection: some View {
         VStack(spacing: Theme.Spacing.sm) {
             Image(systemName: "waveform.circle.fill")
@@ -508,11 +515,11 @@ struct AudioUploadView: View {
                 .foregroundStyle(.blue.gradient)
                 .scaleEffect(1.0)
                 .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: UUID())
-            
+
             Text("Import Audio")
                 .font(Theme.Typography.h2)
                 .foregroundColor(Theme.Colors.text)
-            
+
             Text("Upload your audio files for transcription and note-taking")
                 .font(Theme.Typography.body)
                 .foregroundColor(Theme.Colors.secondaryText)
@@ -520,7 +527,7 @@ struct AudioUploadView: View {
         }
         .padding(.top, Theme.Spacing.xl)
     }
-    
+
     private var fileSelectionSection: some View {
         VStack(spacing: Theme.Spacing.md) {
             Button(action: { showingFilePicker = true }) {
@@ -528,7 +535,7 @@ struct AudioUploadView: View {
                     Image(systemName: "doc.badge.plus")
                         .font(.system(size: 48))
                         .foregroundStyle(.blue.gradient)
-                    
+
                     Text("Select Audio File")
                         .font(Theme.Typography.body)
                         .foregroundColor(Theme.Colors.primary)
@@ -544,13 +551,13 @@ struct AudioUploadView: View {
                         )
                 )
             }
-            
+
             Button(action: { viewModel.showingRecordedFilesPicker = true }) {
                 VStack(spacing: Theme.Spacing.md) {
                     Image(systemName: "waveform.badge.plus")
                         .font(.system(size: 48))
                         .foregroundStyle(.orange.gradient)
-                    
+
                     Text("Select Recorded Audio")
                         .font(Theme.Typography.body)
                         .foregroundColor(Theme.Colors.primary)
@@ -566,17 +573,17 @@ struct AudioUploadView: View {
                         )
                 )
             }
-            
+
             supportedFormatsSection
         }
     }
-    
+
     private var supportedFormatsSection: some View {
         VStack(spacing: Theme.Spacing.sm) {
             Text("Supported Formats")
                 .font(Theme.Typography.caption)
                 .foregroundColor(Theme.Colors.secondaryText)
-            
+
             HStack(spacing: Theme.Spacing.md) {
                 ForEach(["MP3", "WAV", "M4A"], id: \.self) { format in
                     HStack(spacing: Theme.Spacing.xs) {
@@ -593,19 +600,19 @@ struct AudioUploadView: View {
         .background(Theme.Colors.secondaryBackground)
         .cornerRadius(Theme.Layout.cornerRadius)
     }
-    
+
     private var audioPreviewSection: some View {
         VStack(spacing: Theme.Spacing.md) {
             audioFileInfo
-            
+
             audioDetails
-            
+
             localStorageToggle
-            
+
             importButton
         }
     }
-    
+
     private var audioFileInfo: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             HStack {
@@ -613,16 +620,16 @@ struct AudioUploadView: View {
                     Text(viewModel.selectedFileName ?? "Untitled")
                         .font(Theme.Typography.h3)
                         .foregroundColor(Theme.Colors.text)
-                    
+
                     if let stats = viewModel.stats {
                         Text("\(stats.formattedDuration) • \(ByteCountFormatter.string(fromByteCount: stats.fileSize, countStyle: .file))")
                             .font(Theme.Typography.caption)
                             .foregroundColor(Theme.Colors.secondaryText)
                     }
                 }
-                
+
                 Spacer()
-                
+
                 Button(action: { showingFilePicker = true }) {
                     Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 20))
@@ -634,7 +641,7 @@ struct AudioUploadView: View {
             .cornerRadius(Theme.Layout.cornerRadius)
         }
     }
-    
+
     private var audioDetails: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             if let stats = viewModel.stats {
@@ -652,14 +659,14 @@ struct AudioUploadView: View {
                 )
         )
     }
-    
+
     private var localStorageToggle: some View {
         Toggle("Save original file locally", isOn: $viewModel.saveLocally)
             .padding()
             .background(Theme.Colors.secondaryBackground)
             .cornerRadius(Theme.Layout.cornerRadius)
     }
-    
+
     private var importButton: some View {
         Button(action: { showingSaveDialog = true }) {
             if case .loading(let message) = viewModel.loadingState {
@@ -667,7 +674,7 @@ struct AudioUploadView: View {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle())
                         .scaleEffect(0.8)
-                    
+
                     Text(message ?? "Processing...")
                         .font(Theme.Typography.body)
                         .fontWeight(.medium)
@@ -684,7 +691,7 @@ struct AudioUploadView: View {
         .buttonStyle(LoadingButtonStyle(isLoading: viewModel.loadingState.isLoading))
         .disabled(viewModel.loadingState.isLoading || viewModel.selectedFileName == nil)
     }
-    
+
     // MARK: - Recorded Files Picker
     private var recordedFilesPickerView: some View {
         NavigationView {
@@ -694,11 +701,11 @@ struct AudioUploadView: View {
                         Image(systemName: "waveform.slash")
                             .font(.system(size: 60))
                             .foregroundStyle(.gray)
-                        
+
                         Text("No Recordings Found")
                             .font(Theme.Typography.h3)
                             .foregroundColor(Theme.Colors.secondaryText)
-                        
+
                         Text("Record audio using the voice recorder to see your recordings here.")
                             .font(Theme.Typography.body)
                             .foregroundColor(Theme.Colors.tertiaryText)
@@ -717,19 +724,19 @@ struct AudioUploadView: View {
                                     Image(systemName: "waveform")
                                         .foregroundStyle(.orange.gradient)
                                         .font(.title2)
-                                    
+
                                     VStack(alignment: .leading) {
                                         Text(fileURL.lastPathComponent)
                                             .font(Theme.Typography.body)
                                             .foregroundColor(Theme.Colors.text)
-                                        
+
                                         Text(formattedDate(for: fileURL))
                                             .font(Theme.Typography.caption)
                                             .foregroundColor(Theme.Colors.secondaryText)
                                     }
-                                    
+
                                     Spacer()
-                                    
+
                                     Image(systemName: "chevron.right")
                                         .foregroundColor(Theme.Colors.tertiaryText)
                                 }
@@ -748,7 +755,7 @@ struct AudioUploadView: View {
                         viewModel.showingRecordedFilesPicker = false
                     }
                 }
-                
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         viewModel.loadRecordedFiles()
@@ -759,7 +766,7 @@ struct AudioUploadView: View {
             }
         }
     }
-    
+
     private func formattedDate(for fileURL: URL) -> String {
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
@@ -774,7 +781,7 @@ struct AudioUploadView: View {
         }
         return "Unknown date"
     }
-    
+
     private func selectRecordedFile(_ fileURL: URL) {
         Task {
             do {
@@ -785,14 +792,14 @@ struct AudioUploadView: View {
             }
         }
     }
-    
+
     // MARK: - Helper Methods
     private func handleSelectedFile(_ result: Result<[URL], Error>) {
         Task {
             do {
                 let urls = try result.get()
                 guard let url = urls.first else { return }
-                
+
                 if viewModel.canHandle(url) {
                     try await viewModel.processSelectedFile(url)
                 } else {
@@ -803,13 +810,13 @@ struct AudioUploadView: View {
             }
         }
     }
-    
+
     private func saveAudio() {
         guard !noteTitle.isEmpty else {
             toastManager.show("Please enter a title", type: .warning)
             return
         }
-        
+
         Task {
             do {
                 try await viewModel.saveNote(title: noteTitle)
@@ -826,15 +833,15 @@ struct AudioUploadView: View {
 private struct AudioDetailRow: View {
     let label: String
     let value: String
-    
+
     var body: some View {
         HStack {
             Text(label)
                 .font(Theme.Typography.caption)
                 .foregroundColor(Theme.Colors.secondaryText)
-            
+
             Spacer()
-            
+
             Text(value)
                 .font(Theme.Typography.caption)
                 .foregroundColor(Theme.Colors.text)
@@ -846,7 +853,7 @@ private struct AudioDetailRow: View {
 struct LoadingButtonStyle: ButtonStyle {
     var isLoading: Bool
     var backgroundColor: Color = Theme.Colors.primary
-    
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .padding(.vertical, 12)
@@ -877,7 +884,7 @@ struct AudioUploadView_Previews: PreviewProvider {
         #endif
         return context
     }()
-    
+
     static var previews: some View {
         NavigationView {
             AudioUploadView(context: previewContext)

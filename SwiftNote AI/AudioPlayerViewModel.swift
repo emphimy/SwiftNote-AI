@@ -84,6 +84,56 @@ final class AudioPlayerViewModel: NSObject, ObservableObject {
         do {
             // Verify file exists
             guard FileManager.default.fileExists(atPath: url.path) else {
+                #if DEBUG
+                print("🎵 AudioPlayer: File not found at path: \(url.path)")
+                #endif
+
+                // Try to find the file by filename in the documents directory
+                let filename = url.lastPathComponent
+                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+
+                // First try the simple alternative path
+                let alternativeURL = documentsPath.appendingPathComponent(filename)
+
+                #if DEBUG
+                print("🎵 AudioPlayer: Trying alternative path: \(alternativeURL.path)")
+                print("🎵 AudioPlayer: File exists at alternative path: \(FileManager.default.fileExists(atPath: alternativeURL.path))")
+                #endif
+
+                if FileManager.default.fileExists(atPath: alternativeURL.path) {
+                    // Use the alternative URL instead
+                    return try await loadAudio(from: alternativeURL)
+                }
+
+                // If that didn't work, try to extract UUID and try different filename formats
+                if let uuid = extractUUID(from: filename) {
+                    #if DEBUG
+                    print("🎵 AudioPlayer: Extracted UUID: \(uuid)")
+                    #endif
+
+                    // Try different filename formats
+                    let possibleFilenames = getPossibleFilenames(from: uuid, originalFilename: filename)
+
+                    #if DEBUG
+                    print("🎵 AudioPlayer: Trying multiple possible filenames: \(possibleFilenames)")
+                    #endif
+
+                    // Try each possible filename
+                    for possibleFilename in possibleFilenames {
+                        let possibleURL = documentsPath.appendingPathComponent(possibleFilename)
+
+                        #if DEBUG
+                        print("🎵 AudioPlayer: Trying path: \(possibleURL.path)")
+                        print("🎵 AudioPlayer: File exists: \(FileManager.default.fileExists(atPath: possibleURL.path))")
+                        #endif
+
+                        if FileManager.default.fileExists(atPath: possibleURL.path) {
+                            // Use this URL instead
+                            return try await loadAudio(from: possibleURL)
+                        }
+                    }
+                }
+
                 throw AudioPlayerError.fileNotFound
             }
 
@@ -231,5 +281,35 @@ final class AudioPlayerViewModel: NSObject, ObservableObject {
         #if DEBUG
         print("🎵 AudioPlayer: Manual cleanup completed")
         #endif
+    }
+
+    // MARK: - Helper Methods
+
+    // Extract UUID from filename
+    private func extractUUID(from filename: String) -> UUID? {
+        // Try to find a UUID pattern in the filename
+        let pattern = "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"
+        let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+
+        if let match = regex?.firstMatch(in: filename, options: [], range: NSRange(location: 0, length: filename.count)) {
+            let matchRange = match.range
+            if let range = Range(matchRange, in: filename) {
+                let uuidString = String(filename[range])
+                return UUID(uuidString: uuidString)
+            }
+        }
+        return nil
+    }
+
+    // Get possible filenames for an audio file based on UUID
+    private func getPossibleFilenames(from uuid: UUID, originalFilename: String) -> [String] {
+        // For recorded files, the format is just the UUID
+        let simpleUUIDFilename = "\(uuid.uuidString).m4a"
+
+        // For imported files, the format is UUID-originalFilename
+        let importedFileFormat = "\(uuid.uuidString)-\(originalFilename)"
+
+        // Return all possible formats
+        return [simpleUUIDFilename, importedFileFormat, originalFilename]
     }
 }

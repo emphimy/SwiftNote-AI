@@ -48,7 +48,7 @@ struct CompactAudioPlayerView: View {
 
                         // Progress track
                         Rectangle()
-                            .fill(Color.purple)
+                            .fill(Color.blue)
                             .frame(width: progressWidth, height: 4)
                             .cornerRadius(2)
                     }
@@ -92,7 +92,7 @@ struct CompactAudioPlayerView: View {
                             .font(.title2)
                             .foregroundColor(Color(UIColor.systemBackground))
                             .frame(width: 50, height: 50)
-                            .background(Color.purple)
+                            .background(Color.blue)
                             .clipShape(Circle())
                     }
 
@@ -143,6 +143,46 @@ struct CompactAudioPlayerView: View {
                 #if DEBUG
                 print("🎵 CompactAudioPlayer: Failed to load audio - \(error)")
                 #endif
+
+                // Try to find the file by UUID in the filename
+                if let uuid = extractUUID(from: audioURL.lastPathComponent) {
+                    #if DEBUG
+                    print("🎵 CompactAudioPlayer: Extracted UUID: \(uuid)")
+                    #endif
+
+                    let fileManager = FileManager.default
+                    let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+
+                    // Try multiple possible filename formats
+                    let possibleFilenames = getPossibleFilenames(from: uuid, originalFilename: audioURL.lastPathComponent)
+
+                    #if DEBUG
+                    print("🎵 CompactAudioPlayer: Trying multiple possible filenames: \(possibleFilenames)")
+                    #endif
+
+                    // Try each possible filename
+                    for filename in possibleFilenames {
+                        let newURL = documentsPath.appendingPathComponent(filename)
+
+                        #if DEBUG
+                        print("🎵 CompactAudioPlayer: Trying path: \(newURL.path)")
+                        print("🎵 CompactAudioPlayer: File exists: \(fileManager.fileExists(atPath: newURL.path))")
+                        #endif
+
+                        if fileManager.fileExists(atPath: newURL.path) {
+                            do {
+                                try await viewModel.loadAudio(from: newURL)
+                                // If we successfully loaded the audio, break out of the loop
+                                break
+                            } catch {
+                                #if DEBUG
+                                print("🎵 CompactAudioPlayer: Failed to load audio with path \(newURL.path) - \(error)")
+                                #endif
+                                // Continue trying other filenames
+                            }
+                        }
+                    }
+                }
             }
         }
         .onDisappear {
@@ -166,6 +206,34 @@ struct CompactAudioPlayerView: View {
         let minutes = Int(timeInterval) / 60
         let seconds = Int(timeInterval) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    // Extract UUID from filename
+    private func extractUUID(from filename: String) -> UUID? {
+        // Try to find a UUID pattern in the filename
+        let pattern = "[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}"
+        let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+
+        if let match = regex?.firstMatch(in: filename, options: [], range: NSRange(location: 0, length: filename.count)) {
+            let matchRange = match.range
+            if let range = Range(matchRange, in: filename) {
+                let uuidString = String(filename[range])
+                return UUID(uuidString: uuidString)
+            }
+        }
+        return nil
+    }
+
+    // Get possible filenames for an audio file based on UUID
+    private func getPossibleFilenames(from uuid: UUID, originalFilename: String) -> [String] {
+        // For recorded files, the format is just the UUID
+        let simpleUUIDFilename = "\(uuid.uuidString).m4a"
+
+        // For imported files, the format is UUID-originalFilename
+        let importedFileFormat = "\(uuid.uuidString)-\(originalFilename)"
+
+        // Return all possible formats
+        return [simpleUUIDFilename, importedFileFormat, originalFilename]
     }
 }
 

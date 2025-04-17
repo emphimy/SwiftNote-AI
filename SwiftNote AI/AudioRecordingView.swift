@@ -296,7 +296,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
 
             let fileManager = FileManager.default
             let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let fileName = "\(noteId.uuidString).m4a"
+            let fileName = "\(noteId).m4a"
             let destinationURL = documentsPath.appendingPathComponent(fileName)
 
             do {
@@ -326,13 +326,14 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
                     title: title,
                     date: timestamp,
                     preview: content,
-                    sourceType: .audio,
+                    sourceType: .recording,
                     isFavorite: false,
                     tags: [],
                     metadata: [
                         "rawTranscript": transcript,
                         "aiGeneratedContent": content
-                    ]
+                    ],
+                    sourceURL: destinationURL
                 )
 
                 // Set flag to trigger navigation
@@ -383,7 +384,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
             // Save audio file to documents directory
             let fileManager = FileManager.default
             let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let fileName = "\(noteId.uuidString).m4a"
+            let fileName = "\(noteId).m4a"
             let destinationURL = documentsDirectory.appendingPathComponent(fileName)
 
             do {
