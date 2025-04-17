@@ -42,6 +42,15 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
     @Published var errorMessage: String?
     @Published var isProcessing = false
     @Published var showingSaveDialog = false
+    @Published var recordingState: RecordingState = .initial
+    
+    // MARK: - Recording State Enum
+    enum RecordingState {
+        case initial
+        case recording
+        case paused
+        case finished
+    }
     
     // MARK: - Private Properties
     private var audioRecorder: AVAudioRecorder?
@@ -89,25 +98,33 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
         print("🎙️ AudioRecordingViewModel: Starting recording")
         #endif
         
+        // If we're resuming a paused recording, just resume
+        if recordingState == .paused && audioRecorder != nil {
+            #if DEBUG
+            print("🎙️ AudioRecordingViewModel: Resuming existing recording")
+            #endif
+            
+            audioRecorder?.record()
+            isRecording = true
+            recordingState = .recording
+            startTimers()
+            return
+        }
+        
+        // Otherwise, start a new recording
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory
         let fileName = "recording_\(Date().timeIntervalSince1970).m4a"
         recordingURL = tempDir.appendingPathComponent(fileName)
         
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44100.0,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
-        ]
-        
         do {
-            audioRecorder = try AVAudioRecorder(url: recordingURL!, settings: settings)
+            audioRecorder = try AVAudioRecorder(url: recordingURL!, settings: createRecordingSettings())
             audioRecorder?.delegate = self
             audioRecorder?.isMeteringEnabled = true
             
             if audioRecorder?.record() == true {
                 isRecording = true
+                recordingState = .recording
                 startTimers()
                 
                 #if DEBUG
@@ -122,6 +139,26 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
         }
     }
     
+    private func createRecordingSettings() -> [String: Any] {
+        return [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVSampleRateKey: 44100.0,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+        ]
+    }
+    
+    func pauseRecording() {
+        #if DEBUG
+        print("🎙️ AudioRecordingViewModel: Pausing recording")
+        #endif
+        
+        audioRecorder?.pause()
+        isRecording = false
+        recordingState = .paused
+        stopTimers()
+    }
+    
     func stopRecording() {
         #if DEBUG
         print("🎙️ AudioRecordingViewModel: Stopping recording")
@@ -129,8 +166,39 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
         
         audioRecorder?.stop()
         isRecording = false
+        recordingState = .finished
         stopTimers()
-        showingSaveDialog = true
+    }
+    
+    func deleteRecording() {
+        #if DEBUG
+        print("🎙️ AudioRecordingViewModel: Deleting recording")
+        #endif
+        
+        Task {
+            await performCleanup()
+            recordingDuration = 0
+            recordingState = .initial
+        }
+    }
+    
+    func generateNote() {
+        #if DEBUG
+        print("🎙️ AudioRecordingViewModel: Generating note from recording")
+        #endif
+        
+        // Use a default title based on date and time
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMM d, yyyy h:mm a"
+        let defaultTitle = "Recording \(dateFormatter.string(from: Date()))"
+        
+        Task {
+            do {
+                try await saveRecording(title: defaultTitle)
+            } catch {
+                errorMessage = "Failed to generate note: \(error.localizedDescription)"
+            }
+        }
     }
     
     // MARK: - Timer Management
@@ -154,11 +222,15 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
                 guard let self = self else { break }
                 await MainActor.run {
                     self.audioRecorder?.updateMeters()
+                    // Get average power and convert to a more responsive level
                     let level = self.audioRecorder?.averagePower(forChannel: 0) ?? -160
-                    let normalizedLevel = pow(10, level / 20)
+                    
+                    // Apply a more aggressive normalization to make visualization more responsive
+                    // Using a different formula that gives better visual response at lower sound levels
+                    let normalizedLevel = max(0, min(1, (level + 50) / 50))
                     self.audioLevel = CGFloat(normalizedLevel)
                 }
-                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
+                try? await Task.sleep(nanoseconds: 50_000_000) // 0.05 second - faster updates
             }
         }
     }
@@ -288,136 +360,92 @@ extension AudioRecordingViewModel: AVAudioRecorderDelegate {
     }
 }
 
-// MARK: - Modern Audio Visualizer
-struct AudioParticle: Identifiable {
-    let id = UUID()
-    var position: CGPoint
-    var scale: CGFloat
-    var opacity: Double
-    var angle: Double
-}
-
-struct ModernAudioVisualizerView: View {
+// MARK: - Classic Waveform View
+struct ClassicWaveformView: View {
     let audioLevel: CGFloat
-    
-    @State private var particles: [AudioParticle] = []
-    @State private var phase: Double = 0
-    @State private var innerRingScale: CGFloat = 1
-    @State private var outerRingScale: CGFloat = 1
-    
-    private let particleCount = 80
-    private let baseRadius: CGFloat = 60
-    
-    init(audioLevel: CGFloat) {
-        self.audioLevel = audioLevel
-        _particles = State(initialValue: Self.generateParticles(count: particleCount))
-    }
-    
-    private static func generateParticles(count: Int) -> [AudioParticle] {
-        (0..<count).map { i in
-            let angle = (2 * .pi * Double(i)) / Double(count)
-            return AudioParticle(
-                position: .zero,
-                scale: CGFloat.random(in: 0.3...1),
-                opacity: Double.random(in: 0.3...0.8),
-                angle: angle
-            )
-        }
-    }
+    @State private var waveformSamples: [CGFloat] = Array(repeating: 0.05, count: 30)
     
     var body: some View {
-        TimelineView(.animation) { timeline in
+        GeometryReader { geometry in
             ZStack {
-                // Background glow
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            gradient: Gradient(colors: [
-                                Color.blue.opacity(0.3 * (0.5 + audioLevel)),
-                                Color.clear
-                            ]),
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 100
-                        )
-                    )
-                    .frame(width: 200, height: 200)
-                    .scaleEffect(outerRingScale)
+                // Background
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.black.opacity(0.03))
                 
-                // Particle system
-                ForEach(particles) { particle in
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(colors: [
-                                    Color.blue,
-                                    Color.purple
-                                ]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
+                // Classic waveform visualization with vertical bars
+                HStack(spacing: 4) {
+                    ForEach(0..<waveformSamples.count, id: \.self) { index in
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(
+                                LinearGradient(
+                                    colors: [Theme.Colors.primary.opacity(0.7), Theme.Colors.primary],
+                                    startPoint: .bottom,
+                                    endPoint: .top
+                                )
                             )
-                        )
-                        .frame(width: 4, height: 4)
-                        .position(particle.position)
-                        .scaleEffect(particle.scale)
-                        .opacity(particle.opacity)
+                            .frame(width: 4)
+                            .frame(height: max(3, geometry.size.height * waveformSamples[index]))
+                            .animation(.easeOut(duration: 0.15), value: waveformSamples[index])
+                    }
                 }
-                
-                // Inner ring
-                Circle()
-                    .strokeBorder(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color.blue,
-                                Color.purple,
-                                Color.blue
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 3
-                    )
-                    .frame(width: baseRadius * 2, height: baseRadius * 2)
-                    .scaleEffect(innerRingScale)
-                
-                // Center dot
-                Circle()
-                    .fill(Color.blue)
-                    .frame(width: 8, height: 8)
-                    .blur(radius: 2)
-                    .opacity(0.5 + audioLevel * 0.5)
-            }
-            .onChange(of: audioLevel) { _ in
-                updateParticles()
-                animateRings()
+                .frame(maxHeight: .infinity, alignment: .center)
+                .padding(.horizontal, 20)
             }
         }
-        .frame(width: 200, height: 200)
+        .onAppear {
+            // Start animation
+            startWaveformAnimation()
+        }
+        .onChange(of: audioLevel) { newLevel in
+            // Update waveform when audio level changes
+            updateWaveform(with: newLevel)
+        }
     }
     
-    private func updateParticles() {
-        withAnimation(.easeInOut(duration: 0.2)) {
-            phase += 0.05
-            
-            for i in particles.indices {
-                let baseAngle = particles[i].angle
-                let wobble = sin(phase + baseAngle) * 20 * audioLevel
-                let radius = baseRadius + wobble
-                
-                let x = cos(baseAngle) * radius
-                let y = sin(baseAngle) * radius
-                
-                particles[i].position = CGPoint(x: x + 100, y: y + 100)
-                particles[i].opacity = 0.3 + audioLevel * 0.7
-                particles[i].scale = 0.3 + audioLevel * 0.7
+    private func startWaveformAnimation() {
+        // Create animation timer
+        let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+        
+        Task {
+            for await _ in timer.values {
+                if audioLevel < 0.1 {
+                    // Idle animation when not recording - create a gentle wave pattern
+                    for i in 0..<waveformSamples.count {
+                        let position = Double(i) / Double(waveformSamples.count)
+                        let centerPosition = abs(position - 0.5) * 2.0 // 0 at center, 1 at edges
+                        let baseHeight = 0.1 - (centerPosition * 0.05) // Higher in center
+                        
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            waveformSamples[i] = baseHeight
+                        }
+                    }
+                }
             }
         }
     }
     
-    private func animateRings() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
-            innerRingScale = 1 + audioLevel * 0.3
-            outerRingScale = 1 + audioLevel * 0.2
+    private func updateWaveform(with level: CGFloat) {
+        if level > 0.05 {
+            // Update waveform based on audio level
+            for i in 0..<waveformSamples.count {
+                // Create a varied pattern based on position
+                let position = Double(i) / Double(waveformSamples.count)
+                let centerFactor = 1.0 - abs(position - 0.5) * 1.5
+                
+                // Amplify the level for better visualization
+                let amplifiedLevel = min(0.8, level * 3.0) 
+                
+                // Add some randomness for natural look
+                let randomVariation = Double.random(in: 0.7...1.3)
+                
+                // Calculate final height
+                let height = amplifiedLevel * CGFloat(centerFactor * randomVariation)
+                
+                // Update with animation
+                withAnimation(.easeOut(duration: 0.1)) {
+                    waveformSamples[i] = max(0.05, height)
+                }
+            }
         }
     }
 }
@@ -436,71 +464,67 @@ struct AudioRecordingView: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: Theme.Spacing.xl) {
+                VStack(spacing: Theme.Spacing.lg) {
                     // Header Section
-                    VStack(spacing: Theme.Spacing.md) {
+                    VStack(spacing: Theme.Spacing.sm) {
                         Image(systemName: "mic.circle.fill")
-                            .font(.system(size: 60))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .padding(.top, Theme.Spacing.xl)
+                            .font(.system(size: 50))
+                            .foregroundStyle(Theme.Colors.primary)
+                            .padding(.top, Theme.Spacing.md)
                         
                         Text("Audio Recording")
                             .font(.title2)
                             .fontWeight(.bold)
                             .foregroundColor(Theme.Colors.text)
                         
-                        Text(viewModel.isRecording ? "Recording in progress..." : "Tap the button to start recording")
-                            .font(.body)
+                        Text(getRecordingStateText())
+                            .font(.subheadline)
                             .foregroundColor(Theme.Colors.secondaryText)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
                     }
+                    .padding(.bottom, Theme.Spacing.sm)
                     
                     // Audio Visualizer
-                    ModernAudioVisualizerView(audioLevel: viewModel.audioLevel)
-                        .frame(height: 200)
-                        .padding()
+                    ClassicWaveformView(audioLevel: viewModel.audioLevel)
+                        .frame(height: 180)
+                        .padding(.horizontal)
                     
                     // Recording Controls
                     VStack(spacing: Theme.Spacing.md) {
                         // Timer Display
-                        Text(formatDuration(viewModel.recordingDuration))
-                            .font(.system(size: 24, weight: .medium, design: .monospaced))
-                            .foregroundColor(Theme.Colors.text)
-                            .padding(.vertical, Theme.Spacing.sm)
-                        
-                        // Record Button
-                        Button(action: {
-                            if viewModel.isRecording {
-                                viewModel.stopRecording()
-                            } else {
-                                viewModel.startRecording()
-                            }
-                        }) {
-                            Circle()
-                                .fill(viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary)
-                                .frame(width: 72, height: 72)
-                                .overlay(
-                                    Image(systemName: viewModel.isRecording ? "stop.fill" : "mic.fill")
-                                        .font(.system(size: 30))
-                                        .foregroundColor(.white)
-                                )
-                                .shadow(color: (viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary).opacity(0.3),
-                                       radius: 10, x: 0, y: 5)
+                        HStack(spacing: 4) {
+                            Image(systemName: viewModel.isRecording ? "record.circle" : "timer")
+                                .foregroundColor(viewModel.isRecording ? Theme.Colors.error : Theme.Colors.secondaryText)
+                                .font(.system(size: 18))
+                                .opacity(viewModel.isRecording ? 1.0 : 0.7)
+                            
+                            Text(formatDuration(viewModel.recordingDuration))
+                                .font(.system(size: 24, weight: .medium, design: .monospaced))
+                                .foregroundColor(Theme.Colors.text)
                         }
-                        .padding(.vertical, Theme.Spacing.md)
+                        .padding(.vertical, Theme.Spacing.sm)
+                        .padding(.horizontal, Theme.Spacing.md)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.black.opacity(0.05))
+                        )
+                        
+                        // Primary Recording Controls
+                        if viewModel.recordingState == .initial || viewModel.recordingState == .recording {
+                            recordingControlButtons
+                        } else if viewModel.recordingState == .paused {
+                            pausedRecordingButtons
+                        } else if viewModel.recordingState == .finished {
+                            finishedRecordingButtons
+                        }
                     }
                     .padding()
                     .background(Theme.Colors.secondaryBackground)
                     .cornerRadius(Theme.Layout.cornerRadius)
                     .padding(.horizontal)
                 }
+                .padding(.bottom, Theme.Spacing.xl)
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -521,6 +545,215 @@ struct AudioRecordingView: View {
         }
     }
     
+    private var recordingControlButtons: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            // Main Record/Pause Button
+            Button(action: {
+                if viewModel.isRecording {
+                    viewModel.pauseRecording()
+                } else {
+                    viewModel.startRecording()
+                }
+            }) {
+                ZStack {
+                    // Pulsing background for recording state
+                    if viewModel.isRecording {
+                        Circle()
+                            .fill(Theme.Colors.error.opacity(0.3))
+                            .frame(width: 88, height: 88)
+                            .scaleEffect(viewModel.isRecording ? 1.2 : 1.0)
+                            .animation(
+                                viewModel.isRecording ? 
+                                    Animation.easeInOut(duration: 0.8).repeatForever(autoreverses: true) : 
+                                    .default,
+                                value: viewModel.isRecording
+                            )
+                    }
+                    
+                    Circle()
+                        .fill(viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary)
+                        .frame(width: 72, height: 72)
+                        .shadow(color: (viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary).opacity(0.3),
+                               radius: 10, x: 0, y: 5)
+                    
+                    Image(systemName: viewModel.isRecording ? "pause.fill" : "mic.fill")
+                        .font(.system(size: 30))
+                        .foregroundColor(.white)
+                }
+            }
+            .padding(.vertical, Theme.Spacing.md)
+        }
+    }
+    
+    private var pausedRecordingButtons: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            // Resume Recording Button
+            Button(action: {
+                viewModel.startRecording()
+            }) {
+                HStack {
+                    Image(systemName: "record.circle")
+                        .font(.system(size: 20))
+                    Text("Resume Recording")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.vertical, Theme.Spacing.md)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Theme.Colors.primary)
+                        .shadow(color: Theme.Colors.primary.opacity(0.3), radius: 5, x: 0, y: 2)
+                )
+            }
+            
+            // Generate Note Button
+            Button(action: {
+                viewModel.stopRecording()
+                viewModel.generateNote()
+            }) {
+                HStack {
+                    Image(systemName: "note.text.badge.plus")
+                        .font(.system(size: 18))
+                    Text("Generate Note")
+                        .font(.system(size: 16, weight: .medium))
+                }
+                .foregroundColor(Theme.Colors.primary)
+                .padding(.vertical, Theme.Spacing.sm)
+                .padding(.horizontal, Theme.Spacing.md)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.black.opacity(0.05))
+                )
+            }
+            
+            // Save with Custom Title Button
+            Button(action: {
+                viewModel.stopRecording()
+                viewModel.showingSaveDialog = true
+            }) {
+                HStack {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 18))
+                    Text("Save with Custom Title")
+                        .font(.system(size: 16, weight: .medium))
+                }
+                .foregroundColor(Theme.Colors.primary)
+                .padding(.vertical, Theme.Spacing.sm)
+                .padding(.horizontal, Theme.Spacing.md)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.black.opacity(0.05))
+                )
+            }
+            
+            // Delete Button
+            Button(action: {
+                viewModel.deleteRecording()
+            }) {
+                Text("Delete Recording")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(Theme.Colors.error)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.black.opacity(0.05))
+                    )
+            }
+        }
+    }
+    
+    private var finishedRecordingButtons: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            // Generate Note Button
+            Button(action: {
+                viewModel.generateNote()
+            }) {
+                HStack {
+                    Image(systemName: "note.text.badge.plus")
+                        .font(.system(size: 20))
+                    Text("Generate Note")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.vertical, Theme.Spacing.md)
+                .padding(.horizontal, Theme.Spacing.lg)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Theme.Colors.primary)
+                        .shadow(color: Theme.Colors.primary.opacity(0.3), radius: 5, x: 0, y: 2)
+                )
+            }
+            
+            // Save with Custom Title Button
+            Button(action: {
+                viewModel.showingSaveDialog = true
+            }) {
+                HStack {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 18))
+                    Text("Save with Custom Title")
+                        .font(.system(size: 16, weight: .medium))
+                }
+                .foregroundColor(Theme.Colors.primary)
+                .padding(.vertical, Theme.Spacing.sm)
+                .padding(.horizontal, Theme.Spacing.md)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.black.opacity(0.05))
+                )
+            }
+            
+            // Resume Recording Button
+            Button(action: {
+                viewModel.startRecording()
+            }) {
+                HStack {
+                    Image(systemName: "record.circle")
+                        .font(.system(size: 18))
+                    Text("Resume Recording")
+                        .font(.system(size: 16, weight: .medium))
+                }
+                .foregroundColor(Theme.Colors.primary)
+                .padding(.vertical, Theme.Spacing.sm)
+                .padding(.horizontal, Theme.Spacing.md)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.black.opacity(0.05))
+                )
+            }
+            
+            // Delete Recording Button
+            Button(action: {
+                viewModel.deleteRecording()
+            }) {
+                Text("Delete Recording")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(Theme.Colors.error)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.black.opacity(0.05))
+                    )
+            }
+        }
+    }
+    
+    private func getRecordingStateText() -> String {
+        switch viewModel.recordingState {
+        case .initial:
+            return "Tap the button to start recording"
+        case .recording:
+            return "Recording in progress..."
+        case .paused:
+            return "Recording paused"
+        case .finished:
+            return "Recording complete"
+        }
+    }
+    
     private func saveRecording() {
         Task {
             do {
@@ -538,27 +771,6 @@ struct AudioRecordingView: View {
         let minutes = Int(duration) / 60 % 60
         let seconds = Int(duration) % 60
         return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
-    }
-}
-
-// MARK: - Waveform View
-struct WaveformView: View {
-    let audioLevel: CGFloat
-    @State private var waveforms: [CGFloat] = Array(repeating: 0, count: 30)
-    
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<waveforms.count, id: \.self) { index in
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Theme.Colors.primary)
-                    .frame(width: 4)
-                    .frame(height: 20 + waveforms[index] * 80)
-            }
-        }
-        .onChange(of: audioLevel) { newLevel in
-            waveforms.removeFirst()
-            waveforms.append(newLevel)
-        }
     }
 }
 
