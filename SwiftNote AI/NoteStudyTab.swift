@@ -740,26 +740,32 @@ private struct ContentBlockView: View {
         case .heading1:
             Text(block.content)
                 .font(.system(size: fontSize * 2, weight: .bold))
+                .foregroundColor(Theme.Colors.primary)
                 .padding(.vertical, 8)
         case .heading2:
             Text(block.content)
                 .font(.system(size: fontSize * 1.5, weight: .bold))
+                .foregroundColor(Theme.Colors.primary)
                 .padding(.vertical, 6)
         case .heading3:
             Text(block.content)
                 .font(.system(size: fontSize * 1.25, weight: .bold))
+                .foregroundColor(Theme.Colors.primary)
                 .padding(.vertical, 4)
         case .heading4:
             Text(block.content)
                 .font(.system(size: fontSize * 1.1, weight: .bold))
+                .foregroundColor(Theme.Colors.primary)
                 .padding(.vertical, 4)
         case .heading5:
             Text(block.content)
                 .font(.system(size: fontSize, weight: .bold))
+                .foregroundColor(Theme.Colors.primary)
                 .padding(.vertical, 4)
         case .heading6:
             Text(block.content)
                 .font(.system(size: fontSize * 0.9, weight: .bold))
+                .foregroundColor(Theme.Colors.primary)
                 .padding(.vertical, 4)
         case .paragraph:
             Text(LocalizedStringKey(block.content))
