@@ -6,15 +6,15 @@ import Combine
 
 // MARK: - Navigation Bar
 private struct CustomNavigationBar: View {
-    
+
     private let gradientColors = [
         Theme.Colors.primary.opacity(0.8),
         Theme.Colors.primary
     ]
-    
+
     var currentFolder: Folder? = nil
 
-    
+
    var body: some View {
        HStack {
            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
@@ -33,10 +33,10 @@ private struct CustomNavigationBar: View {
                    .foregroundColor(Theme.Colors.secondaryText)
            }
            .animation(.easeInOut, value: timeOfDay)
-           
+
            Spacer()
-           
-           
+
+
            Menu {
                Button(action: {
                    #if DEBUG
@@ -62,7 +62,7 @@ private struct CustomNavigationBar: View {
        }
        .padding(.horizontal, Theme.Spacing.md)
    }
-   
+
    private var timeOfDay: String {
        let hour = Calendar.current.component(.hour, from: Date())
        switch hour {
@@ -76,7 +76,7 @@ private struct CustomNavigationBar: View {
 // MARK: - Folder Navigation Button
 private struct FolderNavigationButton: View {
     @Binding var isShowingFolders: Bool
-    
+
     var body: some View {
         Button(action: {
             #if DEBUG
@@ -102,7 +102,7 @@ private struct NotesContentView: View {
     @Environment(\.managedObjectContext) private var viewContext
     @State private var selectedNote: NoteCardConfiguration?
     @State private var isRefreshing = false
-    
+
     var body: some View {
         NotesScrollContent(
             viewModel: viewModel,
@@ -110,7 +110,7 @@ private struct NotesContentView: View {
             selectedNote: $selectedNote,
             cardActions: cardActions
         )
-        .sheet(item: $selectedNote) { note in
+        .fullScreenCover(item: $selectedNote) { note in
             NoteDetailsView(note: note, context: viewContext)
         }
     }
@@ -123,7 +123,7 @@ private struct NotesScrollContent: View {
     @Binding var selectedNote: NoteCardConfiguration?
     let cardActions: (NoteCardConfiguration) -> CardActions
     @Environment(\.horizontalSizeClass) private var sizeClass
-    
+
     var body: some View {
         RefreshableScrollView {
             #if DEBUG
@@ -155,7 +155,7 @@ private struct NotesContentContainer: View {
     @Binding var isRefreshing: Bool
     @Binding var selectedNote: NoteCardConfiguration?
     let cardActions: (NoteCardConfiguration) -> CardActions
-    
+
     var body: some View {
         Group {
             if viewModel.isLoading {
@@ -191,7 +191,7 @@ private struct NotesGridListView: View {
     @ObservedObject var viewModel: HomeViewModel
     @Binding var selectedNote: NoteCardConfiguration?
     let cardActions: (NoteCardConfiguration) -> CardActions
-    
+
     var body: some View {
         ListGridContainer(viewMode: $viewModel.viewMode) {
             AnyView(
@@ -212,7 +212,7 @@ private struct NotesGridListView: View {
 // MARK: - Refreshing Overlay
 private struct RefreshingOverlay: View {
     let isRefreshing: Bool
-    
+
     var body: some View {
         Group {
             if isRefreshing {
@@ -229,11 +229,11 @@ private struct RefreshingOverlay: View {
         }
     }
 }
-   
+
 private struct RefreshableScrollView<Content: View>: View {
    let onRefresh: () -> Void
    let content: Content
-   
+
    init(
        onRefresh: @escaping () -> Void,
        @ViewBuilder content: () -> Content
@@ -241,7 +241,7 @@ private struct RefreshableScrollView<Content: View>: View {
        self.onRefresh = onRefresh
        self.content = content()
    }
-   
+
    var body: some View {
        ScrollView {
            content
@@ -256,10 +256,10 @@ private struct RefreshableScrollView<Content: View>: View {
 private struct AddNoteActionSheet: View {
     @ObservedObject var viewModel: HomeViewModel
     @Environment(\.colorScheme) private var colorScheme
-    
+
     init(viewModel: HomeViewModel) {
         self._viewModel = ObservedObject(wrappedValue: viewModel)
-        
+
         #if DEBUG
         print("🏠 AddNoteSheet: Initializing with viewModel")
         #endif
@@ -269,7 +269,7 @@ private struct AddNoteActionSheet: View {
         ZStack {
             Theme.Colors.background
                 .ignoresSafeArea()
-            
+
             ActionCard(items: [
                 ActionCardItem(title: "Record Audio", icon: "mic", color: .blue) {
                     #if DEBUG
@@ -278,7 +278,7 @@ private struct AddNoteActionSheet: View {
                     viewModel.isShowingAddNote = false
                     viewModel.isShowingRecording = true
                 },
-                
+
                 ActionCardItem(title: "Import Audio", icon: "waveform", color: .orange) {
                     #if DEBUG
                     print("🏠 AddNoteSheet: Upload audio selected")
@@ -286,7 +286,7 @@ private struct AddNoteActionSheet: View {
                     viewModel.isShowingAddNote = false
                     viewModel.isShowingAudioUpload = true
                 },
-                
+
                 ActionCardItem(title: "Scan Text", icon: "viewfinder.circle", color: .blue) {
                     #if DEBUG
                     print("🏠 AddNoteSheet: Scan text selected")
@@ -294,7 +294,7 @@ private struct AddNoteActionSheet: View {
                     viewModel.isShowingAddNote = false
                     viewModel.isShowingTextScan = true
                 },
-                
+
                 ActionCardItem(title: "Import Text", icon: "doc", color: .blue) {
                     #if DEBUG
                     print("🏠 AddNoteSheet: Upload text selected")
@@ -302,7 +302,7 @@ private struct AddNoteActionSheet: View {
                     viewModel.isShowingAddNote = false
                     viewModel.isShowingTextUpload = true
                 },
-                
+
                 ActionCardItem(title: "YouTube Video", icon: "play.circle.fill", color: .red) {
                     #if DEBUG
                     print("🏠 AddNoteSheet: YouTube video selected")
@@ -310,7 +310,7 @@ private struct AddNoteActionSheet: View {
                     viewModel.isShowingAddNote = false
                     viewModel.isShowingYouTubeInput = true
                 },
-                
+
                 ActionCardItem(title: "Web Link", icon: "link", color: .blue) {
                     #if DEBUG
                     print("🏠 AddNoteSheet: Web link selected")
@@ -330,7 +330,7 @@ private struct AddNoteButton: View {
     @State private var isPressed = false
     @State private var isHovered = false
     @State private var isAnimating = false
-    
+
     var body: some View {
             Button(action: {
                 #if DEBUG
@@ -374,7 +374,7 @@ private struct AddNoteButton: View {
                         Circle()
                             .stroke(Color.white.opacity(0.2), lineWidth: 2)
                     )
-                
+
                 // Animated plus icon
                     Image(systemName: "plus")
                         .font(.system(size: 28, weight: .heavy))
@@ -417,34 +417,34 @@ struct ContentView: View {
             }
         }
     }
-    
+
     init(context: NSManagedObjectContext? = nil) {
         let ctx = context ?? PersistenceController.shared.container.viewContext
         _viewModel = StateObject(wrappedValue: HomeViewModel(context: ctx))
-        
+
         #if DEBUG
         print("🏠 ContentView: Initializing with context")
         #endif
     }
-    
+
     var body: some View {
         NavigationView {
             ZStack {
                 Theme.Colors.background
                     .ignoresSafeArea()
-                
+
                 VStack(spacing: 0) {
                     HomeHeaderView(
                         searchText: $viewModel.searchText,
                         viewMode: $viewModel.viewMode
                     )
-                    
+
                     NotesContentView(
                         viewModel: viewModel,
                         cardActions: makeCardActions
                     )
                 }
-                
+
                 // Note Button
                 VStack {
                     Spacer()
@@ -472,7 +472,7 @@ struct ContentView: View {
                             #endif
                         }
                 }
-                
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
                         #if DEBUG
@@ -534,7 +534,7 @@ struct ContentView: View {
             }
         }
     }
-    
+
     private func makeCardActions(for note: NoteCardConfiguration) -> CardActions {
         return CardActionsImplementation(
             note: note,
@@ -553,7 +553,7 @@ struct ContentView_Previews: PreviewProvider {
                 .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
                 .environmentObject(ThemeManager())
                 .previewDisplayName("Main View")
-            
+
             // Empty State Preview
             ContentView(context: {
                 let context = PersistenceController.preview.container.viewContext
@@ -570,18 +570,18 @@ struct ContentView_Previews: PreviewProvider {
             .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
             .environmentObject(ThemeManager())
             .previewDisplayName("Empty State")
-            
+
             // Component Previews
             CustomNavigationBar()
                 .previewLayout(.sizeThatFits)
                 .padding()
                 .previewDisplayName("Navigation Bar")
-            
+
             AddNoteButton(action: {})
                 .previewLayout(.sizeThatFits)
                 .padding()
                 .previewDisplayName("Add Note Button")
-            
+
             HomeHeaderView(
                 searchText: .constant(""),
                 viewMode: .constant(.list)

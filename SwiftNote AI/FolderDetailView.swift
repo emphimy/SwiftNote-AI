@@ -240,7 +240,7 @@ struct FolderDetailView: View {
         }
         .navigationTitle(folder.name ?? "Untitled Folder")
         .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $selectedNote) { note in
+        .fullScreenCover(item: $selectedNote) { note in
             NoteDetailsView(note: note, context: viewContext)
         }
         .onChange(of: viewModel.errorMessage) { error in
