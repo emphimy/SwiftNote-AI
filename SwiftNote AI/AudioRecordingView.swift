@@ -7,7 +7,7 @@ enum RecordingError: LocalizedError {
     case audioSessionSetupFailed(Error)
     case recordingStartFailed(Error)
     case invalidRecordingState
-    
+
     var errorDescription: String? {
         switch self {
         case .audioSessionSetupFailed(let error):
@@ -25,7 +25,7 @@ private actor AudioRecordingCleanup {
         #if DEBUG
         print("🎙️ AudioRecordingCleanup: Cleaning up temporary files")
         #endif
-        
+
         if let url = url {
             try? FileManager.default.removeItem(at: url)
         }
@@ -41,9 +41,36 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
     @Published var audioLevel: CGFloat = 0
     @Published var errorMessage: String?
     @Published var isProcessing = false
-    @Published var showingSaveDialog = false
     @Published var recordingState: RecordingState = .initial
-    
+    @Published var loadingState: LoadingState = .idle
+    @Published var shouldNavigateToNote = false
+    @Published var generatedNote: NoteCardConfiguration?
+
+    // MARK: - Loading State Enum
+    enum LoadingState: Equatable {
+        case idle
+        case loading(message: String)
+        case error(message: String)
+
+        var isLoading: Bool {
+            if case .loading = self {
+                return true
+            }
+            return false
+        }
+
+        var message: String? {
+            switch self {
+            case .loading(let message):
+                return message
+            case .error(let message):
+                return message
+            case .idle:
+                return nil
+            }
+        }
+    }
+
     // MARK: - Recording State Enum
     enum RecordingState {
         case initial
@@ -51,35 +78,37 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
         case paused
         case finished
     }
-    
-    // MARK: - Private Properties
+
+    // MARK: - Properties
     private var audioRecorder: AVAudioRecorder?
     private var recordingTimer: Task<Void, Never>?
     private var audioLevelTimer: Task<Void, Never>?
     private var recordingURL: URL?
     private let maxDuration: TimeInterval = 7200 // 2 hours
-    private let viewContext: NSManagedObjectContext
+    let viewContext: NSManagedObjectContext
     private let cleanupManager = AudioCleanupManager.shared
+    private let transcriptionService = AudioTranscriptionService.shared
+    private let noteGenerationService = NoteGenerationService()
     private var isCleanedUp = false
-    
+
     // MARK: - Initialization
     init(context: NSManagedObjectContext) {
         self.viewContext = context
         super.init()
-        
+
         #if DEBUG
         print("🎙️ AudioRecordingViewModel: Initializing")
         #endif
-        
+
         setupAudioSession()
     }
-    
+
     // MARK: - Audio Session Setup
     private func setupAudioSession() {
         #if DEBUG
         print("🎙️ AudioRecordingViewModel: Setting up audio session")
         #endif
-        
+
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playAndRecord, mode: .default)
@@ -91,42 +120,42 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
             errorMessage = "Failed to set up audio recording: \(error.localizedDescription)"
         }
     }
-    
+
     // MARK: - Recording Controls
     func startRecording() {
         #if DEBUG
         print("🎙️ AudioRecordingViewModel: Starting recording")
         #endif
-        
+
         // If we're resuming a paused recording, just resume
         if recordingState == .paused && audioRecorder != nil {
             #if DEBUG
             print("🎙️ AudioRecordingViewModel: Resuming existing recording")
             #endif
-            
+
             audioRecorder?.record()
             isRecording = true
             recordingState = .recording
             startTimers()
             return
         }
-        
+
         // Otherwise, start a new recording
         let fileManager = FileManager.default
         let tempDir = fileManager.temporaryDirectory
         let fileName = "recording_\(Date().timeIntervalSince1970).m4a"
         recordingURL = tempDir.appendingPathComponent(fileName)
-        
+
         do {
             audioRecorder = try AVAudioRecorder(url: recordingURL!, settings: createRecordingSettings())
             audioRecorder?.delegate = self
             audioRecorder?.isMeteringEnabled = true
-            
+
             if audioRecorder?.record() == true {
                 isRecording = true
                 recordingState = .recording
                 startTimers()
-                
+
                 #if DEBUG
                 print("🎙️ AudioRecordingViewModel: Recording started successfully")
                 #endif
@@ -138,7 +167,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
             errorMessage = "Failed to start recording: \(error.localizedDescription)"
         }
     }
-    
+
     private func createRecordingSettings() -> [String: Any] {
         return [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
@@ -147,60 +176,242 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
         ]
     }
-    
+
     func pauseRecording() {
         #if DEBUG
         print("🎙️ AudioRecordingViewModel: Pausing recording")
         #endif
-        
+
         audioRecorder?.pause()
         isRecording = false
         recordingState = .paused
         stopTimers()
     }
-    
+
     func stopRecording() {
         #if DEBUG
         print("🎙️ AudioRecordingViewModel: Stopping recording")
         #endif
-        
+
         audioRecorder?.stop()
         isRecording = false
         recordingState = .finished
         stopTimers()
     }
-    
+
     func deleteRecording() {
         #if DEBUG
         print("🎙️ AudioRecordingViewModel: Deleting recording")
         #endif
-        
+
         Task {
             await performCleanup()
             recordingDuration = 0
             recordingState = .initial
         }
     }
-    
+
     func generateNote() {
         #if DEBUG
         print("🎙️ AudioRecordingViewModel: Generating note from recording")
         #endif
-        
-        // Use a default title based on date and time
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "MMM d, yyyy h:mm a"
-        let defaultTitle = "Recording \(dateFormatter.string(from: Date()))"
-        
+
+        guard let recordingURL = recordingURL else {
+            errorMessage = "No recording available"
+            return
+        }
+
         Task {
             do {
-                try await saveRecording(title: defaultTitle)
+                // Update loading state
+                loadingState = .loading(message: "Processing audio file...")
+
+                // Transcribe the audio file
+                loadingState = .loading(message: "Transcribing audio...")
+                let result = try await transcriptionService.transcribeAudioWithTimestamps(fileURL: recordingURL)
+                let transcript = result.text
+
+                #if DEBUG
+                print("🎙️ AudioRecordingViewModel: Successfully transcribed audio with \(transcript.count) characters")
+                #endif
+
+                // Generate note content from transcript
+                loadingState = .loading(message: "Generating note content...")
+                let noteContent = try await noteGenerationService.generateNote(from: transcript)
+
+                #if DEBUG
+                print("🎙️ AudioRecordingViewModel: Successfully generated note content with \(noteContent.count) characters")
+                #endif
+
+                // Generate title from transcript
+                loadingState = .loading(message: "Generating title...")
+                let title = try await noteGenerationService.generateTitle(from: transcript)
+
+                // Save to Core Data
+                loadingState = .loading(message: "Saving note...")
+                try await saveNoteToDatabase(title: title, content: noteContent, transcript: transcript)
+
+                // Reset loading state
+                loadingState = .idle
+
+                // Cleanup
+                await cleanup()
+
             } catch {
+                #if DEBUG
+                print("🎙️ AudioRecordingViewModel: Failed to generate note - \(error)")
+                #endif
+
+                loadingState = .error(message: error.localizedDescription)
                 errorMessage = "Failed to generate note: \(error.localizedDescription)"
             }
         }
     }
-    
+
+    private func saveNoteToDatabase(title: String, content: String, transcript: String) async throws {
+        try await viewContext.perform { [weak self] in
+            guard let self = self else { return }
+
+            // Create new note
+            let note = NSEntityDescription.insertNewObject(forEntityName: "Note", into: self.viewContext)
+
+            // Set required attributes
+            let noteId = UUID()
+            note.setValue(noteId, forKey: "id")
+            note.setValue(title, forKey: "title")
+            note.setValue(Date(), forKey: "timestamp")
+            note.setValue(Date(), forKey: "lastModified")
+            note.setValue("recording", forKey: "sourceType")
+            note.setValue("completed", forKey: "processingStatus")
+
+            // Store the transcription and generated note content
+            note.setValue(transcript, forKey: "transcript")
+            note.setValue(content.data(using: .utf8), forKey: "aiGeneratedContent")
+            note.setValue(transcript.data(using: .utf8), forKey: "originalContent")
+
+            // Save audio file to documents directory
+            guard let recordingURL = self.recordingURL else {
+                throw RecordingError.invalidRecordingState
+            }
+
+            let fileManager = FileManager.default
+            let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let fileName = "\(noteId.uuidString).m4a"
+            let destinationURL = documentsPath.appendingPathComponent(fileName)
+
+            do {
+                if fileManager.fileExists(atPath: destinationURL.path) {
+                    try fileManager.removeItem(at: destinationURL)
+                }
+                try fileManager.copyItem(at: recordingURL, to: destinationURL)
+
+                // Store the file reference
+                note.setValue(destinationURL, forKey: "sourceURL")
+
+                // Add duration if available
+                note.setValue(self.recordingDuration, forKey: "duration")
+
+                try self.viewContext.save()
+
+                #if DEBUG
+                print("🎙️ AudioRecordingViewModel: Successfully saved note to database")
+                #endif
+
+                // Create a NoteCardConfiguration for navigation
+                let timestamp = Date()
+
+                // Since we're already on the MainActor, we can directly set these properties
+                self.generatedNote = NoteCardConfiguration(
+                    id: noteId,
+                    title: title,
+                    date: timestamp,
+                    preview: content,
+                    sourceType: .audio,
+                    isFavorite: false,
+                    tags: [],
+                    metadata: [
+                        "rawTranscript": transcript,
+                        "aiGeneratedContent": content
+                    ]
+                )
+
+                // Set flag to trigger navigation
+                self.shouldNavigateToNote = true
+
+                #if DEBUG
+                print("🎙️ AudioRecordingViewModel: Set up navigation to generated note")
+                #endif
+            } catch {
+                #if DEBUG
+                print("🎙️ AudioRecordingViewModel: Failed to save note - \(error)")
+                #endif
+                throw error
+            }
+        }
+    }
+
+    // MARK: - Save Recording (Legacy method, kept for compatibility)
+    func saveRecording(title: String) async throws {
+        #if DEBUG
+        print("🎙️ AudioRecordingViewModel: Saving recording with title: \(title)")
+        #endif
+
+        guard let recordingURL = recordingURL else {
+            throw RecordingError.invalidRecordingState
+        }
+
+        // Save to Core Data
+        try await viewContext.perform { [weak self] in
+            guard let self = self else { return }
+
+            // Create new note
+            let note = NSEntityDescription.insertNewObject(forEntityName: "Note", into: self.viewContext)
+
+            // Set required attributes
+            let noteId = UUID()
+            note.setValue(noteId, forKey: "id")
+            note.setValue(title, forKey: "title")
+            note.setValue(Date(), forKey: "timestamp")
+            note.setValue(Date(), forKey: "lastModified")
+            note.setValue("recording", forKey: "sourceType")
+            note.setValue("completed", forKey: "processingStatus")
+
+            // Set a simple content for non-transcribed recordings
+            let simpleContent = "Audio recording"
+            note.setValue(simpleContent.data(using: .utf8), forKey: "originalContent")
+
+            // Save audio file to documents directory
+            let fileManager = FileManager.default
+            let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let fileName = "\(noteId.uuidString).m4a"
+            let destinationURL = documentsDirectory.appendingPathComponent(fileName)
+
+            do {
+                if fileManager.fileExists(atPath: destinationURL.path) {
+                    try fileManager.removeItem(at: destinationURL)
+                }
+                try fileManager.copyItem(at: recordingURL, to: destinationURL)
+
+                // Store the file reference
+                note.setValue(destinationURL, forKey: "sourceURL")
+
+                // Add duration if available
+                note.setValue(self.recordingDuration, forKey: "duration")
+
+                try self.viewContext.save()
+
+                #if DEBUG
+                print("🎙️ AudioRecordingViewModel: Successfully saved recording to \(destinationURL.path)")
+                #endif
+            } catch {
+                #if DEBUG
+                print("🎙️ AudioRecordingViewModel: Failed to save recording - \(error)")
+                #endif
+                throw error
+            }
+        }
+    }
+
     // MARK: - Timer Management
     private func startTimers() {
         recordingTimer = Task { [weak self] in
@@ -208,7 +419,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
                 guard let self = self else { break }
                 await MainActor.run {
                     self.recordingDuration = self.audioRecorder?.currentTime ?? 0
-                    
+
                     if self.recordingDuration >= self.maxDuration {
                         self.stopRecording()
                     }
@@ -216,7 +427,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
                 try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
             }
         }
-        
+
         audioLevelTimer = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self = self else { break }
@@ -224,7 +435,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
                     self.audioRecorder?.updateMeters()
                     // Get average power and convert to a more responsive level
                     let level = self.audioRecorder?.averagePower(forChannel: 0) ?? -160
-                    
+
                     // Apply a more aggressive normalization to make visualization more responsive
                     // Using a different formula that gives better visual response at lower sound levels
                     let normalizedLevel = max(0, min(1, (level + 50) / 50))
@@ -241,93 +452,48 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
         audioLevelTimer?.cancel()
         audioLevelTimer = nil
     }
-    
+
     private func performCleanup() async {
         guard !isCleanedUp else { return }
         isCleanedUp = true
-        
+
         #if DEBUG
         print("🎙️ AudioRecordingViewModel: Initiating safe cleanup")
         #endif
-        
+
         // Cancel timers on main actor
         recordingTimer?.cancel()
         recordingTimer = nil
         audioLevelTimer?.cancel()
         audioLevelTimer = nil
-        
+
         // Cleanup recording session
         audioRecorder?.stop()
         audioRecorder = nil
-        
+
         // Handle file cleanup on background
         if let url = recordingURL {
             await cleanupManager.cleanup(url: url)
         }
     }
-    
-    // MARK: - Save Recording
-    func saveRecording(title: String) async throws {
-        #if DEBUG
-        print("🎙️ AudioRecordingViewModel: Saving recording with title: \(title)")
-        #endif
-        
-        guard let sourceURL = recordingURL else {
-            throw NSError(domain: "AudioRecording", code: 404, userInfo: [
-                NSLocalizedDescriptionKey: "Recording file not found"
-            ])
-        }
-        
-        isProcessing = true
-        defer { isProcessing = false }
-        
-        // Create a new Note entity
-        let note = try await viewContext.perform {
-            let newNote = NSEntityDescription.insertNewObject(forEntityName: "Note", into: self.viewContext)
-            newNote.setValue(title, forKey: "title")
-            newNote.setValue(Date(), forKey: "timestamp")
-            newNote.setValue("audio", forKey: "sourceType")
-            newNote.setValue(self.recordingDuration, forKey: "duration")
-            
-            // Save to CoreData
-            try self.viewContext.save()
-            
-            #if DEBUG
-            print("🎙️ AudioRecordingViewModel: Note saved to CoreData successfully")
-            #endif
-            
-            return newNote
-        }
-        
-        // Move file to permanent storage
-        let fileManager = FileManager.default
-        let documentsPath = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let destinationURL = documentsPath.appendingPathComponent("\(note.objectID.uriRepresentation().lastPathComponent).m4a")
-        
-        try fileManager.moveItem(at: sourceURL, to: destinationURL)
-        
-        #if DEBUG
-        print("🎙️ AudioRecordingViewModel: Audio file moved to permanent storage")
-        #endif
-    }
-    
+
     // MARK: - Cleanup
     func cleanup() async {
         await performCleanup()
     }
-    
+
     deinit {
         #if DEBUG
         print("🎙️ AudioRecordingViewModel: Starting deinit")
         #endif
-        
+
         // Create a new Task for cleanup that won't retain self
         let urlToCleanup = recordingURL
         Task.detached { [cleanupManager] in
             if let url = urlToCleanup {
                 await cleanupManager.cleanup(url: url)
             }
-            
+
             #if DEBUG
             print("🎙️ AudioRecordingViewModel: Completed deinit cleanup")
             #endif
@@ -342,19 +508,19 @@ extension AudioRecordingViewModel: AVAudioRecorderDelegate {
             #if DEBUG
             print("🎙️ AudioRecordingViewModel: Recording finished - Success: \(flag)")
             #endif
-            
+
             if !flag {
                 errorMessage = "Recording failed to complete properly"
             }
         }
     }
-    
+
     nonisolated func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
         Task { @MainActor in
             #if DEBUG
             print("🎙️ AudioRecordingViewModel: Recording error occurred - \(String(describing: error))")
             #endif
-            
+
             errorMessage = "Recording error: \(error?.localizedDescription ?? "Unknown error")"
         }
     }
@@ -364,14 +530,14 @@ extension AudioRecordingViewModel: AVAudioRecorderDelegate {
 struct ClassicWaveformView: View {
     let audioLevel: CGFloat
     @State private var waveformSamples: [CGFloat] = Array(repeating: 0.05, count: 30)
-    
+
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 // Background
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color.black.opacity(0.03))
-                
+
                 // Classic waveform visualization with vertical bars
                 HStack(spacing: 4) {
                     ForEach(0..<waveformSamples.count, id: \.self) { index in
@@ -401,11 +567,11 @@ struct ClassicWaveformView: View {
             updateWaveform(with: newLevel)
         }
     }
-    
+
     private func startWaveformAnimation() {
         // Create animation timer
         let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
-        
+
         Task {
             for await _ in timer.values {
                 if audioLevel < 0.1 {
@@ -414,7 +580,7 @@ struct ClassicWaveformView: View {
                         let position = Double(i) / Double(waveformSamples.count)
                         let centerPosition = abs(position - 0.5) * 2.0 // 0 at center, 1 at edges
                         let baseHeight = 0.1 - (centerPosition * 0.05) // Higher in center
-                        
+
                         withAnimation(.easeInOut(duration: 0.2)) {
                             waveformSamples[i] = baseHeight
                         }
@@ -423,7 +589,7 @@ struct ClassicWaveformView: View {
             }
         }
     }
-    
+
     private func updateWaveform(with level: CGFloat) {
         if level > 0.05 {
             // Update waveform based on audio level
@@ -431,16 +597,16 @@ struct ClassicWaveformView: View {
                 // Create a varied pattern based on position
                 let position = Double(i) / Double(waveformSamples.count)
                 let centerFactor = 1.0 - abs(position - 0.5) * 1.5
-                
+
                 // Amplify the level for better visualization
-                let amplifiedLevel = min(0.8, level * 3.0) 
-                
+                let amplifiedLevel = min(0.8, level * 3.0)
+
                 // Add some randomness for natural look
                 let randomVariation = Double.random(in: 0.7...1.3)
-                
+
                 // Calculate final height
                 let height = amplifiedLevel * CGFloat(centerFactor * randomVariation)
-                
+
                 // Update with animation
                 withAnimation(.easeOut(duration: 0.1)) {
                     waveformSamples[i] = max(0.05, height)
@@ -455,96 +621,174 @@ struct AudioRecordingView: View {
     @StateObject private var viewModel: AudioRecordingViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.toastManager) private var toastManager
-    @State private var noteTitle: String = ""
-    
+
     init(context: NSManagedObjectContext) {
         self._viewModel = StateObject(wrappedValue: AudioRecordingViewModel(context: context))
     }
-    
+
     var body: some View {
-        NavigationView {
-            ScrollView {
-                VStack(spacing: Theme.Spacing.lg) {
-                    // Header Section
-                    VStack(spacing: Theme.Spacing.sm) {
-                        Image(systemName: "mic.circle.fill")
-                            .font(.system(size: 50))
-                            .foregroundStyle(Theme.Colors.primary)
-                            .padding(.top, Theme.Spacing.md)
-                        
-                        Text("Audio Recording")
-                            .font(.title2)
-                            .fontWeight(.bold)
+        NavigationStack {
+            ZStack {
+                ScrollView {
+                    VStack(spacing: Theme.Spacing.lg) {
+                        // Header Section
+                        VStack(spacing: Theme.Spacing.sm) {
+                            Image(systemName: "mic.circle.fill")
+                                .font(.system(size: 50))
+                                .foregroundStyle(Theme.Colors.primary)
+                                .padding(.top, Theme.Spacing.md)
+
+                            Text("Audio Recording")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .foregroundColor(Theme.Colors.text)
+
+                            Text(getRecordingStateText())
+                                .font(.subheadline)
+                                .foregroundColor(Theme.Colors.secondaryText)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal)
+                        }
+                        .padding(.bottom, Theme.Spacing.sm)
+
+                        // Audio Visualizer
+                        ClassicWaveformView(audioLevel: viewModel.audioLevel)
+                            .frame(height: 180)
+                            .padding(.horizontal)
+
+                        // Recording Controls
+                        VStack(spacing: Theme.Spacing.md) {
+                            // Timer Display
+                            HStack(spacing: 4) {
+                                Image(systemName: viewModel.isRecording ? "record.circle" : "timer")
+                                    .foregroundColor(viewModel.isRecording ? Theme.Colors.error : Theme.Colors.secondaryText)
+                                    .font(.system(size: 18))
+                                    .opacity(viewModel.isRecording ? 1.0 : 0.7)
+
+                                Text(formatDuration(viewModel.recordingDuration))
+                                    .font(.system(size: 24, weight: .medium, design: .monospaced))
+                                    .foregroundColor(Theme.Colors.text)
+                            }
+                            .padding(.vertical, Theme.Spacing.sm)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.black.opacity(0.05))
+                            )
+
+                            // Primary Recording Controls
+                            if viewModel.recordingState == .initial || viewModel.recordingState == .recording {
+                                recordingControlButtons
+                            } else if viewModel.recordingState == .paused {
+                                pausedRecordingButtons
+                            } else if viewModel.recordingState == .finished {
+                                finishedRecordingButtons
+                            }
+                        }
+                        .padding()
+                        .background(Theme.Colors.secondaryBackground)
+                        .cornerRadius(Theme.Layout.cornerRadius)
+                        .padding(.horizontal)
+                    }
+                    .padding(.bottom, Theme.Spacing.xl)
+                }
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Cancel") {
+                            Task {
+                                await viewModel.cleanup()
+                                dismiss()
+                            }
+                        }
+                    }
+                }
+                .navigationDestination(isPresented: $viewModel.shouldNavigateToNote) {
+                    if let note = viewModel.generatedNote {
+                        NoteDetailsView(note: note, context: viewModel.viewContext)
+                    }
+                }
+
+                // Loading Overlay
+                if case .loading(let message) = viewModel.loadingState {
+                    loadingOverlay(message: message)
+                }
+
+                // Error Alert
+                if case .error(let message) = viewModel.loadingState {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            // Reset loading state
+                            viewModel.loadingState = .idle
+                        }
+
+                    VStack(spacing: Theme.Spacing.md) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 40))
+                            .foregroundColor(Theme.Colors.error)
+
+                        Text("Error")
+                            .font(.headline)
                             .foregroundColor(Theme.Colors.text)
-                        
-                        Text(getRecordingStateText())
-                            .font(.subheadline)
+
+                        Text(message)
+                            .font(.body)
                             .foregroundColor(Theme.Colors.secondaryText)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
-                    }
-                    .padding(.bottom, Theme.Spacing.sm)
-                    
-                    // Audio Visualizer
-                    ClassicWaveformView(audioLevel: viewModel.audioLevel)
-                        .frame(height: 180)
-                        .padding(.horizontal)
-                    
-                    // Recording Controls
-                    VStack(spacing: Theme.Spacing.md) {
-                        // Timer Display
-                        HStack(spacing: 4) {
-                            Image(systemName: viewModel.isRecording ? "record.circle" : "timer")
-                                .foregroundColor(viewModel.isRecording ? Theme.Colors.error : Theme.Colors.secondaryText)
-                                .font(.system(size: 18))
-                                .opacity(viewModel.isRecording ? 1.0 : 0.7)
-                            
-                            Text(formatDuration(viewModel.recordingDuration))
-                                .font(.system(size: 24, weight: .medium, design: .monospaced))
-                                .foregroundColor(Theme.Colors.text)
+
+                        Button(action: {
+                            viewModel.loadingState = .idle
+                        }) {
+                            Text("Dismiss")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                                .padding(.vertical, 12)
+                                .padding(.horizontal, 24)
+                                .background(Theme.Colors.primary)
+                                .cornerRadius(10)
                         }
-                        .padding(.vertical, Theme.Spacing.sm)
-                        .padding(.horizontal, Theme.Spacing.md)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.black.opacity(0.05))
-                        )
-                        
-                        // Primary Recording Controls
-                        if viewModel.recordingState == .initial || viewModel.recordingState == .recording {
-                            recordingControlButtons
-                        } else if viewModel.recordingState == .paused {
-                            pausedRecordingButtons
-                        } else if viewModel.recordingState == .finished {
-                            finishedRecordingButtons
-                        }
+                        .padding(.top, Theme.Spacing.sm)
                     }
-                    .padding()
-                    .background(Theme.Colors.secondaryBackground)
-                    .cornerRadius(Theme.Layout.cornerRadius)
-                    .padding(.horizontal)
+                    .padding(Theme.Spacing.lg)
+                    .background(Theme.Colors.background)
+                    .cornerRadius(16)
+                    .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+                    .padding(.horizontal, 40)
                 }
-                .padding(.bottom, Theme.Spacing.xl)
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        Task {
-                            await viewModel.cleanup()
-                            dismiss()
-                        }
-                    }
-                }
-            }
-            .alert("Save Recording", isPresented: $viewModel.showingSaveDialog) {
-                TextField("Recording Title", text: $noteTitle)
-                Button("Cancel", role: .cancel) { }
-                Button("Save") { saveRecording() }
             }
         }
     }
-    
+
+    @ViewBuilder
+    private func loadingOverlay(message: String) -> some View {
+        ZStack {
+            Color.black.opacity(0.4)
+                .ignoresSafeArea()
+
+            VStack(spacing: Theme.Spacing.md) {
+                ProgressView()
+                    .scaleEffect(1.5)
+                    .padding(.bottom, Theme.Spacing.sm)
+
+                Text(message)
+                    .font(.headline)
+                    .foregroundColor(Theme.Colors.text)
+                    .multilineTextAlignment(.center)
+
+                Text("This may take a minute...")
+                    .font(.subheadline)
+                    .foregroundColor(Theme.Colors.secondaryText)
+            }
+            .padding(Theme.Spacing.lg)
+            .background(Theme.Colors.background)
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
+            .padding(.horizontal, 40)
+        }
+    }
+
     private var recordingControlButtons: some View {
         VStack(spacing: Theme.Spacing.md) {
             // Main Record/Pause Button
@@ -563,19 +807,19 @@ struct AudioRecordingView: View {
                             .frame(width: 88, height: 88)
                             .scaleEffect(viewModel.isRecording ? 1.2 : 1.0)
                             .animation(
-                                viewModel.isRecording ? 
-                                    Animation.easeInOut(duration: 0.8).repeatForever(autoreverses: true) : 
+                                viewModel.isRecording ?
+                                    Animation.easeInOut(duration: 0.8).repeatForever(autoreverses: true) :
                                     .default,
                                 value: viewModel.isRecording
                             )
                     }
-                    
+
                     Circle()
                         .fill(viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary)
                         .frame(width: 72, height: 72)
                         .shadow(color: (viewModel.isRecording ? Theme.Colors.error : Theme.Colors.primary).opacity(0.3),
                                radius: 10, x: 0, y: 5)
-                    
+
                     Image(systemName: viewModel.isRecording ? "pause.fill" : "mic.fill")
                         .font(.system(size: 30))
                         .foregroundColor(.white)
@@ -584,7 +828,7 @@ struct AudioRecordingView: View {
             .padding(.vertical, Theme.Spacing.md)
         }
     }
-    
+
     private var pausedRecordingButtons: some View {
         VStack(spacing: Theme.Spacing.md) {
             // Resume Recording Button
@@ -606,7 +850,7 @@ struct AudioRecordingView: View {
                         .shadow(color: Theme.Colors.primary.opacity(0.3), radius: 5, x: 0, y: 2)
                 )
             }
-            
+
             // Generate Note Button
             Button(action: {
                 viewModel.stopRecording()
@@ -626,27 +870,7 @@ struct AudioRecordingView: View {
                         .fill(Color.black.opacity(0.05))
                 )
             }
-            
-            // Save with Custom Title Button
-            Button(action: {
-                viewModel.stopRecording()
-                viewModel.showingSaveDialog = true
-            }) {
-                HStack {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 18))
-                    Text("Save with Custom Title")
-                        .font(.system(size: 16, weight: .medium))
-                }
-                .foregroundColor(Theme.Colors.primary)
-                .padding(.vertical, Theme.Spacing.sm)
-                .padding(.horizontal, Theme.Spacing.md)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.black.opacity(0.05))
-                )
-            }
-            
+
             // Delete Button
             Button(action: {
                 viewModel.deleteRecording()
@@ -663,7 +887,7 @@ struct AudioRecordingView: View {
             }
         }
     }
-    
+
     private var finishedRecordingButtons: some View {
         VStack(spacing: Theme.Spacing.md) {
             // Generate Note Button
@@ -685,26 +909,7 @@ struct AudioRecordingView: View {
                         .shadow(color: Theme.Colors.primary.opacity(0.3), radius: 5, x: 0, y: 2)
                 )
             }
-            
-            // Save with Custom Title Button
-            Button(action: {
-                viewModel.showingSaveDialog = true
-            }) {
-                HStack {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 18))
-                    Text("Save with Custom Title")
-                        .font(.system(size: 16, weight: .medium))
-                }
-                .foregroundColor(Theme.Colors.primary)
-                .padding(.vertical, Theme.Spacing.sm)
-                .padding(.horizontal, Theme.Spacing.md)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.black.opacity(0.05))
-                )
-            }
-            
+
             // Resume Recording Button
             Button(action: {
                 viewModel.startRecording()
@@ -723,7 +928,7 @@ struct AudioRecordingView: View {
                         .fill(Color.black.opacity(0.05))
                 )
             }
-            
+
             // Delete Recording Button
             Button(action: {
                 viewModel.deleteRecording()
@@ -740,7 +945,7 @@ struct AudioRecordingView: View {
             }
         }
     }
-    
+
     private func getRecordingStateText() -> String {
         switch viewModel.recordingState {
         case .initial:
@@ -753,19 +958,7 @@ struct AudioRecordingView: View {
             return "Recording complete"
         }
     }
-    
-    private func saveRecording() {
-        Task {
-            do {
-                try await viewModel.saveRecording(title: noteTitle)
-                dismiss()
-                toastManager.show("Recording saved successfully", type: .success)
-            } catch {
-                toastManager.show(error.localizedDescription, type: .error)
-            }
-        }
-    }
-    
+
     private func formatDuration(_ duration: TimeInterval) -> String {
         let hours = Int(duration) / 3600
         let minutes = Int(duration) / 60 % 60
