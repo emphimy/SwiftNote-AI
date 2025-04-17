@@ -24,7 +24,7 @@ final class HomeViewModel: ObservableObject {
     @Published var isShowingTextScan = false
     @Published var isShowingWebLinkInput = false
     private var cancellables = Set<AnyCancellable>()
-    
+
     // MARK: - Folder Navigation
     @Published var currentFolder: Folder? {
         didSet {
@@ -39,7 +39,7 @@ final class HomeViewModel: ObservableObject {
             #endif
         }
     }
-    
+
     var currentFolderId: UUID? {
         didSet {
             Task { @MainActor in
@@ -54,9 +54,9 @@ final class HomeViewModel: ObservableObject {
             }
         }
     }
-    
+
     private let viewContext: NSManagedObjectContext
-    
+
     private func persistSelectedFolder(_ folder: Folder?) {
         #if DEBUG
         print("""
@@ -65,23 +65,23 @@ final class HomeViewModel: ObservableObject {
         - Notes Count: \(folder?.notes?.count ?? 0)
         """)
         #endif
-        
+
         // Update current folder
         currentFolder = folder
-        
+
         // Force notes refresh
         Task { @MainActor in
             self.fetchNotes()
         }
     }
-    
+
     init(context: NSManagedObjectContext = PersistenceController.shared.container.viewContext) {
         self.viewContext = context
-        
+
         #if DEBUG
         print("📝 HomeViewModel: Initializing with context")
         #endif
-        
+
         // Setup search text observation
         $searchText
             .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
@@ -89,7 +89,7 @@ final class HomeViewModel: ObservableObject {
                 self?.fetchNotes()
             }
             .store(in: &cancellables)
-            
+
         // Listen for note refresh notifications
         NotificationCenter.default.addObserver(
             self,
@@ -97,15 +97,15 @@ final class HomeViewModel: ObservableObject {
             name: .init("RefreshNotes"),
             object: nil
         )
-        
+
         // Initial fetch
         fetchNotes()
     }
-    
+
     @objc private func refreshNotes() {
         fetchNotes()
     }
-    
+
     // MARK: - SQL Debug Logging
     private let sqlDebugEnabled = true
     private func logSQLQuery(_ request: NSFetchRequest<Note>) {
@@ -118,7 +118,7 @@ final class HomeViewModel: ObservableObject {
         - Sort Descriptors: \(String(describing: request.sortDescriptors))
         - Relationship Key Paths: \(String(describing: request.relationshipKeyPathsForPrefetching))
         """)
-        
+
         if let folder = currentFolder {
             print("""
             - Current Folder Stats:
@@ -130,24 +130,24 @@ final class HomeViewModel: ObservableObject {
         }
         #endif
     }
-    
+
     // MARK: - Core Data Operations
     func fetchNotes() {
         #if DEBUG
         print("🏠 HomeViewModel: Starting fetch with search: \(searchText)")
         #endif
-        
+
         isLoading = true
-        
+
         let request = NSFetchRequest<Note>(entityName: "Note")
         request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.timestamp, ascending: false)]
-        
+
         do {
             let results = try viewContext.fetch(request)
             #if DEBUG
             print("📊 Fetched \(results.count) notes")
             #endif
-            
+
             let validNotes: [NoteCardConfiguration] = results.filter { note in
                 // Filter out invalid notes
                 guard note.title != nil,
@@ -183,36 +183,37 @@ final class HomeViewModel: ObservableObject {
                         "aiGeneratedContent": note.aiGeneratedContent != nil ?
                             String(decoding: note.aiGeneratedContent!, as: UTF8.self) : nil,
                         "videoId": note.videoId
-                    ].compactMapValues { $0 }
+                    ].compactMapValues { $0 },
+                    sourceURL: note.sourceURL
                 )
             }
-            
+
             // Sort notes with favorites at the top
             self.notes = sortNotesByFavorite(validNotes)
-            
+
             #if DEBUG
             print("🏠 HomeViewModel: Converted \(self.notes.count) notes to view models")
             #endif
-            
+
         } catch {
             #if DEBUG
             print("❌ HomeViewModel: Error fetching notes - \(error)")
             print("Error details: \((error as NSError).userInfo)")
             #endif
         }
-        
+
         isLoading = false
     }
-    
+
     // MARK: - Note CRUD Operations
     /// Creates a new note
     func createNote(title: String, content: String, sourceType: NoteSourceType, folder: Folder? = nil) {
         #if DEBUG
         print("📝 HomeViewModel: Creating note - Title: \(title), Type: \(sourceType)")
         #endif
-        
+
         isLoading = true
-        
+
         Task {
             do {
                 // Get the default folder if none is specified
@@ -223,19 +224,19 @@ final class HomeViewModel: ObservableObject {
                     // Ensure the All Notes folder exists and get a reference to it
                     folderViewModel.ensureAllNotesFolder()
                     targetFolder = folderViewModel.getDefaultFolder()
-                    
+
                     #if DEBUG
                     print("📝 HomeViewModel: Using default folder: \(targetFolder?.name ?? "nil")")
                     #endif
                 }
-                
+
                 // Create the note
                 let newNote = try PersistenceController.shared.createNote(
                     title: title,
                     content: content,
                     sourceType: sourceType.rawValue
                 )
-                
+
                 // Assign to folder
                 if let targetFolder = targetFolder {
                     #if DEBUG
@@ -248,11 +249,11 @@ final class HomeViewModel: ObservableObject {
                     print("📝 HomeViewModel: Warning - No target folder found, note will not be in any folder")
                     #endif
                 }
-                
+
                 #if DEBUG
                 print("📝 HomeViewModel: Note created successfully and added to folder: \(targetFolder?.name ?? "nil")")
                 #endif
-                
+
                 // Refresh the notes list
                 await MainActor.run {
                     self.fetchNotes()
@@ -268,16 +269,16 @@ final class HomeViewModel: ObservableObject {
             }
         }
     }
-    
+
     /// Updates existing note
     func updateNote(_ note: NoteCardConfiguration, newContent: String? = nil) {
         #if DEBUG
         print("📝 HomeViewModel: Updating note - Title: \(note.title)")
         #endif
-        
+
         let request = NSFetchRequest<Note>(entityName: "Note")
         request.predicate = NSPredicate(format: "title == %@ AND timestamp == %@", note.title, note.date as CVarArg)
-        
+
         do {
             guard let existingNote = try viewContext.fetch(request).first else {
                 #if DEBUG
@@ -285,7 +286,7 @@ final class HomeViewModel: ObservableObject {
                 #endif
                 return
             }
-            
+
             if let newContent = newContent {
                 try PersistenceController.shared.updateNote(
                     existingNote,
@@ -297,13 +298,13 @@ final class HomeViewModel: ObservableObject {
                 existingNote.lastModified = Date()
                 try viewContext.save()
             }
-            
+
             // Force save to persistent store
             PersistenceController.shared.saveContext()
-            
+
             // Refresh notes list
             self.fetchNotes()
-            
+
             #if DEBUG
             print("📝 HomeViewModel: Note updated successfully")
             #endif
@@ -314,12 +315,12 @@ final class HomeViewModel: ObservableObject {
             #endif
         }
     }
-    
+
     func deleteNoteSync(_ note: NoteCardConfiguration) {
         #if DEBUG
         print("🏠 HomeViewModel: Starting synchronous delete for note: \(note.title)")
         #endif
-        
+
         Task {
             do {
                 try await self.deleteNote(note)
@@ -333,18 +334,18 @@ final class HomeViewModel: ObservableObject {
             }
         }
     }
-    
+
     /// Moves note to a folder
     func moveNote(_ note: NoteCardConfiguration, to folder: Folder?) async throws {
         #if DEBUG
         print("📝 HomeViewModel: Moving note \(note.id) to folder: \(folder?.name ?? "root")")
         #endif
-        
+
         // Use performAndWait for synchronous execution
         return try viewContext.performAndWait {
             let request = NSFetchRequest<Note>(entityName: "Note")
             request.predicate = NSPredicate(format: "id == %@", note.id as CVarArg)
-            
+
             guard let existingNote = try self.viewContext.fetch(request).first else {
                 #if DEBUG
                 print("📝 HomeViewModel: Error - Note not found for move operation")
@@ -352,37 +353,37 @@ final class HomeViewModel: ObservableObject {
                 throw NSError(domain: "HomeViewModel", code: 404,
                               userInfo: [NSLocalizedDescriptionKey: "Note not found"])
             }
-            
+
             existingNote.folder = folder
             try self.viewContext.save()
-            
+
             Task { @MainActor in
                 self.fetchNotes()
             }
-            
+
             #if DEBUG
             print("📝 HomeViewModel: Note moved successfully")
             #endif
         }
     }
-    
+
     /// Filters notes by search text
     private func filterNotes() {
         guard !searchText.isEmpty else {
             fetchNotes()
             return
         }
-        
+
         #if DEBUG
         print("📝 HomeViewModel: Filtering notes with search text: \(searchText)")
         #endif
-        
+
         let request = NSFetchRequest<Note>(entityName: "Note")
         request.predicate = NSPredicate(
             format: "title CONTAINS[cd] %@ OR content CONTAINS[cd] %@ OR tags CONTAINS[cd] %@",
             searchText, searchText, searchText
         )
-        
+
         do {
             let results = try viewContext.fetch(request)
             self.notes = results.compactMap { note in
@@ -396,17 +397,18 @@ final class HomeViewModel: ObservableObject {
                     #endif
                     return nil // This will be filtered out by compactMap
                 }
-                
+
                 return NoteCardConfiguration(
                     title: title,
                     date: timestamp,
                     preview: String(decoding: content, as: UTF8.self),
                     sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
                     isFavorite: note.isFavorite,
-                    folder: note.folder
+                    folder: note.folder,
+                    sourceURL: note.sourceURL
                 )
             }
-            
+
             #if DEBUG
             print("📝 HomeViewModel: Found \(notes.count) matching notes")
             #endif
@@ -416,29 +418,29 @@ final class HomeViewModel: ObservableObject {
             #endif
         }
     }
-    
+
     func toggleFavorite(_ note: NoteCardConfiguration) async throws {
         #if DEBUG
         print("🏠 HomeViewModel: Toggling favorite for note: \(note.title)")
         #endif
-        
+
         let request = NSFetchRequest<NSManagedObject>(entityName: "Note")
         request.predicate = NSPredicate(format: "title == %@ AND timestamp == %@", note.title, note.date as CVarArg)
-        
+
         do {
             let results = try viewContext.fetch(request)
             guard let noteObject = results.first else {
                 throw CoreDataError(message: "Note not found")
             }
-            
+
             let currentValue = noteObject.value(forKey: "isFavorite") as? Bool ?? false
             noteObject.setValue(!currentValue, forKey: "isFavorite")
-            
+
             try viewContext.save()
-            
+
             // Fetch notes and sort them with favorites at the top
             fetchNotes()
-            
+
             #if DEBUG
             print("🏠 HomeViewModel: Successfully toggled favorite state")
             #endif
@@ -449,28 +451,28 @@ final class HomeViewModel: ObservableObject {
             throw CoreDataError(message: "Failed to update favorite status: \(error.localizedDescription)")
         }
     }
-    
+
     func deleteNote(_ note: NoteCardConfiguration) async throws {
         #if DEBUG
         print("🏠 HomeViewModel: Deleting note: \(note.title)")
         #endif
-        
+
         let request = NSFetchRequest<Note>(entityName: "Note")
         request.predicate = NSPredicate(format: "title == %@ AND timestamp == %@", note.title, note.date as CVarArg)
-        
+
         do {
             guard let noteObject = try viewContext.fetch(request).first else {
                 throw CoreDataError(message: "Note not found for deletion")
             }
-            
+
             try PersistenceController.shared.deleteNote(noteObject)
-            
+
             // Force save to persistent store
             PersistenceController.shared.saveContext()
-            
+
             // Refresh notes list
             self.fetchNotes()
-            
+
             #if DEBUG
             print("🏠 HomeViewModel: Note deleted successfully")
             #endif
@@ -479,13 +481,13 @@ final class HomeViewModel: ObservableObject {
             print("🏠 HomeViewModel: Error deleting note - \(error)")
             print("Error details: \((error as NSError).userInfo)")
             #endif
-            
+
             throw CoreDataError(message: "Failed to delete note: \(error.localizedDescription)")
         }
     }
-    
+
     // MARK: - Helper Methods
-    
+
     /// Sorts notes with favorites at the top, then by date (newest first)
     private func sortNotesByFavorite(_ notes: [NoteCardConfiguration]) -> [NoteCardConfiguration] {
         return notes.sorted { first, second in

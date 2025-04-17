@@ -7,7 +7,7 @@ enum FolderDetailError: LocalizedError {
     case invalidFolder
     case fetchFailed(Error)
     case saveFailed(Error)
-    
+
     var errorDescription: String? {
         switch self {
         case .invalidFolder:
@@ -27,15 +27,15 @@ final class FolderDetailViewModel: ObservableObject {
     @Published private(set) var isLoading = false
     @Published var searchText = ""
     @Published var errorMessage: String?
-    
+
     private let folder: Folder
     private let viewContext: NSManagedObjectContext
     private var cancellables = Set<AnyCancellable>()
-    
+
     init(folder: Folder, context: NSManagedObjectContext) {
         self.folder = folder
         self.viewContext = context
-        
+
         #if DEBUG
         print("""
         📁 FolderDetailViewModel: Initializing
@@ -43,10 +43,10 @@ final class FolderDetailViewModel: ObservableObject {
         - ID: \(folder.id?.uuidString ?? "nil")
         """)
         #endif
-        
+
         setupSearchSubscription()
     }
-    
+
     private func setupSearchSubscription() {
         $searchText
             .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
@@ -55,19 +55,19 @@ final class FolderDetailViewModel: ObservableObject {
             }
             .store(in: &cancellables)
     }
-    
+
     func fetchNotes() {
         guard let folderId = folder.id else {
             errorMessage = FolderDetailError.invalidFolder.localizedDescription
             return
         }
-        
+
         isLoading = true
-        
+
         let request = NSFetchRequest<Note>(entityName: "Note")
         request.predicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
         request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.timestamp, ascending: false)]
-        
+
         do {
             let fetchedNotes = try viewContext.fetch(request)
             notes = fetchedNotes.compactMap { note in
@@ -77,7 +77,7 @@ final class FolderDetailViewModel: ObservableObject {
                       let sourceTypeStr = note.sourceType else {
                     return nil
                 }
-                
+
                 return NoteCardConfiguration(
                     title: title,
                     date: timestamp,
@@ -85,10 +85,11 @@ final class FolderDetailViewModel: ObservableObject {
                     sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
                     isFavorite: note.isFavorite,
                     tags: note.tags?.components(separatedBy: ",") ?? [],
-                    folder: note.folder
+                    folder: note.folder,
+                    sourceURL: note.sourceURL
                 )
             }
-            
+
             #if DEBUG
             print("""
             📁 FolderDetailViewModel: Fetched notes
@@ -96,34 +97,34 @@ final class FolderDetailViewModel: ObservableObject {
             - Folder: \(folder.name ?? "Untitled")
             """)
             #endif
-            
+
         } catch {
             errorMessage = FolderDetailError.fetchFailed(error).localizedDescription
             #if DEBUG
             print("📁 FolderDetailViewModel: Error fetching notes - \(error)")
             #endif
         }
-        
+
         isLoading = false
     }
-    
+
     private func filterNotes() {
         guard !searchText.isEmpty else {
             fetchNotes()
             return
         }
-        
+
         #if DEBUG
         print("📁 FolderDetailViewModel: Filtering notes with search: \(searchText)")
         #endif
-        
+
         notes = notes.filter { note in
             note.title.localizedCaseInsensitiveContains(searchText) ||
             note.preview.localizedCaseInsensitiveContains(searchText) ||
             note.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
         }
     }
-    
+
     deinit {
         #if DEBUG
         print("📁 FolderDetailViewModel: Deinitializing")
@@ -141,14 +142,14 @@ struct FolderDetailView: View {
     let folder: Folder
     @State private var viewMode: ListGridContainer<AnyView>.ViewMode = .list
     @State private var selectedNote: NoteCardConfiguration?
-    
+
     init(folder: Folder) {
         self.folder = folder
         self._viewModel = StateObject(wrappedValue: FolderDetailViewModel(
             folder: folder,
             context: PersistenceController.shared.container.viewContext
         ))
-        
+
         #if DEBUG
         print("""
         📁 FolderDetailView: Initializing
@@ -157,7 +158,7 @@ struct FolderDetailView: View {
         """)
         #endif
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // MARK: - Search Bar
@@ -172,20 +173,20 @@ struct FolderDetailView: View {
                 }
             )
             .padding()
-            
+
             // MARK: - Folder Header
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 HStack {
                     Circle()
                         .fill(Color(folder.color ?? "blue"))
                         .frame(width: 12, height: 12)
-                    
+
                     Text("\(folder.notes?.count ?? 0) notes")
                         .font(Theme.Typography.caption)
                         .foregroundColor(Theme.Colors.secondaryText)
-                    
+
                     Spacer()
-                    
+
                     Button(action: {
                         #if DEBUG
                         print("📁 FolderDetailView: Toggle view mode to: \(viewMode == .list ? "grid" : "list")")
@@ -206,7 +207,7 @@ struct FolderDetailView: View {
                 .padding(.horizontal)
             }
             .padding(.vertical, Theme.Spacing.sm)
-            
+
             // MARK: - Notes Content
             if viewModel.isLoading {
                 LoadingIndicator(message: "Loading notes...")
@@ -254,7 +255,7 @@ struct FolderDetailView: View {
             viewModel.fetchNotes()
         }
     }
-    
+
     // MARK: - Helper Methods
     private func makeCardActions(for note: NoteCardConfiguration) -> CardActions {
         return CardActionsImplementation(

@@ -2,12 +2,13 @@ import SwiftUI
 import CoreData
 import AVKit
 import Combine
+import AVFoundation
 
 // MARK: - Export URL Model
 struct ExportURLWrapper: Identifiable {
     let id = UUID()
     let url: URL
-    
+
     #if DEBUG
     var debugDescription: String {
         "ExportURLWrapper - id: \(id), url: \(url)"
@@ -32,30 +33,30 @@ final class NoteDetailsViewModel: ObservableObject {
 
     private let viewContext: NSManagedObjectContext
     private let pdfExportService = PDFExportService()
-    
+
     init(note: NoteCardConfiguration, context: NSManagedObjectContext) {
         self.note = note
         self.viewContext = context
-        
+
         #if DEBUG
         print("📝 NoteDetailsViewModel: Initializing with note: \(note.title)")
         #endif
-        
+
         // Fetch available folders
         fetchAvailableFolders()
     }
-    
+
     func fetchAvailableFolders() {
         #if DEBUG
         print("📝 NoteDetailsViewModel: Fetching available folders")
         #endif
-        
+
         let request = NSFetchRequest<Folder>(entityName: "Folder")
         request.sortDescriptors = [
             NSSortDescriptor(keyPath: \Folder.sortOrder, ascending: true),
             NSSortDescriptor(keyPath: \Folder.timestamp, ascending: false)
         ]
-        
+
         do {
             availableFolders = try viewContext.fetch(request)
             #if DEBUG
@@ -68,28 +69,28 @@ final class NoteDetailsViewModel: ObservableObject {
             errorMessage = "Failed to load folders: \(error.localizedDescription)"
         }
     }
-    
+
     func saveChanges() async throws {
         isLoading = true
         defer { isLoading = false }
-        
+
         #if DEBUG
         print("📝 NoteDetailsViewModel: Saving changes for note: \(note.title)")
         #endif
-        
+
         let request = NSFetchRequest<NSManagedObject>(entityName: "Note")
         request.predicate = NSPredicate(format: "id == %@", note.id as CVarArg)
-        
+
         do {
             guard let noteObject = try viewContext.fetch(request).first else {
                 throw NSError(domain: "NoteDetails", code: 404,
                             userInfo: [NSLocalizedDescriptionKey: "Note not found"])
             }
-            
+
             // Update note properties
             noteObject.setValue(note.title, forKey: "title")
             try viewContext.save()
-            
+
             #if DEBUG
             print("📝 NoteDetailsViewModel: Successfully saved changes")
             #endif
@@ -100,50 +101,50 @@ final class NoteDetailsViewModel: ObservableObject {
             throw error
         }
     }
-    
+
     func exportPDF() async throws {
         #if DEBUG
         print("📄 NoteDetailsViewModel: Starting PDF export")
         #endif
-        
+
         isExporting = true
         defer { isExporting = false }
-        
+
         let url = try await pdfExportService.exportNote(note)
         let savedURL = try await pdfExportService.savePDF(url, withName: note.title)
         exportURL = ExportURLWrapper(url: savedURL)
-        
+
         #if DEBUG
         print("📄 NoteDetailsViewModel: PDF export completed successfully")
         #endif
     }
-    
+
     func moveToFolder(_ folder: Folder?) async throws {
         #if DEBUG
         print("📝 NoteDetailsViewModel: Moving note to folder: \(folder?.name ?? "root")")
         #endif
-        
+
         isLoading = true
         defer { isLoading = false }
-        
+
         let request = NSFetchRequest<NSManagedObject>(entityName: "Note")
         request.predicate = NSPredicate(format: "id == %@", note.id as CVarArg)
-        
+
         do {
             let results = try viewContext.fetch(request)
-            
+
             guard let noteObject = results.first as? Note else {
                 throw NSError(domain: "NoteDetailsViewModel", code: -1, userInfo: [
                     NSLocalizedDescriptionKey: "Could not find note with ID \(note.id)"
                 ])
             }
-            
+
             // Update folder
             noteObject.folder = folder
-            
+
             // Save changes
             try viewContext.save()
-            
+
             // Update the note configuration
             note = NoteCardConfiguration(
                 id: note.id,
@@ -153,13 +154,14 @@ final class NoteDetailsViewModel: ObservableObject {
                 sourceType: note.sourceType,
                 isFavorite: note.isFavorite,
                 folder: folder,
-                metadata: note.metadata
+                metadata: note.metadata,
+                sourceURL: note.sourceURL
             )
-            
+
             #if DEBUG
             print("📝 NoteDetailsViewModel: Successfully moved note to folder: \(folder?.name ?? "root")")
             #endif
-            
+
             // Notify that notes should be refreshed
             NotificationCenter.default.post(name: .init("RefreshNotes"), object: nil)
         } catch {
@@ -176,22 +178,22 @@ struct NoteDetailsView: View {
     @StateObject private var viewModel: NoteDetailsViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.toastManager) private var toastManager
-    
+
     init(note: NoteCardConfiguration, context: NSManagedObjectContext) {
         _viewModel = StateObject(wrappedValue: NoteDetailsViewModel(note: note, context: context))
-        
+
         #if DEBUG
         print("📝 NoteDetailsView: Initializing view for note: \(note.title)")
         #endif
     }
-    
+
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     // Header Section
                     headerSection
-                    
+
                     // Content Section
                     contentSection
                 }
@@ -207,7 +209,7 @@ struct NoteDetailsView: View {
                         dismiss()
                     }
                 }
-                
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     HStack(spacing: Theme.Spacing.sm) {
                         // Folder button
@@ -220,7 +222,7 @@ struct NoteDetailsView: View {
                             Image(systemName: "folder")
                                 .foregroundColor(Theme.Colors.primary)
                         }
-                        
+
                         Button(action: {
                             #if DEBUG
                             print("📄 NoteDetailsView: Export button tapped")
@@ -231,7 +233,7 @@ struct NoteDetailsView: View {
                                 .foregroundColor(Theme.Colors.primary)
                         }
                         .disabled(viewModel.isExporting)
-                        
+
                         Button(viewModel.isEditing ? "Save" : "Edit") {
                             handleEditSave()
                         }
@@ -264,8 +266,13 @@ struct NoteDetailsView: View {
             print("📝 NoteDetailsView: View appeared for note: \(viewModel.note.title)")
             #endif
         }
+        .onDisappear {
+            #if DEBUG
+            print("📝 NoteDetailsView: View disappeared for note: \(viewModel.note.title)")
+            #endif
+        }
     }
-    
+
     // MARK: - Header Section
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
@@ -273,7 +280,7 @@ struct NoteDetailsView: View {
                 viewModel.note.sourceType.icon
                     .foregroundColor(viewModel.note.sourceType.color)
                     .font(.title2)
-                
+
                 if viewModel.isEditing {
                     TextField("Title", text: Binding(
                         get: { viewModel.note.title },
@@ -292,19 +299,30 @@ struct NoteDetailsView: View {
                         .font(Theme.Typography.h2)
                 }
             }
-            
+
             Text(viewModel.note.date, style: .date)
                 .font(Theme.Typography.caption)
                 .foregroundColor(Theme.Colors.secondaryText)
         }
     }
-    
+
     // MARK: - Content Section
     private var contentSection: some View {
-        NoteStudyTabs(note: viewModel.note)
-            .padding(.top, Theme.Spacing.md)
+        VStack(spacing: Theme.Spacing.md) {
+            // Audio Player for audio and video notes
+            if (viewModel.note.sourceType == .audio || viewModel.note.sourceType == .video), let audioURL = viewModel.note.audioURL {
+                CompactAudioPlayerView(audioURL: audioURL)
+                    .id(audioURL.absoluteString) // Ensure view is recreated if URL changes
+                    .padding(.bottom, Theme.Spacing.sm)
+                    .frame(maxWidth: .infinity)
+            }
+
+            // Study Tabs
+            NoteStudyTabs(note: viewModel.note)
+        }
+        .padding(.top, Theme.Spacing.md)
     }
-    
+
     // MARK: - Helper Methods
     private func handleEditSave() {
         if viewModel.isEditing {
@@ -328,7 +346,7 @@ struct NoteDetailsView: View {
             viewModel.isEditing = true
         }
     }
-    
+
     private func handleExport() {
         Task {
             do {
@@ -342,12 +360,12 @@ struct NoteDetailsView: View {
             }
         }
     }
-    
+
     private func moveNoteToFolder(_ folder: Folder?) {
         #if DEBUG
         print("📝 NoteDetailsView: Moving note to folder: \(folder?.name ?? "root")")
         #endif
-        
+
         Task {
             do {
                 try await viewModel.moveToFolder(folder)
@@ -365,14 +383,14 @@ struct NoteDetailsView: View {
 // MARK: - Share Sheet
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
-    
+
     func makeUIViewController(context: Context) -> UIActivityViewController {
         #if DEBUG
         print("📄 ShareSheet: Creating activity view controller")
         #endif
         return UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
-    
+
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
@@ -382,7 +400,7 @@ struct FolderPickerView: View {
     let currentFolderName: String?
     let onSelect: (Folder?) -> Void
     @Environment(\.dismiss) private var dismiss
-    
+
     var body: some View {
         NavigationView {
             List {
@@ -394,18 +412,18 @@ struct FolderPickerView: View {
                     HStack {
                         Image(systemName: "tray")
                             .foregroundColor(Theme.Colors.secondaryText)
-                        
+
                         Text("No Folder")
-                        
+
                         Spacer()
-                        
+
                         if currentFolderName == nil {
                             Image(systemName: "checkmark")
                                 .foregroundColor(Theme.Colors.primary)
                         }
                     }
                 }
-                
+
                 // List of folders
                 ForEach(folders) { folder in
                     Button(action: {
@@ -415,11 +433,11 @@ struct FolderPickerView: View {
                         HStack {
                             Image(systemName: "folder.fill")
                                 .foregroundColor(Color(folder.color ?? "FolderBlue"))
-                            
+
                             Text(folder.name ?? "Unnamed Folder")
-                            
+
                             Spacer()
-                            
+
                             if currentFolderName == folder.name {
                                 Image(systemName: "checkmark")
                                     .foregroundColor(Theme.Colors.primary)
@@ -454,17 +472,20 @@ struct NoteDetailsView_Previews: PreviewProvider {
             - New feature prioritization complete
             - Team capacity planning for Q1
             - Budget review and resource allocation
-            
+
             Action items:
             1. Follow up with design team on UI specs
             2. Schedule technical review for security features
             3. Update project documentation
             """,
             sourceType: .audio,
-            isFavorite: true
+            isFavorite: true,
+            metadata: [
+                "duration": 180.0
+            ]
         )
     }
-    
+
     static var previews: some View {
         Group {
             // Default state
@@ -473,7 +494,7 @@ struct NoteDetailsView_Previews: PreviewProvider {
                 context: PersistenceController.preview.container.viewContext
             )
             .previewDisplayName("Default State")
-            
+
             // Audio note with editing
             NoteDetailsView(
                 note: previewNote,
@@ -485,7 +506,7 @@ struct NoteDetailsView_Previews: PreviewProvider {
                 vm.isEditing = true
             }
             .previewDisplayName("Editing State")
-            
+
             // Loading state
             NoteDetailsView(
                 note: previewNote,

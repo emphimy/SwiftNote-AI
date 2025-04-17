@@ -10,7 +10,15 @@ struct NoteCardConfiguration: Identifiable {
     let isFavorite: Bool
     var tags: [String]
     var metadata: [String: Any]?
+    var sourceURL: URL?
+
     var audioURL: URL? {
+        // First try to use the actual sourceURL if available
+        if let url = sourceURL, sourceType == .audio || sourceType == .video {
+            return url
+        }
+
+        // Fallback to the computed path based on ID
         switch sourceType {
         case .audio, .video:
             let fileManager = FileManager.default
@@ -20,7 +28,7 @@ struct NoteCardConfiguration: Identifiable {
             return nil
         }
     }
-    
+
     private var folder: Folder?
 
     var folderName: String? {
@@ -31,7 +39,7 @@ struct NoteCardConfiguration: Identifiable {
         guard let colorName = folder?.color else { return nil }
         return Color(colorName)
     }
-    
+
     // MARK: - Initialization
     init(
         id: UUID = UUID(),
@@ -42,7 +50,8 @@ struct NoteCardConfiguration: Identifiable {
         isFavorite: Bool = false,
         tags: [String] = [],
         folder: Folder? = nil,
-        metadata: [String: Any]? = nil
+        metadata: [String: Any]? = nil,
+        sourceURL: URL? = nil
     ) {
         self.id = id
         self.title = title
@@ -53,7 +62,8 @@ struct NoteCardConfiguration: Identifiable {
         self.tags = tags
         self.folder = folder
         self.metadata = metadata
-        
+        self.sourceURL = sourceURL
+
         #if DEBUG
         print("""
         📝 NoteCardConfiguration: Created new configuration
@@ -72,7 +82,7 @@ struct NoteCardConfiguration: Identifiable {
         let questions: [QuizViewModel.QuizQuestion]
         @State private var selectedAnswers: [UUID: Int] = [:]
         @State private var showingResults = false
-        
+
         var body: some View {
             ScrollView {
                 VStack(spacing: Theme.Spacing.lg) {
@@ -85,7 +95,7 @@ struct NoteCardConfiguration: Identifiable {
                             }
                         )
                     }
-                    
+
                     if !questions.isEmpty {
                         Button("Check Answers") {
                             showingResults = true
@@ -105,12 +115,12 @@ struct NoteCardConfiguration: Identifiable {
         let question: QuizViewModel.QuizQuestion
         let selectedAnswer: Int?
         let onSelect: (Int) -> Void
-        
+
         var body: some View {
             VStack(alignment: .leading, spacing: Theme.Spacing.md) {
                 Text(question.question)
                     .font(Theme.Typography.h3)
-                
+
                 ForEach(question.options.indices, id: \.self) { index in
                     Button {
                         onSelect(index)
@@ -145,7 +155,7 @@ struct NoteCardConfiguration: Identifiable {
     struct FlashcardContent: View {
         let flashcards: [FlashcardsViewModel.Flashcard]
         @ObservedObject var viewModel: FlashcardsViewModel
-        
+
         var body: some View {
             if !flashcards.isEmpty {
                 ZStack {
@@ -177,18 +187,18 @@ struct NoteCardConfiguration: Identifiable {
     private struct FlashcardView: View {
         let card: FlashcardsViewModel.Flashcard
         @Binding var isShowingAnswer: Bool
-        
+
         // Fixed dimensions for consistent card size
         private let cardWidth: CGFloat = 320
         private let cardHeight: CGFloat = 200
         private let cornerRadius: CGFloat = 16
-        
+
         var body: some View {
             ZStack {
                 // Card front (question)
                 cardFace(card.front, isAnswer: false)
                     .opacity(isShowingAnswer ? 0 : 1)
-                
+
                 // Card back (answer)
                 cardFace(card.back, isAnswer: true)
                     .opacity(isShowingAnswer ? 1 : 0)
@@ -205,7 +215,7 @@ struct NoteCardConfiguration: Identifiable {
                 }
             }
         }
-        
+
         // Helper function to create consistent card faces
         private func cardFace(_ content: String, isAnswer: Bool) -> some View {
             VStack(spacing: 0) {
@@ -214,13 +224,13 @@ struct NoteCardConfiguration: Identifiable {
                     Rectangle()
                         .fill(isAnswer ? Theme.Colors.success : Theme.Colors.primary)
                         .frame(height: 40)
-                    
+
                     Text(isAnswer ? "ANSWER" : "QUESTION")
                         .font(Theme.Typography.caption)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
                 }
-                
+
                 // Card content
                 ScrollView {
                     Text(LocalizedStringKey(content))
@@ -255,7 +265,7 @@ extension NoteCardConfiguration: Equatable {
               lhs.folder?.objectID == rhs.folder?.objectID else {
             return false
         }
-        
+
         // Compare metadata dictionaries if they exist
         if let lhsMetadata = lhs.metadata, let rhsMetadata = rhs.metadata {
             return NSDictionary(dictionary: lhsMetadata).isEqual(to: rhsMetadata)
@@ -272,7 +282,7 @@ enum NoteSourceType: String {
     case text = "text"
     case video = "video"
     case upload = "upload"
-    
+
     var icon: Image {
         let iconName: String = {
             switch self {
@@ -284,7 +294,7 @@ enum NoteSourceType: String {
         }()
         return Image(systemName: iconName)
     }
-    
+
     var color: Color {
         switch self {
         case .audio: return .blue
@@ -310,7 +320,7 @@ struct ActionCardItem: Identifiable {
     let icon: String
     let color: Color
     let action: () -> Void
-    
+
     // MARK: - Debug Description
     var debugDescription: String {
         "ActionCardItem: \(title) with icon \(icon)"
