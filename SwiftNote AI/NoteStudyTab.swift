@@ -15,11 +15,11 @@ enum StudyTab: String, CaseIterable {
 
     var icon: String {
         switch self {
-        case .read: return "doc.text"
-        case .transcript: return "text.quote"
-        case .quiz: return "checkmark.circle"
-        case .flashcards: return "rectangle.stack"
-        case .chat: return "bubble.left.and.bubble.right"
+        case .read: return "book.fill"
+        case .transcript: return "doc.text.fill" // Changed from text.quote.fill for better visibility
+        case .quiz: return "checkmark.circle.fill"
+        case .flashcards: return "rectangle.stack.fill"
+        case .chat: return "bubble.left.and.bubble.right.fill"
         }
     }
 }
@@ -31,16 +31,16 @@ struct NoteStudyTabs: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Tab Bar
+            // Modern Tab Bar
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: Theme.Spacing.xs) {
+                HStack(spacing: Theme.Spacing.sm) {
                     ForEach(StudyTab.allCases, id: \.self) { tab in
                         TabButton(
                             title: tab.rawValue,
                             icon: tab.icon,
                             isSelected: selectedTab == tab
                         ) {
-                            withAnimation(.spring(response: 0.3)) {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 selectedTab = tab
                                 #if DEBUG
                                 print("📚 NoteStudyTabs: Tab selected - \(tab)")
@@ -50,18 +50,27 @@ struct NoteStudyTabs: View {
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.md)
-                .padding(.vertical, Theme.Spacing.xs)
+                .padding(.vertical, Theme.Spacing.sm)
             }
-            .background(Theme.Colors.secondaryBackground)
-            .cornerRadius(Theme.Layout.cornerRadius)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Theme.Colors.secondaryBackground.opacity(0.9))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.gray.opacity(0.1), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+            )
             .padding(.horizontal, Theme.Spacing.xs)
-            .padding(.vertical, Theme.Spacing.xs)
+            .padding(.top, 0)
+            .padding(.bottom, Theme.Spacing.md)
 
-            // Content Area
-            Group {
+            // Content Area with smooth transitions
+            ZStack {
                 switch selectedTab {
                 case .read:
                     ReadTabView(note: note)
+                        .transition(AnyTransition.opacity)
                         .onAppear {
                             #if DEBUG
                             print("📚 NoteStudyTabs: Switched to Read tab")
@@ -69,6 +78,7 @@ struct NoteStudyTabs: View {
                         }
                 case .transcript:
                     TranscriptTabView(note: note)
+                        .transition(AnyTransition.opacity)
                         .onAppear {
                             #if DEBUG
                             print("📚 NoteStudyTabs: Switched to Transcript tab")
@@ -76,6 +86,7 @@ struct NoteStudyTabs: View {
                         }
                 case .quiz:
                     QuizTabView(note: note)
+                        .transition(AnyTransition.opacity)
                         .onAppear {
                             #if DEBUG
                             print("📚 NoteStudyTabs: Switched to Quiz tab")
@@ -83,6 +94,7 @@ struct NoteStudyTabs: View {
                         }
                 case .flashcards:
                     FlashcardsTabView(note: note)
+                        .transition(AnyTransition.opacity)
                         .onAppear {
                             #if DEBUG
                             print("📚 NoteStudyTabs: Switched to Flashcards tab")
@@ -90,6 +102,7 @@ struct NoteStudyTabs: View {
                         }
                 case .chat:
                     ChatTabView(note: note)
+                        .transition(AnyTransition.opacity)
                         .onAppear {
                             #if DEBUG
                             print("📚 NoteStudyTabs: Switched to Chat tab")
@@ -97,6 +110,7 @@ struct NoteStudyTabs: View {
                         }
                 }
             }
+            .animation(.easeInOut(duration: 0.3), value: selectedTab)
         }
         .onAppear {
             #if DEBUG
@@ -120,20 +134,36 @@ private struct TabButton: View {
             #endif
             action()
         }) {
-            VStack(spacing: Theme.Spacing.xxs) {
+            VStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundColor(isSelected ? Theme.Colors.primary : Theme.Colors.secondaryText)
+                    .font(.system(size: 18))
+                    .foregroundColor(isSelected ? .white : Theme.Colors.secondaryText)
+                    .frame(width: 24, height: 24)
 
                 Text(title)
-                    .font(Theme.Typography.caption)
-                    .foregroundColor(isSelected ? Theme.Colors.primary : Theme.Colors.secondaryText)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                    .foregroundColor(isSelected ? .white : Theme.Colors.secondaryText)
             }
-            .padding(.horizontal, Theme.Spacing.xs)
-            .padding(.vertical, Theme.Spacing.xxs)
+            .padding(.horizontal, Theme.Spacing.sm)
+            .padding(.vertical, 10)
             .background(
-                RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
-                    .fill(isSelected ? Theme.Colors.primary.opacity(0.1) : Color.clear)
+                ZStack {
+                    if isSelected {
+                        // Selected tab background with gradient
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [
+                                        Theme.Colors.primary,
+                                        Theme.Colors.primary.opacity(0.8)
+                                    ]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .shadow(color: Theme.Colors.primary.opacity(0.3), radius: 3, x: 0, y: 2)
+                    }
+                }
             )
             .contentShape(Rectangle())
         }
@@ -257,18 +287,7 @@ struct FlashcardsTabView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Audio Player for audio and recording notes
-            if (note.sourceType == .audio || note.sourceType == .recording), let audioURL = note.audioURL {
-                CompactAudioPlayerView(audioURL: audioURL)
-                    .id("audio-player-flashcards-\(audioURL.lastPathComponent)-\(UUID())") // Force recreation on each appearance
-                    .padding(.horizontal)
-                    .padding(.bottom, Theme.Spacing.sm)
-                    .onAppear {
-                        #if DEBUG
-                        print("🎴 FlashcardsTabView: Audio player appeared for URL: \(audioURL)")
-                        #endif
-                    }
-            }
+            // Audio player removed - only shown in Read tab
 
             // Header with title and info button
             HStack {
@@ -435,18 +454,7 @@ struct ChatTabView: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
-                // Audio Player for audio and recording notes
-                if (note.sourceType == .audio || note.sourceType == .recording), let audioURL = note.audioURL {
-                    CompactAudioPlayerView(audioURL: audioURL)
-                        .id("audio-player-chat-\(audioURL.lastPathComponent)-\(UUID())") // Force recreation on each appearance
-                        .padding(.horizontal)
-                        .padding(.vertical, Theme.Spacing.sm)
-                        .onAppear {
-                            #if DEBUG
-                            print("💬 ChatTabView: Audio player appeared for URL: \(audioURL)")
-                            #endif
-                        }
-                }
+                // Audio player removed - only shown in Read tab
 
                 // Header
                 HStack {
