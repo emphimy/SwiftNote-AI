@@ -6,7 +6,7 @@ enum NoteGenerationError: LocalizedError {
     case apiError(String)
     case invalidResponse
     case emptyTranscript
-    
+
     var errorDescription: String? {
         switch self {
         case .apiError(let message):
@@ -23,96 +23,91 @@ enum NoteGenerationError: LocalizedError {
 actor NoteGenerationService {
 
     private let openAIService: OpenAIService
-    
+
     init() {
         self.openAIService = AIProxy.openAIService(
             partialKey: "v2|feef4cd4|k3bJw_-iBG5958LZ",
             serviceURL: "https://api.aiproxy.pro/4b571ffb/5b899002"
         )
-        
+
         #if DEBUG
         print("🤖 NoteGeneration: Initializing service")
         #endif
     }
-    
+
     func generateNote(from transcript: String, detectedLanguage: String? = nil) async throws -> String {
         guard !transcript.isEmpty else {
             throw NoteGenerationError.emptyTranscript
         }
-        
+
         #if DEBUG
         print("🤖 NoteGenerationService: Generating note from transcript of length: \(transcript.count)")
         #endif
-        
-        let languagePrompt = detectedLanguage != nil ? "Generate the note in \(detectedLanguage!) language." : ""
-        
+
         let prompt = """
-        Please analyze this transcript and create a well-structured detailed note using proper markdown formatting:
-        
-        Add 1-2 table into different section of the note if anything can be represented better in table. Notes are always between summary and conclusion sections.
-        No need another header before summary. If you have to use ##
-        
-        Only use the detected language even for the base headers and subheaders. 
+        Detect the language of the transcript and write ALL output—including headers—in that language.
 
-        ## Summary (with custom header)
-        Create a detailed summary with a couple of paragraphs.
+        ## Summary
+        Give a 2‑paragraph overview (≤120 words total).
 
-        ## Key Points (with custom header)
-        - Use bullet points for key points. 
+        ## Key Points
+        - Bullet the 6‑10 most important takeaways.
 
-        ## Important Details (with custom header)
-        as many topic as you need with the topic format below
-        
-        ### Topic (with custom header)
-        Content for topic
+        ## Important Details
+        For each major theme you find (create as many as needed):
 
-        ## Notable Quotes (only impactful and important ones, with custom header)
-        > Include quotes if any
+        ### {{Theme Name}}
+        - Concise detail bullets (≤25 words each).
+        - **Feynman Simplification:** one plain‑language paragraph that could be read to a novice.
 
-        ## Conclusion (with custom header)
-        Detailed conclusion based on the whole content with a couple of paragraph.
+        ## Notable Quotes
+        > Include only impactful quotations. Omit this section if none.
 
-        Use proper markdown formatting:
-        1. Use ## for main headers
-        2. Use ### for subheaders
-        3. Use proper table formatting with | and -
-        4. Use > for quotes
-        5. Use - for bullet points
-        6. Use ` for code or technical terms
-        7. Use ** for emphasis
-        
-        \(languagePrompt)
-        
+        ## Tables
+        If—and only if—information (dates, stats, comparisons, steps) would be clearer in a table, add up to **2** tables here. Otherwise omit this section entirely.
+
+        ## Conclusion
+        Wrap up in 1‑2 paragraphs, linking back to the Key Points.
+
+        ### Style Rules
+        1. Use **##** for main headers, **###** for sub‑headers.
+        2. Bullet lists with **-**.
+        3. Format tables with `|` and `-`.
+        4. Inline code or technical terms with back‑ticks.
+        5. Bold sparingly for emphasis.
+        6. Never invent facts not present in the transcript.
+        7. Output *only* Markdown—no explanations, no apologies.
+
         Transcript:
         \(transcript)
         """
-        
+
         return try await makeRequest(prompt: prompt)
     }
-    
+
     func generateTitle(from transcript: String, detectedLanguage: String? = nil) async throws -> String {
         guard !transcript.isEmpty else {
             throw NoteGenerationError.emptyTranscript
         }
-        
+
         let languagePrompt = detectedLanguage != nil ? "Generate the title in \(detectedLanguage!) language." : ""
-        
+
         let prompt = """
         Based on this transcript, generate a concise but descriptive title (maximum 60 characters) that captures the main topic or theme.
         The title should be clear and informative, avoiding generic phrases.
         \(languagePrompt)
-        
+
         Transcript:
         \(transcript)
-        
+
         Generate only the title, nothing else.
         """
-        
+
         let response = try await makeRequest(prompt: prompt)
         // Clean up the response to ensure it's just the title
         return response.trimmingCharacters(in: .whitespacesAndNewlines)
     }
-    
+
     // MARK: - Private Methods
     private func makeRequest(prompt: String) async throws -> String {
         guard !prompt.isEmpty else {
@@ -130,11 +125,11 @@ actor NoteGenerationService {
             let response = try await openAIService.chatCompletionRequest(body: .init(
                 model: "gpt-4.1",
                 messages: [
-                    .system(content: .text("You are a helpful assistant that creates well-structured and detailed notes from the provided content. The notes will be used to study with feynman technique.")),
+                    .system(content: .text("You are Study‑Note‑GPT. Your mission: turn any transcript into clear, well‑structured Markdown notes that help the reader **master** the material using the Feynman technique (teach it back in simple language).")),
                     .user(content: .text(prompt))
                 ]
             ))
-            
+
             guard let content = response.choices.first?.message.content else {
                 #if DEBUG
                 print("🤖 NoteGeneration: Invalid response - no content in choices")
@@ -145,7 +140,7 @@ actor NoteGenerationService {
             #if DEBUG
             print("🤖 NoteGeneration: Successfully received response")
             #endif
-            
+
             return content
 
         } catch AIProxyError.apiError(let message) {

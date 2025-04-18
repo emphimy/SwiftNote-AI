@@ -295,56 +295,38 @@ final class TextUploadViewModel: ObservableObject {
 
     private func processWithAI(text: String) async throws -> Data {
         let prompt = """
-        Please analyze this text document and create a well-structured educational note using proper markdown formatting.
-
-        # Instructions:
-        - Detect and use the primary language of the document for all content
-        - Create a comprehensive yet concise educational note
-        - Use proper markdown formatting throughout
-        - Organize information in a logical, hierarchical structure
-        - Include tables where data can be better represented visually
-        - Highlight key concepts and important terminology
-
-        # Note Structure:
+        Detect the language of the transcript and write ALL output—including headers—in that language.
 
         ## Summary
-        Begin with a concise 2-3 paragraph summary that captures the main ideas and purpose of the document.
+        Give a 2‑paragraph overview (≤120 words total).
 
-        ## Key Concepts
-        - List 5-7 essential concepts from the document
-        - Use **bold** for concept names
-        - Provide brief, clear explanations for each
-        - Include relevant relationships between concepts
+        ## Key Points
+        - Bullet the 6‑10 most important takeaways.
 
-        ## Main Content
-        Organize the main content into logical sections with appropriate headings.
-        For each important topic:
+        ## Important Details
+        For each major theme you find (create as many as needed):
 
-        ### [Topic Name]
-        - Present information clearly with proper context
-        - Use **bold** for important terms and definitions
-        - Use _italic_ for emphasis and technical terminology
-        - Use `code blocks` for formulas, equations, or code snippets
-        - Create tables for comparative data or structured information
-        - Include bullet points for lists of related items
-        - Use numbered lists for sequential steps or processes
+        ### {{Theme Name}}
+        - Concise detail bullets (≤25 words each).
+        - **Feynman Simplification:** one plain‑language paragraph that could be read to a novice.
 
-        ## Examples & Applications
-        If applicable, include practical examples, case studies, or applications of the concepts.
+        ## Notable Quotes
+        > Include only impactful quotations. Omit this section if none.
+
+        ## Tables
+        If—and only if—information (dates, stats, comparisons, steps) would be clearer in a table, add up to **2** tables here. Otherwise omit this section entirely.
 
         ## Conclusion
-        Summarize the key takeaways and their significance.
+        Wrap up in 1‑2 paragraphs, linking back to the Key Points.
 
-        # Formatting Guidelines:
-        - Use ## for main sections
-        - Use ### for subsections
-        - Use **bold** for important terms and definitions
-        - Use _italic_ for emphasis
-        - Use `code` for technical elements
-        - Use > for important quotes or highlights
-        - Use proper table formatting with headers
-        - Use bullet points (-) for unordered lists
-        - Use numbers (1.) for ordered lists
+        ### Style Rules
+        1. Use **##** for main headers, **###** for sub‑headers.
+        2. Bullet lists with **-**.
+        3. Format tables with `|` and `-`.
+        4. Inline code or technical terms with back‑ticks.
+        5. Bold sparingly for emphasis.
+        6. Never invent facts not present in the transcript.
+        7. Output *only* Markdown—no explanations, no apologies.
 
         Document to analyze:
         \(text)
