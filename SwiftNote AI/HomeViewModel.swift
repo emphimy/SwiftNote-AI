@@ -139,7 +139,19 @@ final class HomeViewModel: ObservableObject {
 
         isLoading = true
 
+        // If search text is not empty, use filterNotes instead
+        if !searchText.isEmpty {
+            filterNotes()
+            return
+        }
+
         let request = NSFetchRequest<Note>(entityName: "Note")
+
+        // Apply folder filter if a folder is selected
+        if let folderId = currentFolderId {
+            request.predicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+        }
+
         request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.timestamp, ascending: false)]
 
         do {
@@ -378,16 +390,63 @@ final class HomeViewModel: ObservableObject {
         print("📝 HomeViewModel: Filtering notes with search text: \(searchText)")
         #endif
 
+        isLoading = true
+
         let request = NSFetchRequest<Note>(entityName: "Note")
-        request.predicate = NSPredicate(
-            format: "title CONTAINS[cd] %@ OR content CONTAINS[cd] %@ OR tags CONTAINS[cd] %@",
-            searchText, searchText, searchText
-        )
+
+        // Create predicates for searching in title and content
+        let titlePredicate = NSPredicate(format: "title CONTAINS[cd] %@", searchText)
+
+        // For content, we need to search in both originalContent and aiGeneratedContent
+        let originalContentPredicate = NSPredicate(format: "originalContent != nil")
+        let aiContentPredicate = NSPredicate(format: "aiGeneratedContent != nil")
+
+        // Apply folder filter if a folder is selected
+        if let folderId = currentFolderId {
+            let folderPredicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+            request.predicate = NSCompoundPredicate(type: .and, subpredicates: [folderPredicate, titlePredicate])
+        } else {
+            request.predicate = titlePredicate
+        }
+
+        request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.timestamp, ascending: false)]
 
         do {
-            let results = try viewContext.fetch(request)
-            self.notes = results.compactMap { note in
-                // Instead of returning nil, we'll skip notes with missing required properties
+            // First fetch notes matching the title
+            var results = try viewContext.fetch(request)
+
+            // Now fetch notes that might contain the search text in their content
+            // We'll do this as a separate query to avoid complex binary data predicates
+            let allNotesRequest = NSFetchRequest<Note>(entityName: "Note")
+            if let folderId = currentFolderId {
+                allNotesRequest.predicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+            }
+            let allNotes = try viewContext.fetch(allNotesRequest)
+
+            // Filter notes that contain the search text in their content
+            let contentMatchingNotes = allNotes.filter { note in
+                guard let originalContent = note.originalContent else { return false }
+
+                let originalContentString = String(decoding: originalContent, as: UTF8.self)
+                if originalContentString.localizedCaseInsensitiveContains(searchText) {
+                    return true
+                }
+
+                // Also check aiGeneratedContent if available
+                if let aiContent = note.aiGeneratedContent {
+                    let aiContentString = String(decoding: aiContent, as: UTF8.self)
+                    return aiContentString.localizedCaseInsensitiveContains(searchText)
+                }
+
+                return false
+            }
+
+            // Combine results, removing duplicates
+            let allResults = Array(Set(results + contentMatchingNotes))
+
+            // Convert to view models
+            self.notes = allResults.compactMap { note in
+                // Skip notes with missing required properties
                 guard let title = note.title,
                       let timestamp = note.timestamp,
                       let content = note.originalContent,
@@ -399,9 +458,12 @@ final class HomeViewModel: ObservableObject {
                 }
 
                 return NoteCardConfiguration(
+                    id: note.id ?? UUID(),
                     title: title,
                     date: timestamp,
-                    preview: String(decoding: content, as: UTF8.self),
+                    preview: note.aiGeneratedContent != nil ?
+                        String(decoding: note.aiGeneratedContent!, as: UTF8.self) :
+                        String(decoding: content, as: UTF8.self),
                     sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
                     isFavorite: note.isFavorite,
                     folder: note.folder,
@@ -409,14 +471,19 @@ final class HomeViewModel: ObservableObject {
                 )
             }
 
+            // Sort notes with favorites at the top
+            self.notes = sortNotesByFavorite(self.notes)
+
             #if DEBUG
-            print("📝 HomeViewModel: Found \(notes.count) matching notes")
+            print("📝 HomeViewModel: Found \(notes.count) matching notes for search: \(searchText)")
             #endif
         } catch {
             #if DEBUG
             print("📝 HomeViewModel: Error filtering notes - \(error)")
             #endif
         }
+
+        isLoading = false
     }
 
     func toggleFavorite(_ note: NoteCardConfiguration) async throws {
