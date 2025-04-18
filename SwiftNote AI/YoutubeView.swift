@@ -20,7 +20,7 @@ struct YouTubeView: View {
             ScrollView {
                 VStack(spacing: Theme.Spacing.xl) {
                     // Header Section
-                    VStack(spacing: Theme.Spacing.md) {
+                    VStack(spacing: Theme.Spacing.sm) {
                         Image(systemName: "play.circle.fill")
                             .font(.system(size: 60))
                             .foregroundStyle(
@@ -33,12 +33,11 @@ struct YouTubeView: View {
                             .padding(.top, Theme.Spacing.xl)
 
                         Text("YouTube Notes")
-                            .font(.title2)
-                            .fontWeight(.bold)
+                            .font(Theme.Typography.h2)
                             .foregroundColor(Theme.Colors.text)
 
                         Text("Create AI-powered notes from YouTube videos")
-                            .font(.body)
+                            .font(Theme.Typography.body)
                             .foregroundColor(Theme.Colors.secondaryText)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
@@ -148,19 +147,19 @@ struct YouTubeView: View {
 class YouTubeViewModel: ObservableObject {
     private let youtubeService: YouTubeService
     private let noteGenerationService: NoteGenerationService
-    
+
     @Published var isProcessing = false
     @Published var processState = ""
     @Published var shouldNavigateToNote = false
     @Published var generatedNote: NoteCardConfiguration?
     @Published private(set) var loadingState: LoadingState = .idle
     private var videoId: String?
-    
+
     init() {
         self.youtubeService = YouTubeService()
         self.noteGenerationService = NoteGenerationService()
     }
-    
+
     private func validateURL(_ urlString: String) throws -> String {
         guard let videoId = extractVideoId(from: urlString) else {
             #if DEBUG
@@ -171,36 +170,36 @@ class YouTubeViewModel: ObservableObject {
         self.videoId = videoId
         return urlString
     }
-    
+
     func processVideo(url: String) async throws {
         isProcessing = true
         defer { isProcessing = false }
-        
+
         do {
             _ = try validateURL(url)
             guard let videoId = self.videoId else {
                 throw YouTubeError.invalidVideoId
             }
-            
+
             #if DEBUG
             print("🎥 YouTubeViewModel: Starting video processing for ID: \(videoId)")
             #endif
-            
+
             loadingState = .loading(message: "Extracting transcript...")
             let (transcript, language) = try await youtubeService.getTranscript(videoId: videoId)
-            
+
             loadingState = .loading(message: "Generating note...")
             let noteContent = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: language)
-            
+
             loadingState = .loading(message: "Generating title...")
             let title = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: language)
-            
+
             // Save to Core Data
             loadingState = .loading(message: "Saving note...")
             let context = PersistenceController.shared.container.viewContext
-            
+
             var savedNoteId: UUID?
-            
+
             try context.performAndWait {
                 let note = Note(context: context)
                 note.id = UUID()
@@ -213,15 +212,15 @@ class YouTubeViewModel: ObservableObject {
                 note.sourceType = "video"
                 note.isFavorite = false
                 note.processingStatus = "completed"
-                
+
                 // Store video ID directly
                 note.videoId = videoId
-                
+
                 try context.save()
                 print("📝 YouTubeViewModel: Note saved successfully")
                 print("📝 YouTubeViewModel: Note ID: \(note.id?.uuidString ?? "unknown")")
                 print("📝 YouTubeViewModel: Video ID: \(videoId)")
-                
+
                 #if DEBUG
                 // Verify save
                 let request = Note.fetchRequest()
@@ -229,7 +228,7 @@ class YouTubeViewModel: ObservableObject {
                 print("- Total notes in CoreData: \(count)")
                 #endif
             }
-            
+
             generatedNote = NoteCardConfiguration(
                 id: savedNoteId ?? UUID(),
                 title: title,
@@ -242,10 +241,10 @@ class YouTubeViewModel: ObservableObject {
                     "videoId": videoId  // Include video ID for possible player embedding
                 ]
             )
-            
+
             loadingState = .success(message: "Note created successfully")
             shouldNavigateToNote = true
-            
+
             #if DEBUG
             print("🎥 YouTubeViewModel: Note generation completed")
             print("- Title: \"\(title)\"")
@@ -259,7 +258,7 @@ class YouTubeViewModel: ObservableObject {
             throw error
         }
     }
-    
+
     private func extractVideoId(from url: String) -> String? {
         let patterns = [
             "(?<=v=)[^&]+",           // Standard YouTube URL
@@ -267,7 +266,7 @@ class YouTubeViewModel: ObservableObject {
             "(?<=embed/)[^&]+",       // Embedded player URL
             "(?<=videos/)[^&]+"       // Alternative video URL
         ]
-        
+
         for pattern in patterns {
             if let regex = try? NSRegularExpression(pattern: pattern),
                let match = regex.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)),
@@ -275,12 +274,12 @@ class YouTubeViewModel: ObservableObject {
                 return String(url[range])
             }
         }
-        
+
         // If no patterns match, check if the input is a direct video ID
         if url.count == 11 && url.range(of: "^[A-Za-z0-9_-]{11}$", options: .regularExpression) != nil {
             return url
         }
-        
+
         return nil
     }
 }

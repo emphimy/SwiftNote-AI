@@ -311,7 +311,7 @@ struct ScanTextView: View {
                         .frame(height: viewModel.scannedPages.isEmpty ? 0 : 120)
                     VStack(spacing: Theme.Spacing.xl) {
                         // Header Section
-                        VStack(spacing: Theme.Spacing.md) {
+                        VStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: "viewfinder.circle.fill")
                                 .font(.system(size: 60))
                                 .foregroundStyle(
@@ -324,12 +324,11 @@ struct ScanTextView: View {
                                 .padding(.top, Theme.Spacing.xl)
 
                             Text("Scan Document")
-                                .font(.title2)
-                                .fontWeight(.bold)
+                                .font(Theme.Typography.h2)
                                 .foregroundColor(Theme.Colors.text)
 
                             Text("Scan physical documents and convert them to digital notes")
-                                .font(.body)
+                                .font(Theme.Typography.body)
                                 .foregroundColor(Theme.Colors.secondaryText)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal)

@@ -635,22 +635,26 @@ struct AudioRecordingView: View {
                         // Header Section
                         VStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: "mic.circle.fill")
-                                .font(.system(size: 50))
-                                .foregroundStyle(Theme.Colors.primary)
-                                .padding(.top, Theme.Spacing.md)
+                                .font(.system(size: 60))
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .padding(.top, Theme.Spacing.xl)
 
                             Text("Audio Recording")
-                                .font(.title2)
-                                .fontWeight(.bold)
+                                .font(Theme.Typography.h2)
                                 .foregroundColor(Theme.Colors.text)
 
                             Text(getRecordingStateText())
-                                .font(.subheadline)
+                                .font(Theme.Typography.body)
                                 .foregroundColor(Theme.Colors.secondaryText)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal)
                         }
-                        .padding(.bottom, Theme.Spacing.sm)
 
                         // Audio Visualizer
                         ClassicWaveformView(audioLevel: viewModel.audioLevel)
