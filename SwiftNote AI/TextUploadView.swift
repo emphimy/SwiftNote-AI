@@ -295,39 +295,40 @@ final class TextUploadViewModel: ObservableObject {
 
     private func processWithAI(text: String) async throws -> Data {
         let prompt = """
-        Detect the language of the transcript and write EVERYTHING including headers in that language.
+        Detect the language of the transcript and write ALL output—including headers—in that language.
 
         ## Summary
         Give a 2‑paragraph overview (≤120 words total).
 
         ## Key Points
-        - List the 6–10 most important takeaways.
+        - Bullet the 6‑10 most important takeaways.
 
         ## Important Details
         For each major theme you find (create as many as needed):
 
-        ### <Theme Name>
-        - Bullet details (max 25 words each).
-        💡 **SwiftNote Simplification:**
-        One short paragraph that explains the theme in plain language to a novice.
+        ### {{Theme Name}}
+        - Concise detail bullets (≤25 words each).
+        > ### 💡 **Feynman Simplification**
+        >
+        > One plain‑language paragraph that could be read to a novice.
 
         ## Notable Quotes
         > Include only impactful quotations. Omit this section if none.
 
         ## Tables
-        Add up to **two** tables **only if** dates, stats, steps, or comparisons are clearer that way. Otherwise omit this section.
+        If—and only if—information (dates, stats, comparisons, steps) would be clearer in a table, add up to **2** tables here. Otherwise omit this section entirely.
 
         ## Conclusion
         Wrap up in 1‑2 paragraphs, linking back to the Key Points.
 
         ### Style Rules
-        1. `##` for main headers, `###` for sub‑headers  
-        2. Bullets with `-`  
-        3. Tables with `|` and `-`  
-        4. Inline code/terms with back‑ticks  
-        5. Bold sparingly for emphasis  
-        6. Never invent facts not in the transcript  
-        7. Output **only** Markdown—no extra commentary
+        1. Use **##** for main headers, **###** for sub‑headers.
+        2. Bullet lists with **-**.
+        3. Format tables with `|` and `-`.
+        4. Inline code or technical terms with back‑ticks.
+        5. Bold sparingly for emphasis.
+        6. Never invent facts not present in the transcript.
+        7. Output *only* Markdown—no explanations, no apologies.
 
         Document to analyze:
         \(text)

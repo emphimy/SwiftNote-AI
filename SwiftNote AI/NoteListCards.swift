@@ -71,12 +71,8 @@ struct NoteListCard: View {
                 }
             }
             .padding(Theme.Spacing.md)
-            .background(Theme.Colors.background)
+            .background(Theme.Colors.cardBackground)
             .cornerRadius(Theme.Layout.cornerRadius)
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
-                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-            )
         }
         .buttonStyle(PlainButtonStyle())
         .onDrag {
@@ -164,13 +160,9 @@ struct NoteGridCard: View {
                 }
             }
             .padding(Theme.Spacing.md)
-            .background(Theme.Colors.background)
+            .background(Theme.Colors.cardBackground)
             .frame(width: 160, height: 180)
             .cornerRadius(Theme.Layout.cornerRadius)
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
-                    .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-            )
         }
         .buttonStyle(PlainButtonStyle())
     }

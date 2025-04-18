@@ -289,7 +289,7 @@ struct NoteDetailsView: View {
             HStack {
                 viewModel.note.sourceType.icon
                     .foregroundColor(viewModel.note.sourceType.color)
-                    .font(.title2)
+                    .font(.system(size: 26, weight: .bold))
 
                 if viewModel.isEditing {
                     TextField("Title", text: Binding(

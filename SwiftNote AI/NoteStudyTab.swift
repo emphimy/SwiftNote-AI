@@ -42,9 +42,9 @@ struct NoteStudyTabs: View {
                         ) {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                 selectedTab = tab
-                                #if DEBUG
+#if DEBUG
                                 print("📚 NoteStudyTabs: Tab selected - \(tab)")
-                                #endif
+#endif
                             }
                         }
                     }
@@ -72,50 +72,50 @@ struct NoteStudyTabs: View {
                     ReadTabView(note: note)
                         .transition(AnyTransition.opacity)
                         .onAppear {
-                            #if DEBUG
+#if DEBUG
                             print("📚 NoteStudyTabs: Switched to Read tab")
-                            #endif
+#endif
                         }
                 case .transcript:
                     TranscriptTabView(note: note)
                         .transition(AnyTransition.opacity)
                         .onAppear {
-                            #if DEBUG
+#if DEBUG
                             print("📚 NoteStudyTabs: Switched to Transcript tab")
-                            #endif
+#endif
                         }
                 case .quiz:
                     QuizTabView(note: note)
                         .transition(AnyTransition.opacity)
                         .onAppear {
-                            #if DEBUG
+#if DEBUG
                             print("📚 NoteStudyTabs: Switched to Quiz tab")
-                            #endif
+#endif
                         }
                 case .flashcards:
                     FlashcardsTabView(note: note)
                         .transition(AnyTransition.opacity)
                         .onAppear {
-                            #if DEBUG
+#if DEBUG
                             print("📚 NoteStudyTabs: Switched to Flashcards tab")
-                            #endif
+#endif
                         }
                 case .chat:
                     ChatTabView(note: note)
                         .transition(AnyTransition.opacity)
                         .onAppear {
-                            #if DEBUG
+#if DEBUG
                             print("📚 NoteStudyTabs: Switched to Chat tab")
-                            #endif
+#endif
                         }
                 }
             }
             .animation(.easeInOut(duration: 0.3), value: selectedTab)
         }
         .onAppear {
-            #if DEBUG
+#if DEBUG
             print("📚 NoteStudyTabs: View appeared - Initial tab: \(selectedTab)")
-            #endif
+#endif
         }
     }
 }
@@ -129,20 +129,20 @@ private struct TabButton: View {
 
     var body: some View {
         Button(action: {
-            #if DEBUG
+#if DEBUG
             print("📚 TabButton: Tapped - \(title)")
-            #endif
+#endif
             action()
         }) {
             VStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 18))
-                    .foregroundColor(isSelected ? .white : Theme.Colors.secondaryText)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(isSelected ? .white : Theme.Colors.text.opacity(0.7))
                     .frame(width: 24, height: 24)
 
                 Text(title)
                     .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                    .foregroundColor(isSelected ? .white : Theme.Colors.secondaryText)
+                    .foregroundColor(isSelected ? .white : Theme.Colors.text.opacity(0.7))
             }
             .padding(.horizontal, Theme.Spacing.sm)
             .padding(.vertical, 10)
@@ -180,9 +180,9 @@ struct ReadTabView: View {
         self.note = note
         self._viewModel = StateObject(wrappedValue: ReadTabViewModel(note: note))
 
-        #if DEBUG
+#if DEBUG
         print("📖 ReadTabView: Initializing with note: \(note.title)")
-        #endif
+#endif
     }
 
     var body: some View {
@@ -199,9 +199,9 @@ struct ReadTabView: View {
                         userInfo: [NSLocalizedDescriptionKey: error]
                     )
                 ) {
-                    #if DEBUG
+#if DEBUG
                     print("📖 ReadTabView: Retrying content load")
-                    #endif
+#endif
                     Task {
                         await viewModel.loadContent()
                     }
@@ -225,9 +225,9 @@ struct ReadTabView: View {
                             .padding(.bottom, Theme.Spacing.sm)
                             .padding(.horizontal, -Theme.Spacing.xs) // Extend beyond the normal content padding
                             .onAppear {
-                                #if DEBUG
+#if DEBUG
                                 print("📝 ReadTabView: Audio player appeared for URL: \(audioURL)")
-                                #endif
+#endif
                             }
                     }
 
@@ -243,9 +243,9 @@ struct ReadTabView: View {
             }
         }
         .task {
-            #if DEBUG
+#if DEBUG
             print("📖 ReadTabView: Loading content on appear")
-            #endif
+#endif
             await viewModel.loadContent()
         }
     }
@@ -350,9 +350,9 @@ struct FlashcardsTabView: View {
         }
         .padding(.vertical)
         .onAppear {
-            #if DEBUG
+#if DEBUG
             print("🎴 FlashcardsTab: View appeared for note: \(note.title)")
-            #endif
+#endif
         }
         .alert("About Flashcards", isPresented: $showingInfo) {
             Button("OK", role: .cancel) { }
@@ -450,86 +450,74 @@ struct ChatTabView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            VStack(spacing: 0) {
-                // Audio player removed - only shown in Read tab
-
-                // Header
-                HStack {
-                    Text("Chat")
-                        .font(Theme.Typography.h2)
-                        .foregroundColor(Theme.Colors.primary)
-
-                    Spacer()
-                }
-                .padding(.horizontal)
-                .padding(.bottom, Theme.Spacing.md)
-
-                // Chat Messages
-                ScrollViewReader { scrollProxy in
-                    ScrollView {
-                        LazyVStack(spacing: Theme.Spacing.md) {
-                            ForEach(viewModel.messages) { message in
-                                ChatMessageBubble(message: message, viewModel: viewModel)
-                                    .id(message.id)
-                            }
-
-                            // Typing indicator
-                            if viewModel.isTyping {
-                                HStack {
-                                    // AI avatar
-                                    Image(systemName: "sparkles")
-                                        .foregroundColor(Theme.Colors.primary)
-                                        .padding(8)
-                                        .background(Theme.Colors.background)
-                                        .clipShape(Circle())
-
-                                    // Message bubble with typing animation
-                                    VStack(alignment: .leading) {
-                                        Text(viewModel.parseMarkdown(viewModel.typingMessage))
-                                            .padding()
-                                            .background(Theme.Colors.secondaryBackground)
-                                            .foregroundColor(Theme.Colors.text)
-                                            .cornerRadius(Theme.Layout.cornerRadius)
-                                    }
-
-                                    Spacer()
-                                }
-                                .id("typingIndicator")
-                            }
-
-                            // Spacer at the bottom to ensure content can scroll above the input bar
-                            Color.clear
-                                .frame(height: 60)
-                                .id("bottomSpacer")
-                        }
-                        .padding()
-                    }
-                    .onChange(of: viewModel.messages.count) { _ in
-                        if let lastMessage = viewModel.messages.last {
-                            withAnimation {
-                                scrollProxy.scrollTo(lastMessage.id, anchor: .bottom)
-                            }
-                        }
-                    }
-                    .onChange(of: viewModel.typingMessage) { _ in
-                        if viewModel.isTyping {
-                            withAnimation {
-                                scrollProxy.scrollTo("typingIndicator", anchor: .bottom)
-                            }
-                        }
-                    }
-                    .onChange(of: keyboardHeight) { _ in
-                        withAnimation {
-                            scrollProxy.scrollTo("bottomSpacer", anchor: .bottom)
-                        }
-                    }
-                }
+        VStack(spacing: 0) {
+            // Header with title - more compact
+            HStack {
+                Text("Chat With Note")
+                    .font(Theme.Typography.h2)
+                    .foregroundColor(Theme.Colors.primary)
 
                 Spacer()
             }
+            .padding(.horizontal)
+            .padding(.bottom, Theme.Spacing.sm) // Reduced bottom padding
 
-            VStack(spacing: 0) {
+            // Chat Messages List with ScrollViewReader for programmatic scrolling
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: Theme.Spacing.md) {
+                        ForEach(viewModel.messages) { message in
+                            MessageBubble(message: message, viewModel: viewModel)
+                                .id(message.id)
+                        }
+
+                        // Typing indicator
+                        if viewModel.isTyping {
+                            TypingIndicator(message: viewModel.typingMessage, viewModel: viewModel)
+                                .id("typingIndicator")
+                        }
+
+                        // Minimal spacer at the bottom
+                        Color.clear
+                            .frame(height: 20) // Fixed small height
+                            .id("bottomSpacer")
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, Theme.Spacing.xs) // Reduced vertical padding
+                }
+                .onChange(of: viewModel.messages.count) { _ in
+                    if let lastMessage = viewModel.messages.last {
+                        withAnimation {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        }
+                    }
+                }
+                .onChange(of: viewModel.typingMessage) { _ in
+                    if viewModel.isTyping {
+                        withAnimation {
+                            proxy.scrollTo("typingIndicator", anchor: .bottom)
+                        }
+                    }
+                }
+                .onChange(of: keyboardHeight) { newHeight in
+                    if newHeight > 0 {
+                        // When keyboard appears, scroll to ensure content is visible
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                // First scroll to the bottom spacer
+                                proxy.scrollTo("bottomSpacer", anchor: .bottom)
+
+                                // Then scroll to the last message or typing indicator if available
+                                if viewModel.isTyping {
+                                    proxy.scrollTo("typingIndicator", anchor: .bottom)
+                                } else if let lastMessage = viewModel.messages.last {
+                                    proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Error message if present
                 if let error = viewModel.error {
                     HStack {
@@ -554,89 +542,96 @@ struct ChatTabView: View {
                     .background(Theme.Colors.errorBackground)
                 }
 
-                // Thinking indicator (moved to bottom)
-                if viewModel.chatState.isProcessing && !viewModel.isTyping {
-                    HStack(spacing: Theme.Spacing.sm) {
-                        Image(systemName: "sparkles")
-                            .foregroundColor(Theme.Colors.primary)
-
-                        ProgressView()
-                            .scaleEffect(0.8)
-
-                        Text("AI is thinking...")
-                            .font(Theme.Typography.caption)
-                            .foregroundColor(Theme.Colors.secondaryText)
-
-                        Spacer()
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, Theme.Spacing.sm)
-                    .background(Theme.Colors.secondaryBackground)
-                }
-
-                // Input Bar
-                HStack(spacing: Theme.Spacing.md) {
+                // Input Bar - very compact design
+                HStack(spacing: Theme.Spacing.sm) {
+                    // Message Input Field
                     TextField("Ask a question...", text: $viewModel.inputMessage, axis: .vertical)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .textFieldStyle(.plain)
+                        .padding(.horizontal, Theme.Spacing.sm)
+                        .padding(.vertical, 8) // Slightly increased vertical padding
+                        .background(Theme.Colors.secondaryBackground)
+                        .cornerRadius(Theme.Layout.cornerRadius)
                         .focused($isInputFocused)
                         .disabled(viewModel.chatState.isProcessing && !viewModel.isTyping)
                         .submitLabel(.send)
                         .onSubmit {
                             sendMessage()
                         }
+                        .lineLimit(1) // Single line by default
 
+                    // Send Button
                     if viewModel.isTyping {
-                        // Stop button
                         Button(action: {
                             viewModel.stopResponse()
                         }) {
-                            Image(systemName: "stop.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(Theme.Colors.error)
+                            Circle()
+                                .fill(Theme.Colors.error)
+                                .frame(width: 42, height: 42)
+                                .overlay(
+                                    Image(systemName: "stop.fill")
+                                        .foregroundColor(.white)
+                                )
                         }
                     } else {
-                        // Send button
                         Button(action: sendMessage) {
-                            Image(systemName: "arrow.up.circle.fill")
-                                .font(.title2)
-                                .foregroundColor(viewModel.inputMessage.isEmpty || viewModel.chatState.isProcessing ?
-                                                Theme.Colors.secondaryText : Theme.Colors.primary)
+                            Circle()
+                                .fill(viewModel.inputMessage.isEmpty || viewModel.chatState.isProcessing ?
+                                      Theme.Colors.secondaryText : Theme.Colors.primary)
+                                .frame(width: 42, height: 42)
+                                .overlay(
+                                    Image(systemName: "paperplane.fill")
+                                        .foregroundColor(.white)
+                                        .rotationEffect(.degrees(45))
+                                )
                         }
                         .disabled(viewModel.inputMessage.isEmpty || (viewModel.chatState.isProcessing && !viewModel.isTyping))
                     }
                 }
-                .padding()
-                .background(Theme.Colors.secondaryBackground)
+                .padding(.horizontal, Theme.Spacing.xs)
+                .padding(.vertical, 6) // Slightly increased vertical padding
+                .background(Theme.Colors.background)
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundColor(Theme.Colors.tertiaryBackground),
+                    alignment: .top
+                )
+                // Position the input bar directly above the keyboard
+                .padding(.bottom, keyboardHeight > 0 ? 0 : 0) // No extra padding - let it sit directly on the keyboard
             }
         }
+        // Add gesture to dismiss keyboard when tapping outside text field
+        .contentShape(Rectangle())
+        .onTapGesture {
+            isInputFocused = false
+        }
         .onAppear {
-            #if DEBUG
+#if DEBUG
             print("💬 ChatTab: View appeared for note: \(note.title)")
-            #endif
-
-            // Add keyboard observers
-            NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillShowNotification, object: nil, queue: .main) { notification in
-                if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+#endif
+        }
+        // Use the newer SwiftUI keyboard handling approach with animation
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { notification in
+            if let keyboardFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect {
+                withAnimation(.easeOut(duration: 0.2)) {
                     keyboardHeight = keyboardFrame.height
                 }
             }
-
-            NotificationCenter.default.addObserver(forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main) { _ in
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(.easeIn(duration: 0.2)) {
                 keyboardHeight = 0
             }
         }
-        .onDisappear {
-            // Remove keyboard observers
-            NotificationCenter.default.removeObserver(self)
-        }
+        .padding(.vertical, Theme.Spacing.xs) // Minimal vertical padding
     }
 
     private func sendMessage() {
         guard !viewModel.inputMessage.isEmpty && !viewModel.chatState.isProcessing else { return }
 
-        #if DEBUG
+    #if DEBUG
         print("💬 ChatTab: Sending message: \(viewModel.inputMessage)")
-        #endif
+    #endif
 
         Task {
             await viewModel.sendMessage()
@@ -644,84 +639,162 @@ struct ChatTabView: View {
     }
 }
 
-// MARK: - Chat Message Bubble
-private struct ChatMessageBubble: View {
+// MARK: - Message Bubble Component
+private struct MessageBubble: View {
     let message: ChatMessage
     let viewModel: ChatViewModel
 
     var body: some View {
-        VStack(alignment: message.type == .user ? .trailing : .leading, spacing: 4) {
-            // Message content
-            HStack {
-                if message.type == .assistant {
-                    // AI avatar
-                    Image(systemName: "sparkles")
-                        .foregroundColor(Theme.Colors.primary)
-                        .padding(8)
-                        .background(Theme.Colors.background)
-                        .clipShape(Circle())
+        HStack {
+            if message.isUser {
+                Spacer()
+            }
 
-                    // Message bubble with markdown support
-                    VStack(alignment: .leading) {
+            VStack(alignment: message.isUser ? .trailing : .leading, spacing: 4) {
+                HStack(alignment: .top) {
+                    if !message.isUser {
+                        // AI avatar
+                        Circle()
+                            .fill(Theme.Colors.primary)
+                            .frame(width: 30, height: 30)
+                            .overlay(
+                                Image(systemName: "sparkles")
+                                    .foregroundColor(.white)
+                                    .font(.system(size: 16))
+                            )
+                    }
+
+                    // Message content
+                    if message.isUser {
+                        Text(message.content)
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.sm)
+                            .background(Theme.Colors.primary)
+                            .foregroundColor(.white)
+                            .cornerRadius(Theme.Layout.cornerRadius)
+                    } else {
                         Text(viewModel.parseMarkdown(message.content))
-                            .padding()
+                            .padding(.horizontal, Theme.Spacing.md)
+                            .padding(.vertical, Theme.Spacing.sm)
                             .background(Theme.Colors.secondaryBackground)
                             .foregroundColor(Theme.Colors.text)
                             .cornerRadius(Theme.Layout.cornerRadius)
                     }
 
-                    Spacer()
-                } else {
-                    Spacer()
-
-                    // Message bubble
-                    Text(message.content)
-                        .padding()
-                        .background(Theme.Colors.primary)
-                        .foregroundColor(.white)
-                        .cornerRadius(Theme.Layout.cornerRadius)
-
-                    // User avatar
-                    Image(systemName: "person.circle.fill")
-                        .foregroundColor(Theme.Colors.primary)
-                        .padding(8)
-                        .background(Theme.Colors.background)
-                        .clipShape(Circle())
-                }
-            }
-
-            // Message status and timestamp
-            HStack(spacing: 4) {
-                if message.type == .user {
-                    Spacer()
-
-                    // Message status
-                    switch message.status {
-                    case .sending:
-                        Image(systemName: "clock")
-                            .font(.caption2)
-                            .foregroundColor(Theme.Colors.secondaryText)
-                    case .sent:
-                        Image(systemName: "checkmark")
-                            .font(.caption2)
-                            .foregroundColor(Theme.Colors.success)
-                    case .failed:
-                        Image(systemName: "exclamationmark.triangle")
-                            .font(.caption2)
-                            .foregroundColor(Theme.Colors.error)
+                    if message.isUser {
+                        // User avatar
+                        Circle()
+                            .fill(Theme.Colors.primary)
+                            .frame(width: 30, height: 30)
+                            .overlay(
+                                Image(systemName: "person.fill")
+                                    .foregroundColor(.white)
+                                    .font(.system(size: 16))
+                            )
                     }
                 }
 
-                // Timestamp
-                Text(message.timestamp, style: .time)
-                    .font(.caption2)
-                    .foregroundColor(Theme.Colors.secondaryText)
+                // Message status and timestamp
+                HStack(spacing: 4) {
+                    if message.isUser {
+                        Spacer()
 
-                if message.type == .assistant {
-                    Spacer()
+                        // Message status
+                        switch message.status {
+                        case .sending:
+                            Image(systemName: "clock")
+                                .font(.caption2)
+                                .foregroundColor(Theme.Colors.secondaryText)
+                        case .sent:
+                            Image(systemName: "checkmark")
+                                .font(.caption2)
+                                .foregroundColor(Theme.Colors.success)
+                        case .failed:
+                            Image(systemName: "exclamationmark.triangle")
+                                .font(.caption2)
+                                .foregroundColor(Theme.Colors.error)
+                        }
+                    }
+
+                    // Timestamp
+                    Text(message.timestamp, style: .time)
+                        .font(.caption2)
+                        .foregroundColor(Theme.Colors.secondaryText)
+
+                    if !message.isUser {
+                        Spacer()
+                    }
+                }
+                .padding(.horizontal, 8)
+            }
+            .contextMenu {
+                Button(action: {
+                    message.copyText()
+                }) {
+                    Label("Copy Text", systemImage: "doc.on.doc")
                 }
             }
-            .padding(.horizontal, 8)
+
+            if !message.isUser {
+                Spacer()
+            }
+        }
+    }
+}
+
+// MARK: - Typing Indicator Component
+private struct TypingIndicator: View {
+    let message: String
+    let viewModel: ChatViewModel
+    @State private var isAnimating = false
+
+    var body: some View {
+        HStack {
+            // AI avatar
+            Circle()
+                .fill(Theme.Colors.primary)
+                .frame(width: 30, height: 30)
+                .overlay(
+                    Image(systemName: "sparkles")
+                        .foregroundColor(.white)
+                        .font(.system(size: 16))
+                )
+
+            VStack(alignment: .leading) {
+                if message.isEmpty {
+                    // Animated dots when no text is available yet
+                    HStack(spacing: 4) {
+                        ForEach(0..<3) { index in
+                            Circle()
+                                .fill(Theme.Colors.secondaryText)
+                                .frame(width: 6, height: 6)
+                                .offset(y: isAnimating ? -5 : 0)
+                                .animation(
+                                    Animation.easeInOut(duration: 0.5)
+                                        .repeatForever(autoreverses: true)
+                                        .delay(Double(index) * 0.2),
+                                    value: isAnimating
+                                )
+                        }
+                    }
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.sm)
+                } else {
+                    // Show the typing message as it's being generated
+                    Text(viewModel.parseMarkdown(message))
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.sm)
+            .background(Theme.Colors.secondaryBackground)
+            .cornerRadius(Theme.Layout.cornerRadius)
+
+            Spacer()
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                isAnimating = true
+            }
         }
     }
 }
@@ -915,68 +988,68 @@ struct TranscriptTabView: View {
             .padding(.bottom, Theme.Spacing.md)
 
             ScrollView {
-            if viewModel.isLoading {
-                LoadingIndicator(message: "Loading transcript...")
-            } else if let error = viewModel.errorMessage {
-                ErrorView(
-                    error: NSError(
-                        domain: "TranscriptTab",
-                        code: -1,
-                        userInfo: [NSLocalizedDescriptionKey: error]
-                    )
-                ) {
-                    Task {
-                        await viewModel.loadTranscript()
+                if viewModel.isLoading {
+                    LoadingIndicator(message: "Loading transcript...")
+                } else if let error = viewModel.errorMessage {
+                    ErrorView(
+                        error: NSError(
+                            domain: "TranscriptTab",
+                            code: -1,
+                            userInfo: [NSLocalizedDescriptionKey: error]
+                        )
+                    ) {
+                        Task {
+                            await viewModel.loadTranscript()
+                        }
                     }
-                }
-                .padding()
-            } else if let transcript = viewModel.transcript {
-                LazyVStack(alignment: .leading, spacing: 16) {
-                    ForEach(transcript.components(separatedBy: "\n\n").indices, id: \.self) { index in
-                        let paragraph = transcript.components(separatedBy: "\n\n")[index]
-                        if !paragraph.isEmpty {
-                            // Try to find a timestamp in the format [MM:SS]
-                            if let timeRange = paragraph.range(of: "\\[\\d+:\\d{2}\\]", options: [.regularExpression]) {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(String(paragraph[timeRange]))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                    .padding()
+                } else if let transcript = viewModel.transcript {
+                    LazyVStack(alignment: .leading, spacing: 16) {
+                        ForEach(transcript.components(separatedBy: "\n\n").indices, id: \.self) { index in
+                            let paragraph = transcript.components(separatedBy: "\n\n")[index]
+                            if !paragraph.isEmpty {
+                                // Try to find a timestamp in the format [MM:SS]
+                                if let timeRange = paragraph.range(of: "\\[\\d+:\\d{2}\\]", options: [.regularExpression]) {
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text(String(paragraph[timeRange]))
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
 
-                                    Text(String(paragraph[paragraph.index(after: timeRange.upperBound)...])
-                                        .trimmingCharacters(in: CharacterSet.whitespaces))
+                                        Text(String(paragraph[paragraph.index(after: timeRange.upperBound)...])
+                                            .trimmingCharacters(in: CharacterSet.whitespaces))
                                         .font(.body)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(Theme.Colors.secondaryBackground.opacity(0.5))
-                                .cornerRadius(12)
-                                .padding(.horizontal, 8)
-                            } else {
-                                // If no timestamp found, just display the paragraph
-                                VStack(alignment: .leading, spacing: 4) {
-                                    // Add a paragraph number for reference
-                                    Text("Paragraph \(index + 1)")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Theme.Colors.secondaryBackground.opacity(0.5))
+                                    .cornerRadius(12)
+                                    .padding(.horizontal, 8)
+                                } else {
+                                    // If no timestamp found, just display the paragraph
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        // Add a paragraph number for reference
+                                        Text("Paragraph \(index + 1)")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
 
-                                    Text(paragraph)
-                                        .font(.body)
+                                        Text(paragraph)
+                                            .font(.body)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(Theme.Colors.secondaryBackground.opacity(0.3))
+                                    .cornerRadius(12)
+                                    .padding(.horizontal, 8)
                                 }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(Theme.Colors.secondaryBackground.opacity(0.3))
-                                .cornerRadius(12)
-                                .padding(.horizontal, 8)
                             }
                         }
                     }
+                    .padding(.vertical)
                 }
-                .padding(.vertical)
             }
-        }
-        .task {
-            await viewModel.loadTranscript()
-        }
+            .task {
+                await viewModel.loadTranscript()
+            }
         }
         .padding(.vertical)
     }
