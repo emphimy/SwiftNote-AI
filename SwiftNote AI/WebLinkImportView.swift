@@ -174,6 +174,14 @@ final class WebLinkImportViewModel: ObservableObject {
                     throw WebLinkError.processingFailed("No content available")
                 }
 
+                // Assign to All Notes folder
+                if let allNotesFolder = FolderListViewModel.getAllNotesFolder(context: self.viewContext) {
+                    note.setValue(allNotesFolder, forKey: "folder")
+                    #if DEBUG
+                    print("🌐 WebLinkImportVM: Assigned note to All Notes folder")
+                    #endif
+                }
+
                 try self.viewContext.save()
 
                 #if DEBUG

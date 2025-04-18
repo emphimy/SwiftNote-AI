@@ -350,6 +350,14 @@ final class AudioUploadViewModel: ObservableObject {
                 note.setValue(nil, forKey: "sourceURL")
             }
 
+            // Assign to All Notes folder
+            if let allNotesFolder = FolderListViewModel.getAllNotesFolder(context: self.viewContext) {
+                note.setValue(allNotesFolder, forKey: "folder")
+                #if DEBUG
+                print("🎥 AudioUploadVM: Assigned note to All Notes folder")
+                #endif
+            }
+
             try self.viewContext.save()
 
             #if DEBUG

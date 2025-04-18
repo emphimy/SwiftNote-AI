@@ -31,6 +31,7 @@ final class FolderDetailViewModel: ObservableObject {
     private let folder: Folder
     private let viewContext: NSManagedObjectContext
     private var cancellables = Set<AnyCancellable>()
+    private var notificationObserver: NSObjectProtocol?
 
     init(folder: Folder, context: NSManagedObjectContext) {
         self.folder = folder
@@ -45,6 +46,18 @@ final class FolderDetailViewModel: ObservableObject {
         #endif
 
         setupSearchSubscription()
+
+        // Setup notification observer for note changes
+        notificationObserver = NotificationCenter.default.addObserver(
+            forName: .init("RefreshNotes"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            #if DEBUG
+            print("📁 FolderDetailViewModel: Received RefreshNotes notification")
+            #endif
+            self?.fetchNotes()
+        }
     }
 
     private func setupSearchSubscription() {
@@ -78,7 +91,28 @@ final class FolderDetailViewModel: ObservableObject {
                     return nil
                 }
 
+                // Create metadata dictionary with necessary content for tabs
+                var metadata: [String: Any] = [
+                    "rawTranscript": String(decoding: content, as: UTF8.self)
+                ]
+
+                // Add AI generated content if available
+                if let aiContent = note.aiGeneratedContent {
+                    metadata["aiGeneratedContent"] = String(decoding: aiContent, as: UTF8.self)
+                }
+
+                // Add transcript if available
+                if let transcript = note.transcript {
+                    metadata["transcript"] = transcript
+                }
+
+                // Add videoId if available (for YouTube notes)
+                if let videoId = note.videoId {
+                    metadata["videoId"] = videoId
+                }
+
                 return NoteCardConfiguration(
+                    id: note.id ?? UUID(),
                     title: title,
                     date: timestamp,
                     preview: String(decoding: content, as: UTF8.self),
@@ -86,6 +120,7 @@ final class FolderDetailViewModel: ObservableObject {
                     isFavorite: note.isFavorite,
                     tags: note.tags?.components(separatedBy: ",") ?? [],
                     folder: note.folder,
+                    metadata: metadata,
                     sourceURL: note.sourceURL
                 )
             }
@@ -130,6 +165,14 @@ final class FolderDetailViewModel: ObservableObject {
         print("📁 FolderDetailViewModel: Deinitializing")
         #endif
         cancellables.forEach { $0.cancel() }
+
+        // Remove notification observer
+        if let observer = notificationObserver {
+            NotificationCenter.default.removeObserver(observer)
+            #if DEBUG
+            print("📁 FolderDetailViewModel: Removed notification observer")
+            #endif
+        }
     }
 }
 

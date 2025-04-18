@@ -311,6 +311,14 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
                 // Add duration if available
                 note.setValue(self.recordingDuration, forKey: "duration")
 
+                // Assign to All Notes folder
+                if let allNotesFolder = FolderListViewModel.getAllNotesFolder(context: self.viewContext) {
+                    note.setValue(allNotesFolder, forKey: "folder")
+                    #if DEBUG
+                    print("🎤 AudioRecordingViewModel: Assigned note to All Notes folder")
+                    #endif
+                }
+
                 try self.viewContext.save()
 
                 #if DEBUG
@@ -398,6 +406,14 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
 
                 // Add duration if available
                 note.setValue(self.recordingDuration, forKey: "duration")
+
+                // Assign to All Notes folder
+                if let allNotesFolder = FolderListViewModel.getAllNotesFolder(context: self.viewContext) {
+                    note.setValue(allNotesFolder, forKey: "folder")
+                    #if DEBUG
+                    print("🎤 AudioRecordingViewModel: Assigned note to All Notes folder")
+                    #endif
+                }
 
                 try self.viewContext.save()
 

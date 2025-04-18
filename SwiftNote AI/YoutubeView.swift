@@ -216,6 +216,14 @@ class YouTubeViewModel: ObservableObject {
                 // Store video ID directly
                 note.videoId = videoId
 
+                // Assign to All Notes folder
+                if let allNotesFolder = FolderListViewModel.getAllNotesFolder(context: context) {
+                    note.setValue(allNotesFolder, forKey: "folder")
+                    #if DEBUG
+                    print("🎥 YouTubeViewModel: Assigned note to All Notes folder")
+                    #endif
+                }
+
                 try context.save()
                 print("📝 YouTubeViewModel: Note saved successfully")
                 print("📝 YouTubeViewModel: Note ID: \(note.id?.uuidString ?? "unknown")")

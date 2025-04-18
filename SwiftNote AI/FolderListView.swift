@@ -13,35 +13,35 @@ final class FolderListViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var errorState: LoadingState = .idle
     @Published private(set) var allNotesFolder: Folder?
-    
-    
+
+
     // MARK: - Private Properties
     private let viewContext: NSManagedObjectContext
-    
+
     // MARK: - Color Options
     let colorOptions = ["FolderBlue", "FolderGreen", "FolderRed", "FolderPurple", "FolderOrange"]
 
     init(context: NSManagedObjectContext) {
         self.viewContext = context
         self.selectedColor = "FolderBlue"
-        
+
         #if DEBUG
         print("📁 FolderListViewModel: Initializing with context")
         print("📁 FolderListViewModel: Setting initial color to: FolderBlue")
         #endif
-        
+
         fetchFolders()
         ensureAllNotesFolder()
     }
-    
+
     // MARK: - Public Methods
     func moveNote(_ note: Note, to folder: Folder?) {
         #if DEBUG
         print("📁 FolderListViewModel: Moving note '\(note.title ?? "")' to folder '\(folder?.name ?? "root")'")
         #endif
-        
+
         note.folder = folder
-        
+
         do {
             try viewContext.save()
             #if DEBUG
@@ -54,26 +54,26 @@ final class FolderListViewModel: ObservableObject {
             errorMessage = "Failed to move note: \(error.localizedDescription)"
         }
     }
-    
+
     func fetchFolders() {
         #if DEBUG
         print("📁 FolderListViewModel: Fetching folders")
         #endif
-        
+
         isLoading = true
-        
+
         let request = NSFetchRequest<Folder>(entityName: "Folder")
         request.sortDescriptors = [
             NSSortDescriptor(keyPath: \Folder.sortOrder, ascending: true),
             NSSortDescriptor(keyPath: \Folder.timestamp, ascending: false)
         ]
-        
+
         do {
             folders = try viewContext.fetch(request)
             #if DEBUG
             print("📁 FolderListViewModel: Fetched \(folders.count) folders")
             #endif
-            
+
             // Update the allNotesFolder reference
             allNotesFolder = folders.first(where: { $0.name == "All Notes" })
         } catch {
@@ -82,29 +82,29 @@ final class FolderListViewModel: ObservableObject {
             #endif
             errorMessage = "Failed to load folders: \(error.localizedDescription)"
         }
-        
+
         isLoading = false
     }
-    
+
     /// Ensures that an "All Notes" folder exists in the system
     func ensureAllNotesFolder() {
         #if DEBUG
         print("📁 FolderListViewModel: Ensuring All Notes folder exists")
         #endif
-        
+
         // Check if All Notes folder already exists
         let request = NSFetchRequest<Folder>(entityName: "Folder")
         request.predicate = NSPredicate(format: "name == %@", "All Notes")
-        
+
         do {
             let results = try viewContext.fetch(request)
-            
+
             if let existingFolder = results.first {
                 #if DEBUG
                 print("📁 FolderListViewModel: All Notes folder already exists")
                 #endif
                 allNotesFolder = existingFolder
-                
+
                 // Ensure it has the lowest sort order
                 if existingFolder.sortOrder > 0 {
                     existingFolder.sortOrder = 0
@@ -114,7 +114,7 @@ final class FolderListViewModel: ObservableObject {
                 #if DEBUG
                 print("📁 FolderListViewModel: Creating All Notes folder")
                 #endif
-                
+
                 // Create All Notes folder
                 let folder = Folder(context: viewContext)
                 folder.id = UUID()
@@ -122,10 +122,10 @@ final class FolderListViewModel: ObservableObject {
                 folder.color = "FolderBlue"
                 folder.timestamp = Date()
                 folder.sortOrder = 0
-                
+
                 try viewContext.save()
                 allNotesFolder = folder
-                
+
                 // Refresh folders list
                 fetchFolders()
             }
@@ -136,7 +136,7 @@ final class FolderListViewModel: ObservableObject {
             errorMessage = "Failed to create All Notes folder: \(error.localizedDescription)"
         }
     }
-    
+
     /// Returns the All Notes folder, creating it if needed
     func getDefaultFolder() -> Folder? {
         if allNotesFolder == nil {
@@ -144,26 +144,68 @@ final class FolderListViewModel: ObservableObject {
         }
         return allNotesFolder
     }
-    
+
+    /// Static helper to get the All Notes folder from any context
+    static func getAllNotesFolder(context: NSManagedObjectContext) -> Folder? {
+        #if DEBUG
+        print("📁 FolderListViewModel: Getting All Notes folder statically")
+        #endif
+
+        // Check if All Notes folder exists
+        let request = NSFetchRequest<Folder>(entityName: "Folder")
+        request.predicate = NSPredicate(format: "name == %@", "All Notes")
+
+        do {
+            let results = try context.fetch(request)
+
+            if let existingFolder = results.first {
+                #if DEBUG
+                print("📁 FolderListViewModel: Found existing All Notes folder")
+                #endif
+                return existingFolder
+            } else {
+                #if DEBUG
+                print("📁 FolderListViewModel: Creating All Notes folder")
+                #endif
+
+                // Create All Notes folder
+                let folder = Folder(context: context)
+                folder.id = UUID()
+                folder.name = "All Notes"
+                folder.color = "FolderBlue"
+                folder.timestamp = Date()
+                folder.sortOrder = 0
+
+                try context.save()
+                return folder
+            }
+        } catch {
+            #if DEBUG
+            print("📁 FolderListViewModel: Error getting All Notes folder - \(error)")
+            #endif
+            return nil
+        }
+    }
+
     func createFolder(name: String, color: String) throws {
         #if DEBUG
         print("📁 FolderListViewModel: Creating folder - Name: \(name), Color: \(color)")
         #endif
-        
+
         guard !name.isEmpty else {
             throw NSError(domain: "Folder", code: -1,
                          userInfo: [NSLocalizedDescriptionKey: "Folder name cannot be empty"])
         }
-        
+
         viewContext.performAndWait { [weak self] in
             guard let self = self else { return }
-            
+
             let folder = Folder(context: self.viewContext)
             folder.id = UUID()
             folder.name = name
             folder.color = color
             folder.timestamp = Date()
-            
+
             do {
                 try self.viewContext.save()
                 self.fetchFolders()
@@ -177,22 +219,22 @@ final class FolderListViewModel: ObservableObject {
             }
         }
     }
-    
+
     func updateFolder(_ folder: Folder, name: String?, color: String?) throws {
         #if DEBUG
         print("📁 FolderListViewModel: Updating folder \(folder.id?.uuidString ?? "")")
         #endif
-        
+
         viewContext.performAndWait { [weak self] in
             guard let self = self else { return }
-            
+
             if let name = name {
                 folder.name = name
             }
             if let color = color {
                 folder.color = color
             }
-            
+
             do {
                 try self.viewContext.save()
                 self.fetchFolders()
@@ -206,15 +248,15 @@ final class FolderListViewModel: ObservableObject {
             }
         }
     }
-    
+
     func deleteFolder(_ folder: Folder, deleteContents: Bool = false) throws {
         #if DEBUG
         print("📁 FolderListViewModel: Deleting folder \(folder.id?.uuidString ?? "") with contents: \(deleteContents)")
         #endif
-        
+
         viewContext.performAndWait { [weak self] in
             guard let self = self else { return }
-            
+
             if let notes = folder.notes?.allObjects as? [Note] {
                 if deleteContents {
                     notes.forEach { self.viewContext.delete($0) }
@@ -228,9 +270,9 @@ final class FolderListViewModel: ObservableObject {
                     #endif
                 }
             }
-            
+
             self.viewContext.delete(folder)
-            
+
             do {
                 try self.viewContext.save()
                 self.fetchFolders()
@@ -244,22 +286,22 @@ final class FolderListViewModel: ObservableObject {
             }
         }
     }
-    
+
     func reorderFolders(from source: IndexSet, to destination: Int) throws {
         #if DEBUG
         print("📁 FolderListViewModel: Reordering folders from \(source) to \(destination)")
         #endif
-        
+
         viewContext.performAndWait { [weak self] in
             guard let self = self else { return }
-            
+
             var updatedFolders = self.folders
             updatedFolders.move(fromOffsets: source, toOffset: destination)
-            
+
             for (index, folder) in updatedFolders.enumerated() {
                 folder.sortOrder = Int32(index)
             }
-            
+
             do {
                 try self.viewContext.save()
                 self.fetchFolders()
@@ -283,12 +325,12 @@ struct FolderListView: View {
     @Binding var selectedFolder: Folder?
     @State private var showError = false
     @State private var errorMessage: String?
-    
+
     init(selectedFolder: Binding<Folder?>) {
         self._selectedFolder = selectedFolder
         self._viewModel = StateObject(wrappedValue: FolderListViewModel(context: PersistenceController.shared.container.viewContext))
     }
-    
+
     var body: some View {
         NavigationView {
             Group {
@@ -343,7 +385,7 @@ struct FolderListView: View {
             }
         }
     }
-    
+
     // MARK: - Folder List
     private var folderList: some View {
         List {
@@ -371,7 +413,7 @@ struct FolderListView: View {
 private struct FolderRow: View {
     let folder: Folder
     let viewModel: FolderListViewModel
-    
+
     var body: some View {
             HStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: "folder.fill")
@@ -387,12 +429,12 @@ private struct FolderRow: View {
                         """)
                         #endif
                     }
-                
+
                 VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                     Text(folder.name ?? "Untitled")
                         .font(Theme.Typography.body)
                         .foregroundColor(Theme.Colors.text)
-                    
+
                     if let notes = folder.notes?.allObjects as? [Note] {
                         Text("\(notes.count) notes")
                             .font(Theme.Typography.caption)
@@ -416,13 +458,13 @@ private struct FolderRow: View {
 private struct NewFolderSheet: View {
     @ObservedObject var viewModel: FolderListViewModel
     @Environment(\.dismiss) private var dismiss
-    
+
     var body: some View {
         NavigationView {
             Form {
                 Section(header: Text("Folder Details")) {
                     TextField("Folder Name", text: $viewModel.newFolderName)
-                    
+
                     Picker("Color", selection: $viewModel.selectedColor) {
                         ForEach(viewModel.colorOptions, id: \.self) { color in
                             HStack {

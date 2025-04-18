@@ -418,6 +418,14 @@ final class TextUploadViewModel: ObservableObject {
 
             // We don't save the original file locally anymore
 
+            // Assign to All Notes folder
+            if let allNotesFolder = FolderListViewModel.getAllNotesFolder(context: self.viewContext) {
+                note.setValue(allNotesFolder, forKey: "folder")
+                #if DEBUG
+                print("📄 TextUploadVM: Assigned note to All Notes folder")
+                #endif
+            }
+
             try self.viewContext.save()
 
             #if DEBUG
