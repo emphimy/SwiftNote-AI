@@ -32,7 +32,7 @@ final class AIProxyService {
             let response = try await openAIService.chatCompletionRequest(body: .init(
                 model: "gpt-4.1",
                 messages: [
-                    .system(content: .text("You are Study‑Note‑GPT. Your mission: turn any transcript into clear, well‑structured Markdown notes that help the reader **master** the material using the Feynman technique (teach it back in simple language).")),
+                    .system(content: .text("You are Study‑Note‑GPT. Your mission: convert any transcript into clear, well‑structured Markdown notes that help the reader master the material via the Feynman technique.")),
                     .user(content: .text(prompt))
                 ]
             ))
