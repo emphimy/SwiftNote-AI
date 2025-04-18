@@ -18,6 +18,7 @@ struct NoteListCard: View {
                 // Header
                 HStack {
                     configuration.sourceType.icon
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundColor(configuration.sourceType.color)
 
                     Text(configuration.title)
@@ -108,6 +109,7 @@ struct NoteGridCard: View {
                 // Header with source icon and favorite
                 HStack {
                     configuration.sourceType.icon
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundColor(configuration.sourceType.color)
 
                     Text(configuration.title)

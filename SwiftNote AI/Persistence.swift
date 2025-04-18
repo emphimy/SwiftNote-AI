@@ -359,7 +359,7 @@ extension PersistenceController {
         #endif
 
         // Delete associated files if they exist
-        if let sourceURL = note.sourceURL as? URL {
+        if let sourceURL = note.sourceURL {
             #if DEBUG
             print("🗄️ CRUD: Note has associated file at: \(sourceURL.path)")
             #endif
@@ -405,7 +405,7 @@ extension PersistenceController {
 
         // Delete associated files
         for note in notesToDelete {
-            if let sourceURL = note.sourceURL as? URL {
+            if let sourceURL = note.sourceURL {
                 #if DEBUG
                 print("🗄️ CRUD: Note has associated file at: \(sourceURL.path)")
                 #endif

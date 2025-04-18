@@ -56,7 +56,9 @@ final class FolderDetailViewModel: ObservableObject {
             #if DEBUG
             print("📁 FolderDetailViewModel: Received RefreshNotes notification")
             #endif
-            self?.fetchNotes()
+            Task { @MainActor [weak self] in
+                self?.fetchNotes()
+            }
         }
     }
 

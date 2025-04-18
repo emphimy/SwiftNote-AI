@@ -373,8 +373,8 @@ enum NoteSourceType: String {
             case .recording: return "mic"
             case .text: return "doc"
             case .video: return "play.circle.fill"
-            case .upload: return "arrow.up.circle.fill"
-            case .web: return "globe"
+            case .upload: return "viewfinder.circle"
+            case .web: return "link"
             }
         }()
         return Image(systemName: iconName)
@@ -382,11 +382,12 @@ enum NoteSourceType: String {
 
     var color: Color {
         switch self {
-        case .audio, .recording: return .blue
-        case .text: return .green
+        case .audio: return .orange
+        case .recording: return .blue
+        case .text: return .blue
         case .video: return .red
-        case .upload: return .orange
-        case .web: return .purple
+        case .upload: return .blue
+        case .web: return .blue
         }
     }
 }
