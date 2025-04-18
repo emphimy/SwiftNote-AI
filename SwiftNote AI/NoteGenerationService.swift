@@ -45,7 +45,7 @@ actor NoteGenerationService {
         #endif
 
         let prompt = """
-        Detect the language of the transcript and write EVERYTHING including headers in that language.
+        Detect the language of the transcript and write EVERYTHING including headers in that language. Custoize the header names based on the topic. Do not use default names other than Summary and Conclusion
 
         ## Summary
         Give a 2‑paragraph overview (≤120 words total).

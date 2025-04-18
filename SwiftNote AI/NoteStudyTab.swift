@@ -318,12 +318,27 @@ struct FlashcardsTabView: View {
 
             // Main content
             ZStack {
-                if viewModel.isLoading {
-                    LoadingIndicator(message: "Creating flashcards...")
-                } else if viewModel.flashcards.isEmpty {
-                    emptyStateView
-                } else {
-                    flashcardsView
+                switch viewModel.loadingState {
+                case .loading(let message):
+                    LoadingIndicator(message: message)
+
+                case .error(let message):
+                    ErrorView(
+                        error: NSError(domain: "Flashcards", code: -1, userInfo: [
+                            NSLocalizedDescriptionKey: message
+                        ])
+                    ) {
+                        Task { @MainActor in
+                            await viewModel.generateFlashcards(from: note)
+                        }
+                    }
+
+                case .success, .idle:
+                    if viewModel.flashcards.isEmpty {
+                        emptyStateView
+                    } else {
+                        flashcardsView
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -334,11 +349,10 @@ struct FlashcardsTabView: View {
             }
         }
         .padding(.vertical)
-        .task {
+        .onAppear {
             #if DEBUG
-            print("🎴 FlashcardsTab: Generating flashcards for note: \(note.title)")
+            print("🎴 FlashcardsTab: View appeared for note: \(note.title)")
             #endif
-            await viewModel.generateFlashcards(from: note)
         }
         .alert("About Flashcards", isPresented: $showingInfo) {
             Button("OK", role: .cancel) { }
@@ -349,31 +363,15 @@ struct FlashcardsTabView: View {
 
     // Empty state view when no flashcards are available
     private var emptyStateView: some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            Image(systemName: "rectangle.on.rectangle.slash")
-                .font(.system(size: 60))
-                .foregroundColor(Theme.Colors.secondaryText)
-
-            Text("No Flashcards Available")
-                .font(Theme.Typography.h3)
-                .foregroundColor(Theme.Colors.text)
-
-            Text("We couldn't create flashcards from this note. Try adding more structured content like terms and definitions.")
-                .font(Theme.Typography.body)
-                .foregroundColor(Theme.Colors.secondaryText)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, Theme.Spacing.xl)
-
-            Button {
-                Task {
-                    await viewModel.generateFlashcards(from: note)
-                }
-            } label: {
-                Text("Try Again")
-                    .padding(.horizontal, Theme.Spacing.lg)
-                    .padding(.vertical, Theme.Spacing.sm)
+        EmptyStateView(
+            icon: "rectangle.stack",
+            title: "No Flashcards Available",
+            message: "Tap to generate flashcards from your note.",
+            actionTitle: "Generate Flashcards"
+        ) {
+            Task {
+                await viewModel.generateFlashcards(from: note)
             }
-            .buttonStyle(PrimaryButtonStyle())
         }
     }
 
@@ -458,16 +456,14 @@ struct ChatTabView: View {
 
                 // Header
                 HStack {
-                    Text("AI Study Assistant")
+                    Text("Chat")
                         .font(Theme.Typography.h2)
                         .foregroundColor(Theme.Colors.primary)
 
                     Spacer()
                 }
                 .padding(.horizontal)
-                .padding(.bottom, Theme.Spacing.sm)
-
-                Divider()
+                .padding(.bottom, Theme.Spacing.md)
 
                 // Chat Messages
                 ScrollViewReader { scrollProxy in
@@ -906,7 +902,19 @@ struct TranscriptTabView: View {
     }
 
     var body: some View {
-        ScrollView {
+        VStack(spacing: 0) {
+            // Header with title
+            HStack {
+                Text("Transcript")
+                    .font(Theme.Typography.h2)
+                    .foregroundColor(Theme.Colors.primary)
+
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.bottom, Theme.Spacing.md)
+
+            ScrollView {
             if viewModel.isLoading {
                 LoadingIndicator(message: "Loading transcript...")
             } else if let error = viewModel.errorMessage {
@@ -969,5 +977,7 @@ struct TranscriptTabView: View {
         .task {
             await viewModel.loadTranscript()
         }
+        }
+        .padding(.vertical)
     }
 }

@@ -103,6 +103,72 @@ final class AIProxyService {
         return try parseFlashcardsFromJSON(jsonResponse)
     }
 
+    /// Generate quiz questions from note content
+    /// - Parameters:
+    ///   - content: The note content to generate quiz questions from
+    ///   - title: The title of the note
+    ///   - count: The minimum number of quiz questions to generate (default is 15)
+    /// - Returns: An array of quiz questions with options, correct answers, and explanations
+    func generateQuizQuestions(from content: String, title: String, count: Int = 15) async throws -> [QuizQuestion] {
+        #if DEBUG
+        print("🤖 AIProxyService: Generating quiz questions (min: \(count)) for note: \(title)")
+        #endif
+
+        // Create a prompt for quiz question generation
+        let prompt = """
+        Generate between \(count) and 20 educational multiple-choice quiz questions from the following note content.
+        You decide the exact number based on the richness and complexity of the content, but don't generate fewer than \(count) questions.
+
+        Create diverse types of questions including:
+        1. Factual recall questions
+        2. Conceptual understanding questions
+        3. Application questions
+        4. Analysis questions
+        5. Evaluation questions
+
+        IMPORTANT GUIDELINES FOR DIVERSITY:
+        - Ensure questions cover different parts of the content, not just the beginning
+        - Make sure correct answers are substantially different from each other
+        - Avoid creating multiple questions that test the same concept
+        - Use different question formats (what, why, how, which, etc.)
+        - Include questions at different difficulty levels
+
+        Each question must have:
+        - A clear question statement
+        - Exactly 4 answer options (A, B, C, D)
+        - One correct answer (indicated by the correctAnswer field)
+        - A brief explanation of why the correct answer is right
+
+        IMPORTANT: Vary the position of the correct answer. Don't always put it in the same position (e.g., don't always make index 0 the correct answer). Distribute correct answers randomly among all four positions.
+
+        Format your response as a JSON array of objects with these properties:
+        - "question": The question text
+        - "options": An array of 4 possible answers
+        - "correctAnswer": The index of the correct answer (0-3)
+        - "explanation": A brief explanation of the correct answer
+
+        Note Title: \(title)
+        Note Content: \(content)
+
+        Return ONLY valid JSON in this format:
+        [
+          {
+            "question": "What is the main concept discussed in the note?",
+            "options": ["Option A", "Option B", "Option C", "Option D"],
+            "correctAnswer": 2,
+            "explanation": "Option C is correct because..."
+          },
+          ...
+        ]
+        """
+
+        // Get the completion from the AI service
+        let jsonResponse = try await generateCompletion(prompt: prompt)
+
+        // Parse the JSON response
+        return try parseQuizQuestionsFromJSON(jsonResponse)
+    }
+
     /// Transcribe audio file using OpenAI's Whisper model
     /// - Parameters:
     ///   - fileURL: URL to the audio file
@@ -191,6 +257,55 @@ final class AIProxyService {
             return (front: front, back: back)
         }
     }
+
+    /// Parse quiz questions from JSON string
+    private func parseQuizQuestionsFromJSON(_ jsonString: String) throws -> [QuizQuestion] {
+        // Clean up the JSON string (sometimes AI adds markdown code blocks)
+        let cleanedJSON = jsonString
+            .replacingOccurrences(of: "```json", with: "")
+            .replacingOccurrences(of: "```", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard let jsonData = cleanedJSON.data(using: .utf8) else {
+            throw AIProxyError.invalidResponseData
+        }
+
+        // Try to parse as a direct array of quiz questions
+        if let questionsArray = try? JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
+            return try parseQuizQuestionsArray(questionsArray)
+        }
+
+        // Try to parse as a JSON object with a "questions" array
+        if let jsonObject = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+           let questionsArray = jsonObject["questions"] as? [[String: Any]] {
+            return try parseQuizQuestionsArray(questionsArray)
+        }
+
+        throw AIProxyError.invalidResponseFormat
+    }
+
+    /// Parse quiz questions from array
+    private func parseQuizQuestionsArray(_ array: [[String: Any]]) throws -> [QuizQuestion] {
+        return try array.compactMap { questionData in
+            guard let question = questionData["question"] as? String,
+                  let options = questionData["options"] as? [String],
+                  let correctAnswer = questionData["correctAnswer"] as? Int,
+                  options.count == 4,
+                  correctAnswer >= 0 && correctAnswer < options.count else {
+                throw AIProxyError.invalidQuizQuestionFormat
+            }
+
+            // Explanation is optional
+            let explanation = questionData["explanation"] as? String
+
+            return QuizQuestion(
+                question: question,
+                options: options,
+                correctAnswer: correctAnswer,
+                explanation: explanation
+            )
+        }
+    }
 }
 
 // MARK: - AI Proxy Error
@@ -200,6 +315,7 @@ enum AIProxyError: Error {
     case invalidResponseFormat
     case invalidResponseData
     case invalidFlashcardFormat
+    case invalidQuizQuestionFormat
     case audioTranscriptionError(String)
 }
 
@@ -216,6 +332,8 @@ extension AIProxyError: LocalizedError {
             return "Invalid response data"
         case .invalidFlashcardFormat:
             return "Invalid flashcard format in response"
+        case .invalidQuizQuestionFormat:
+            return "Invalid quiz question format in response"
         case .audioTranscriptionError(let message):
             return "Audio transcription error: \(message)"
         }

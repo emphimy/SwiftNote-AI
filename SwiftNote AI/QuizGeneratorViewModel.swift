@@ -8,7 +8,7 @@ enum QuizError: LocalizedError {
     case saveFailed(Error)
     case fetchFailed(Error)
     case invalidQuestionIndex
-    
+
     var errorDescription: String? {
         switch self {
         case .emptyContent: return "Note content is empty"
@@ -29,24 +29,25 @@ final class QuizGeneratorViewModel: ObservableObject {
     @Published private(set) var currentQuestionIndex = 0
     @Published var selectedAnswer: Int?
     @Published var showResults = false // Add this line
-    
+
     // MARK: - Private Properties
     private let viewContext: NSManagedObjectContext
     private let noteId: UUID
     private let noteContent: String
     private var quizResults: [UUID: Int] = [:]
-    
+    private let aiService = AIProxyService.shared
+
     // MARK: - Initialization
     init(context: NSManagedObjectContext, noteId: UUID, content: String) {
         self.viewContext = context
         self.noteId = noteId
         self.noteContent = content
-        
+
         #if DEBUG
         print("📝 QuizGenerator: Initializing with noteId: \(noteId)")
         #endif
     }
-    
+
     // MARK: - Quiz Generation
     func generateQuiz() async throws {
         guard !noteContent.isEmpty else {
@@ -55,25 +56,23 @@ final class QuizGeneratorViewModel: ObservableObject {
             #endif
             throw QuizError.emptyContent
         }
-        
-        loadingState = .loading(message: "Generating quiz questions...")
-        
+
+        loadingState = .loading(message: "Creating quiz questions...")
+
         do {
-            // Simulate AI processing time
-            try await Task.sleep(nanoseconds: 2_000_000_000)
-            
+            // Generate questions
             let generatedQuestions = try await generateQuestions(from: noteContent)
-            
+
             // Ensure questions are unique by checking for duplicates
             let uniqueQuestions = removeDuplicateQuestions(generatedQuestions)
-            
+
             await MainActor.run {
                 self.questions = uniqueQuestions
                 self.currentQuestionIndex = 0
                 self.selectedAnswer = nil
                 self.loadingState = .success(message: "Quiz generated successfully")
             }
-            
+
             #if DEBUG
             print("📝 QuizGenerator: Generated \(uniqueQuestions.count) unique questions")
             #endif
@@ -85,20 +84,20 @@ final class QuizGeneratorViewModel: ObservableObject {
             throw error
         }
     }
-    
+
     // MARK: - Quiz Progress
     func submitAnswer(_ answer: Int) async throws {
         guard let currentQuestion = questions[safe: currentQuestionIndex] else {
             throw QuizError.invalidQuestionIndex
         }
-        
+
         let result = QuizResult(
             questionId: currentQuestion.id,
             selectedAnswer: answer,
             correctAnswer: currentQuestion.correctAnswer
         )
         quizResults[currentQuestion.id] = answer
-        
+
         #if DEBUG
         print("📝 QuizGenerator: Submitting answer - Question: \(currentQuestionIndex), Selected: \(answer), Correct: \(result.isCorrect)")
         #endif
@@ -111,94 +110,213 @@ final class QuizGeneratorViewModel: ObservableObject {
             showResults = true
         }
     }
-    
-    // Helper function to remove duplicate questions
+
+    // Helper function to remove duplicate and similar questions
     private func removeDuplicateQuestions(_ questions: [QuizQuestion]) -> [QuizQuestion] {
         var uniqueQuestions: [QuizQuestion] = []
         var seenQuestions: Set<String> = []
-        
+        var seenAnswers: Set<String> = []
+
         for question in questions {
             // Create a unique identifier for the question based on its content
             let questionIdentifier = question.question.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            
-            // Only add the question if we haven't seen it before
-            if !seenQuestions.contains(questionIdentifier) {
+
+            // Create an identifier for the correct answer
+            let correctAnswerText = question.options[question.correctAnswer].lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Check for duplicate questions or similar correct answers
+            let isDuplicateQuestion = seenQuestions.contains(questionIdentifier)
+            let hasSimilarAnswer = seenAnswers.contains { existingAnswer in
+                // Calculate similarity between answers
+                let similarity = calculateStringSimilarity(existingAnswer, correctAnswerText)
+                return similarity > 0.7 // 70% similarity threshold
+            }
+
+            // Only add the question if it's unique and doesn't have a similar answer
+            if !isDuplicateQuestion && !hasSimilarAnswer {
                 uniqueQuestions.append(question)
                 seenQuestions.insert(questionIdentifier)
+                seenAnswers.insert(correctAnswerText)
             } else {
                 #if DEBUG
-                print("📝 QuizGenerator: Removed duplicate question: \(question.question)")
+                if isDuplicateQuestion {
+                    print("📝 QuizGenerator: Removed duplicate question: \(question.question)")
+                } else {
+                    print("📝 QuizGenerator: Removed question with similar answer: \(correctAnswerText)")
+                }
                 #endif
             }
         }
-        
+
+        // If we filtered too aggressively and have fewer than 10 questions, add some back
+        if uniqueQuestions.count < 10 && questions.count > uniqueQuestions.count {
+            let remainingQuestions = questions.filter { question in
+                !uniqueQuestions.contains { $0.id == question.id }
+            }
+
+            // Add questions until we have at least 10 or run out of questions
+            for question in remainingQuestions {
+                if uniqueQuestions.count >= 10 {
+                    break
+                }
+                uniqueQuestions.append(question)
+            }
+        }
+
         return uniqueQuestions
     }
-    
+
+    // Calculate similarity between two strings (Levenshtein distance based)
+    private func calculateStringSimilarity(_ s1: String, _ s2: String) -> Double {
+        // If either string is empty, return 0 similarity
+        if s1.isEmpty || s2.isEmpty {
+            return 0.0
+        }
+
+        // If strings are identical, return 1.0 (100% similarity)
+        if s1 == s2 {
+            return 1.0
+        }
+
+        // Calculate Levenshtein distance
+        let distance = levenshteinDistance(s1, s2)
+        let maxLength = Double(max(s1.count, s2.count))
+
+        // Convert distance to similarity score (0.0 to 1.0)
+        return 1.0 - (Double(distance) / maxLength)
+    }
+
+    // Calculate Levenshtein distance between two strings
+    private func levenshteinDistance(_ s1: String, _ s2: String) -> Int {
+        let s1 = Array(s1)
+        let s2 = Array(s2)
+        let m = s1.count
+        let n = s2.count
+
+        // Create distance matrix
+        var matrix = [[Int]](repeating: [Int](repeating: 0, count: n + 1), count: m + 1)
+
+        // Initialize first row and column
+        for i in 0...m {
+            matrix[i][0] = i
+        }
+
+        for j in 0...n {
+            matrix[0][j] = j
+        }
+
+        // Fill the matrix
+        for i in 1...m {
+            for j in 1...n {
+                let cost = s1[i-1] == s2[j-1] ? 0 : 1
+                matrix[i][j] = min(
+                    matrix[i-1][j] + 1,      // deletion
+                    matrix[i][j-1] + 1,      // insertion
+                    matrix[i-1][j-1] + cost  // substitution
+                )
+            }
+        }
+
+        return matrix[m][n]
+    }
+
     // MARK: - Private Methods
     private func generateQuestions(from content: String) async throws -> [QuizQuestion] {
         #if DEBUG
         print("📝 QuizGenerator: Generating questions from content with length: \(content.count)")
         #endif
-        
+
         // Ensure we have enough content to work with
         guard content.count > 100 else {
             return generateBasicQuestions(from: content)
         }
-        
+
+        do {
+            // Get the note title from the first line or use a default
+            let title = content.components(separatedBy: "\n").first ?? "Study Note"
+
+            // Generate questions using AI
+            let aiQuestions = try await aiService.generateQuizQuestions(
+                from: content,
+                title: title,
+                count: 15 // Minimum of 15 questions
+            )
+
+            #if DEBUG
+            print("📝 QuizGenerator: Generated \(aiQuestions.count) AI-powered questions")
+            #endif
+
+            // If AI generation was successful and produced questions, use those
+            if !aiQuestions.isEmpty {
+                return aiQuestions.shuffled()
+            }
+        } catch {
+            #if DEBUG
+            print("📝 QuizGenerator: AI question generation failed - \(error.localizedDescription)")
+            print("📝 QuizGenerator: Falling back to algorithmic question generation")
+            #endif
+            // If AI generation fails, fall back to algorithmic approach
+        }
+
+        // Fallback to traditional generation
+        return try await generateAlgorithmicQuestions(from: content)
+    }
+
+    // Generate questions using the algorithmic approach (fallback method)
+    private func generateAlgorithmicQuestions(from content: String) async throws -> [QuizQuestion] {
         // Process the content to extract key information
         let processedContent = processContent(content)
-        
+
         // Generate different types of questions
         var questions: [QuizQuestion] = []
-        
+
         // Add factual questions
         questions.append(contentsOf: generateFactualQuestions(from: processedContent))
-        
+
         // Add conceptual questions
         questions.append(contentsOf: generateConceptualQuestions(from: processedContent))
-        
+
         // Add relationship questions
         questions.append(contentsOf: generateRelationshipQuestions(from: processedContent))
-        
+
         // Add application questions
         questions.append(contentsOf: generateApplicationQuestions(from: processedContent))
-        
+
         // Ensure we have at least 15 questions
         if questions.count < 15 {
             questions.append(contentsOf: generateSupplementaryQuestions(from: processedContent, currentCount: questions.count))
         }
-        
+
         // Shuffle the questions for variety
         return questions.shuffled()
     }
-    
+
     // Process content to extract key information
     private func processContent(_ content: String) -> [String: Any] {
         // Split content into paragraphs
         let paragraphs = content.components(separatedBy: "\n\n").filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        
+
         // Extract sentences
         let sentences = content.components(separatedBy: ".").filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-        
+
         // Extract key terms (words that appear frequently)
         let words = content.components(separatedBy: .whitespacesAndNewlines)
             .map { $0.lowercased().trimmingCharacters(in: .punctuationCharacters) }
             .filter { $0.count > 3 }
-        
+
         let wordFrequency = Dictionary(grouping: words, by: { $0 })
             .mapValues { $0.count }
             .filter { $0.value > 1 }
             .sorted { $0.value > $1.value }
             .prefix(20)
             .map { $0.key }
-        
+
         // Extract potential topics (first sentence of each paragraph often contains the topic)
         let potentialTopics = paragraphs.compactMap { paragraph -> String? in
             let firstSentence = paragraph.components(separatedBy: ".").first?.trimmingCharacters(in: .whitespacesAndNewlines)
             return firstSentence?.count ?? 0 > 10 ? firstSentence : nil
         }
-        
+
         return [
             "paragraphs": paragraphs,
             "sentences": sentences,
@@ -206,75 +324,75 @@ final class QuizGeneratorViewModel: ObservableObject {
             "potentialTopics": potentialTopics
         ]
     }
-    
+
     // Generate factual questions (who, what, when, where)
     private func generateFactualQuestions(from processedContent: [String: Any]) -> [QuizQuestion] {
         guard let sentences = processedContent["sentences"] as? [String],
               let keyTerms = processedContent["keyTerms"] as? [String] else {
             return []
         }
-        
+
         var questions: [QuizQuestion] = []
-        
+
         // Create questions based on key terms
         for term in keyTerms.prefix(5) {
             // Find sentences containing this term
             let relevantSentences = sentences.filter { $0.lowercased().contains(term.lowercased()) }
             guard let sentence = relevantSentences.first else { continue }
-            
+
             // Create a question by replacing the term with a blank
             let question = "Which term best fits in this context: \"\(sentence.replacingOccurrences(of: term, with: "______", options: .caseInsensitive))\""
-            
+
             // Generate options (1 correct, 3 distractors)
             var options = [term]
-            
+
             // Add distractor options from other key terms
             let distractors = keyTerms.filter { $0 != term }.prefix(3)
             options.append(contentsOf: distractors)
-            
+
             // If we don't have enough distractors, add some generic ones
             while options.count < 4 {
                 options.append("None of the above")
             }
-            
+
             // Shuffle options
             options.shuffle()
-            
+
             // Find the index of the correct answer
             let correctAnswer = options.firstIndex(of: term) ?? 0
-            
+
             questions.append(QuizQuestion(
                 question: question,
                 options: options,
                 correctAnswer: correctAnswer
             ))
         }
-        
+
         return questions
     }
-    
+
     // Generate conceptual questions (understanding of concepts)
     private func generateConceptualQuestions(from processedContent: [String: Any]) -> [QuizQuestion] {
         guard let paragraphs = processedContent["paragraphs"] as? [String],
               let potentialTopics = processedContent["potentialTopics"] as? [String] else {
             return []
         }
-        
+
         var questions: [QuizQuestion] = []
-        
+
         // Create questions about main topics
         for (_, topic) in potentialTopics.prefix(5).enumerated() {
             let question = "What is the main idea discussed in this excerpt: \"\(topic)\""
-            
+
             // Generate options
             var options: [String] = []
-            
+
             // The correct answer is a summary of the paragraph containing this topic
             if let paragraphIndex = paragraphs.firstIndex(where: { $0.contains(topic) }),
                let paragraph = paragraphs[safe: paragraphIndex] {
                 let correctOption = summarizeParagraph(paragraph)
                 options.append(correctOption)
-                
+
                 // Add distractor options from other paragraphs
                 for i in 0..<3 {
                     let distractorIndex = (paragraphIndex + i + 1) % paragraphs.count
@@ -293,13 +411,13 @@ final class QuizGeneratorViewModel: ObservableObject {
                     "It concludes the discussion"
                 ]
             }
-            
+
             // Shuffle options if we're not using the fallback
             if options.count == 4 {
                 let correctOption = options[0]
                 options.shuffle()
                 let correctAnswer = options.firstIndex(of: correctOption) ?? 0
-                
+
                 questions.append(QuizQuestion(
                     question: question,
                     options: options,
@@ -307,28 +425,28 @@ final class QuizGeneratorViewModel: ObservableObject {
                 ))
             }
         }
-        
+
         return questions
     }
-    
+
     // Generate relationship questions (how concepts relate)
     private func generateRelationshipQuestions(from processedContent: [String: Any]) -> [QuizQuestion] {
         guard let sentences = processedContent["sentences"] as? [String],
               let keyTerms = processedContent["keyTerms"] as? [String] else {
             return []
         }
-        
+
         var questions: [QuizQuestion] = []
-        
+
         // Find sentences that contain multiple key terms
         let multiTermSentences = sentences.filter { sentence in
             let termCount = keyTerms.filter { sentence.lowercased().contains($0.lowercased()) }.count
             return termCount >= 2
         }
-        
+
         for sentence in multiTermSentences.prefix(5) {
             let question = "What relationship is described in this statement: \"\(sentence)\""
-            
+
             // Generate options
             let options = [
                 "Cause and effect",
@@ -336,32 +454,32 @@ final class QuizGeneratorViewModel: ObservableObject {
                 "Problem and solution",
                 "Sequential relationship"
             ]
-            
+
             // For simplicity, we'll use a random correct answer since we don't have actual NLP
             let correctAnswer = Int.random(in: 0..<options.count)
-            
+
             questions.append(QuizQuestion(
                 question: question,
                 options: options,
                 correctAnswer: correctAnswer
             ))
         }
-        
+
         return questions
     }
-    
+
     // Generate application questions (applying concepts)
     private func generateApplicationQuestions(from processedContent: [String: Any]) -> [QuizQuestion] {
         guard let paragraphs = processedContent["paragraphs"] as? [String] else {
             return []
         }
-        
+
         var questions: [QuizQuestion] = []
-        
+
         // Create application questions based on the content
         for _ in paragraphs.prefix(3) {
             let question = "Based on the information in the note, which of the following would be the most appropriate application?"
-            
+
             // Generate options
             let options = [
                 "Apply the concepts to solve a related problem",
@@ -369,49 +487,49 @@ final class QuizGeneratorViewModel: ObservableObject {
                 "Explain the concept to someone else",
                 "Create a new theory based on this information"
             ]
-            
+
             // For simplicity, we'll use a random correct answer
             let correctAnswer = Int.random(in: 0..<options.count)
-            
+
             questions.append(QuizQuestion(
                 question: question,
                 options: options,
                 correctAnswer: correctAnswer
             ))
         }
-        
+
         return questions
     }
-    
+
     // Generate supplementary questions to reach the minimum count
     private func generateSupplementaryQuestions(from processedContent: [String: Any], currentCount: Int) -> [QuizQuestion] {
         guard let sentences = processedContent["sentences"] as? [String] else {
             return []
         }
-        
+
         var questions: [QuizQuestion] = []
         let neededCount = max(0, 15 - currentCount)
-        
+
         // Create true/false questions from sentences
         for sentence in sentences.prefix(neededCount) {
             let question = "Is the following statement true according to the note: \"\(sentence)\""
-            
+
             // Generate options
             let options = ["True", "False"]
-            
+
             // For simplicity, we'll set "True" as the correct answer for actual sentences from the note
             let correctAnswer = 0
-            
+
             questions.append(QuizQuestion(
                 question: question,
                 options: options,
                 correctAnswer: correctAnswer
             ))
         }
-        
+
         return questions
     }
-    
+
     // Generate basic questions for very short content
     private func generateBasicQuestions(from content: String) -> [QuizQuestion] {
         return [
@@ -427,7 +545,7 @@ final class QuizGeneratorViewModel: ObservableObject {
             )
         ]
     }
-    
+
     // Helper function to summarize a paragraph
     private func summarizeParagraph(_ paragraph: String) -> String {
         // Simple summarization: take the first sentence if it's not too long
@@ -435,36 +553,36 @@ final class QuizGeneratorViewModel: ObservableObject {
            firstSentence.count < 100 {
             return firstSentence.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        
+
         // Otherwise, take a substring
         let maxLength = min(paragraph.count, 100)
         let endIndex = paragraph.index(paragraph.startIndex, offsetBy: maxLength)
         return String(paragraph[..<endIndex]) + "..."
     }
-    
+
     private func calculateAndUpdateAnalytics() async throws {
         let analytics = try await fetchOrCreateAnalytics()
         try updateAnalytics(analytics)
         try viewContext.save()
-        
+
         #if DEBUG
         print("📝 QuizGenerator: Analytics calculated and updated")
         #endif
     }
-    
+
     private func createQuizProgress() -> NSManagedObject {
         let progress = NSEntityDescription.insertNewObject(forEntityName: "QuizProgress", into: viewContext)
         progress.setValue(UUID(), forKey: "id")
         progress.setValue(Date(), forKey: "timestamp")
         progress.setValue(noteId, forKey: "noteId")
-        
+
         #if DEBUG
         print("📝 QuizGenerator: Created quiz progress entity")
         #endif
-        
+
         return progress
     }
-    
+
     private func createQuizAnalytics() -> NSManagedObject {
         let analytics = NSEntityDescription.insertNewObject(forEntityName: "QuizAnalytics", into: viewContext)
         analytics.setValue(UUID(), forKey: "id")
@@ -473,24 +591,24 @@ final class QuizGeneratorViewModel: ObservableObject {
         analytics.setValue(0, forKey: "totalQuestions")
         analytics.setValue(0.0, forKey: "averageScore")
         analytics.setValue(noteId, forKey: "noteId")
-        
+
         #if DEBUG
         print("📝 QuizGenerator: Created quiz analytics entity")
         #endif
-        
+
         return analytics
     }
-    
+
     private func saveQuizProgress() async throws {
         do {
             let progress = createQuizProgress()
             progress.setValue(try JSONEncoder().encode(quizResults), forKey: "answers")
-            
+
             let analytics = try await fetchOrCreateAnalytics()
             try updateAnalytics(analytics)
 
             try viewContext.save()
-            
+
             #if DEBUG
             print("📝 QuizGenerator: Saved quiz progress successfully")
             #endif
@@ -501,11 +619,11 @@ final class QuizGeneratorViewModel: ObservableObject {
             throw QuizError.saveFailed(error)
         }
     }
-    
+
     private func fetchOrCreateAnalytics() async throws -> NSManagedObject {
         let request = NSFetchRequest<NSManagedObject>(entityName: "QuizAnalytics")
         request.predicate = NSPredicate(format: "noteId == %@", noteId as CVarArg)
-        
+
         do {
             let analytics = try viewContext.fetch(request).first ?? createQuizAnalytics()
             return analytics
@@ -521,11 +639,11 @@ final class QuizGeneratorViewModel: ObservableObject {
         let completedQuizzes = (analytics.value(forKey: "completedQuizzes") as? Int32 ?? 0)
         let correctCount = calculateCorrectAnswers()
         let score = Double(correctCount) / Double(questions.count) * 100
-        
+
         #if DEBUG
         print("📝 QuizGenerator: Calculating analytics - Score: \(score)%")
         #endif
-        
+
         self.analytics = QuizPerformanceData(
             completedQuizzes: Int(completedQuizzes),
             correctAnswers: Int(correctCount),
@@ -536,7 +654,7 @@ final class QuizGeneratorViewModel: ObservableObject {
             detail: "Session Results"
         )
     }
-    
+
     private func calculateCorrectAnswers() -> Int32 {
         Int32(quizResults.reduce(0) { count, result in
             count + (questions.first { $0.id == result.key }?.correctAnswer == result.value ? 1 : 0)

@@ -7,7 +7,7 @@ struct QuizTabView: View {
     let note: NoteCardConfiguration
     @StateObject private var viewModel: QuizGeneratorViewModel
     @Environment(\.toastManager) private var toastManager
-    
+
     init(note: NoteCardConfiguration) {
         self.note = note
         self._viewModel = StateObject(wrappedValue: QuizGeneratorViewModel(
@@ -16,13 +16,25 @@ struct QuizTabView: View {
             content: note.preview
         ))
     }
-    
+
     var body: some View {
-        VStack(spacing: Theme.Spacing.lg) {
+        VStack(spacing: 0) {
+            // Header with title
+            HStack {
+                Text("Quiz")
+                    .font(Theme.Typography.h2)
+                    .foregroundColor(Theme.Colors.primary)
+
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.bottom, Theme.Spacing.md)
+
+            VStack(spacing: Theme.Spacing.lg) {
             switch viewModel.loadingState {
             case .loading(let message):
                 LoadingIndicator(message: message)
-                
+
             case .error(let message):
                 ErrorView(
                     error: NSError(domain: "Quiz", code: -1, userInfo: [
@@ -33,7 +45,7 @@ struct QuizTabView: View {
                         try? await viewModel.generateQuiz()
                     }
                 }
-                
+
             case .success, .idle:
                 if viewModel.questions.isEmpty {
                     EmptyQuizView {
@@ -45,19 +57,21 @@ struct QuizTabView: View {
                     QuizContentView(viewModel: viewModel)
                 }
             }
-            
+
             if let analytics = viewModel.analytics {
                 QuizAnalyticsView(analytics: analytics)
             }
+            }
+            .padding()
         }
-        .padding()
+        .padding(.vertical)
     }
 }
 
 // MARK: - Empty Quiz View
 private struct EmptyQuizView: View {
     let onGenerate: () -> Void
-    
+
     var body: some View {
         EmptyStateView(
             icon: "questionmark.circle",
@@ -73,7 +87,7 @@ private struct EmptyQuizView: View {
 private struct QuizContentView: View {
     @ObservedObject var viewModel: QuizGeneratorViewModel
     @Environment(\.toastManager) private var toastManager
-    
+
     var body: some View {
         VStack(spacing: Theme.Spacing.md) {
             ProgressView(
@@ -81,7 +95,7 @@ private struct QuizContentView: View {
                 total: Double(viewModel.questions.count)
             )
             .tint(Theme.Colors.primary)
-            
+
             if let question = viewModel.questions[safe: viewModel.currentQuestionIndex] {
                 QuizQuestionView(
                     question: question,
@@ -94,13 +108,13 @@ private struct QuizContentView: View {
             }
         }
     }
-    
+
     private func submitAnswer() {
         guard let selectedAnswer = viewModel.selectedAnswer else {
             toastManager.show("Please select an answer", type: .warning)
             return
         }
-        
+
         Task {
             do {
                 try await viewModel.submitAnswer(selectedAnswer)
@@ -119,28 +133,28 @@ private struct QuizQuestionView: View {
     let selectedAnswer: Int?
     let onSelect: (Int) -> Void
     let onSubmit: () -> Void
-    
+
     // Add state to track if answer is submitted and feedback is showing
     @State private var isAnswerSubmitted = false
     @State private var isCorrect = false
-    
+
     // Check if this is the final question
     private var isFinalQuestion: Bool {
         return currentIndex == totalQuestions - 1
     }
-    
+
     var body: some View {
         VStack(spacing: Theme.Spacing.md) {
             Text("Question \(currentIndex + 1) of \(totalQuestions)")
                 .font(Theme.Typography.caption)
                 .foregroundColor(Theme.Colors.secondaryText)
-            
+
             // Clean markdown from question text
             Text(LocalizedStringKey(cleanMarkdown(question.question)))
                 .font(Theme.Typography.h3)
                 .multilineTextAlignment(.center)
                 .padding(.vertical, Theme.Spacing.sm)
-            
+
             VStack(spacing: Theme.Spacing.sm) {
                 ForEach(question.options.indices, id: \.self) { index in
                     AnswerOptionButton(
@@ -148,7 +162,7 @@ private struct QuizQuestionView: View {
                         isSelected: selectedAnswer == index,
                         isCorrect: isAnswerSubmitted ? index == question.correctAnswer : nil,
                         isIncorrect: isAnswerSubmitted ? selectedAnswer == index && index != question.correctAnswer : nil,
-                        action: { 
+                        action: {
                             if !isAnswerSubmitted {
                                 onSelect(index)
                             }
@@ -156,25 +170,41 @@ private struct QuizQuestionView: View {
                     )
                 }
             }
-            
+
             if isAnswerSubmitted {
                 // Show feedback when answer is submitted
                 VStack(spacing: Theme.Spacing.sm) {
                     HStack {
                         Image(systemName: isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
                             .foregroundColor(isCorrect ? Theme.Colors.success : Theme.Colors.error)
-                        
+
                         Text(LocalizedStringKey(isCorrect ? "Correct!" : "Incorrect"))
                             .font(Theme.Typography.body)
                             .foregroundColor(isCorrect ? Theme.Colors.success : Theme.Colors.error)
                     }
-                    
+
                     if !isCorrect {
                         Text(LocalizedStringKey("Correct answer: \(cleanMarkdown(question.options[question.correctAnswer]))"))
                             .font(Theme.Typography.caption)
                             .foregroundColor(Theme.Colors.secondaryText)
                     }
-                    
+
+                    // Show explanation if available
+                    if let explanation = question.explanation, !explanation.isEmpty {
+                        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                            Text("Explanation:")
+                                .font(Theme.Typography.caption)
+                                .fontWeight(.bold)
+                                .foregroundColor(Theme.Colors.secondaryText)
+
+                            Text(LocalizedStringKey(cleanMarkdown(explanation)))
+                                .font(Theme.Typography.caption)
+                                .foregroundColor(Theme.Colors.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.vertical, Theme.Spacing.xs)
+                    }
+
                     if isFinalQuestion {
                         Button("View Results") {
                             onSubmit()
@@ -205,11 +235,11 @@ private struct QuizQuestionView: View {
             }
         }
     }
-    
+
     // Enhanced helper function to process markdown for display
     private func cleanMarkdown(_ text: String) -> String {
         var cleanedText = text
-        
+
         // Remove code blocks which don't render well in quiz questions
         let codeBlockPattern = "```[\\s\\S]*?```"
         if let regex = try? NSRegularExpression(pattern: codeBlockPattern, options: []) {
@@ -220,7 +250,7 @@ private struct QuizQuestionView: View {
                 withTemplate: ""
             )
         }
-        
+
         // Remove horizontal rules
         let hrPattern = "^\\s*[\\*\\-\\_]{3,}\\s*$"
         if let regex = try? NSRegularExpression(pattern: hrPattern, options: [.anchorsMatchLines]) {
@@ -231,11 +261,11 @@ private struct QuizQuestionView: View {
                 withTemplate: ""
             )
         }
-        
+
         // Clean up excessive whitespace
         cleanedText = cleanedText.replacingOccurrences(of: "\n\n\n+", with: "\n\n", options: .regularExpression)
         cleanedText = cleanedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         return cleanedText
     }
 }
@@ -247,15 +277,16 @@ private struct AnswerOptionButton: View {
     let isCorrect: Bool?
     let isIncorrect: Bool?
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             HStack {
                 Text(LocalizedStringKey(text))
                     .font(Theme.Typography.body)
                     .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
-                
+
                 // Show appropriate icon based on state
                 if let isCorrect = isCorrect, isCorrect {
                     Image(systemName: "checkmark.circle.fill")
@@ -276,7 +307,7 @@ private struct AnswerOptionButton: View {
         }
         .buttonStyle(PlainButtonStyle())
     }
-    
+
     // Compute background color based on state
     private var backgroundColor: Color {
         if let isCorrect = isCorrect, isCorrect {
@@ -294,21 +325,21 @@ private struct AnswerOptionButton: View {
 // MARK: - Quiz Analytics View
 private struct QuizAnalyticsView: View {
     let analytics: QuizPerformanceData
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
             Text(analytics.title ?? "Quiz Performance")
                 .font(Theme.Typography.h3)
-            
+
             HStack {
                 ScoreCard(
                     title: "Score",
                     value: "\(Int(analytics.averageScore))%",
                     detail: nil
                 )
-                
+
                 Spacer()
-                
+
                 ScoreCard(
                     title: "Correct Answers",
                     value: "\(analytics.correctAnswers)",
@@ -331,17 +362,17 @@ private struct ScoreCard: View {
     let title: String
     let value: String
     let detail: String?
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
             Text(title)
                 .font(Theme.Typography.caption)
                 .foregroundColor(Theme.Colors.secondaryText)
-            
+
             Text(value)
                 .font(Theme.Typography.h2)
                 .foregroundColor(Theme.Colors.primary)
-            
+
             if let detail = detail {
                 Text(detail)
                     .font(Theme.Typography.caption)
