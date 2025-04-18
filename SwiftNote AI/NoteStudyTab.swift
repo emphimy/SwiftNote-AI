@@ -40,7 +40,7 @@ struct NoteStudyTabs: View {
                             icon: tab.icon,
                             isSelected: selectedTab == tab
                         ) {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            withAnimation(nil) {
                                 selectedTab = tab
 #if DEBUG
                                 print("📚 NoteStudyTabs: Tab selected - \(tab)")
@@ -70,7 +70,8 @@ struct NoteStudyTabs: View {
                 switch selectedTab {
                 case .read:
                     ReadTabView(note: note)
-                        .transition(AnyTransition.opacity)
+                        .id("read-tab")
+                        .transition(.opacity.animation(.easeInOut(duration: 0.2)))
                         .onAppear {
 #if DEBUG
                             print("📚 NoteStudyTabs: Switched to Read tab")
@@ -78,7 +79,8 @@ struct NoteStudyTabs: View {
                         }
                 case .transcript:
                     TranscriptTabView(note: note)
-                        .transition(AnyTransition.opacity)
+                        .id("transcript-tab")
+                        .transition(.opacity.animation(.easeInOut(duration: 0.2)))
                         .onAppear {
 #if DEBUG
                             print("📚 NoteStudyTabs: Switched to Transcript tab")
@@ -86,7 +88,8 @@ struct NoteStudyTabs: View {
                         }
                 case .quiz:
                     QuizTabView(note: note)
-                        .transition(AnyTransition.opacity)
+                        .id("quiz-tab")
+                        .transition(.opacity.animation(.easeInOut(duration: 0.2)))
                         .onAppear {
 #if DEBUG
                             print("📚 NoteStudyTabs: Switched to Quiz tab")
@@ -94,7 +97,8 @@ struct NoteStudyTabs: View {
                         }
                 case .flashcards:
                     FlashcardsTabView(note: note)
-                        .transition(AnyTransition.opacity)
+                        .id("flashcards-tab")
+                        .transition(.opacity.animation(.easeInOut(duration: 0.2)))
                         .onAppear {
 #if DEBUG
                             print("📚 NoteStudyTabs: Switched to Flashcards tab")
@@ -102,7 +106,8 @@ struct NoteStudyTabs: View {
                         }
                 case .chat:
                     ChatTabView(note: note)
-                        .transition(AnyTransition.opacity)
+                        .id("chat-tab")
+                        .transition(.opacity.animation(.easeInOut(duration: 0.2)))
                         .onAppear {
 #if DEBUG
                             print("📚 NoteStudyTabs: Switched to Chat tab")
@@ -110,7 +115,6 @@ struct NoteStudyTabs: View {
                         }
                 }
             }
-            .animation(.easeInOut(duration: 0.3), value: selectedTab)
         }
         .onAppear {
 #if DEBUG
@@ -1005,8 +1009,8 @@ struct TranscriptTabView: View {
                     .padding()
                 } else if let transcript = viewModel.transcript {
                     LazyVStack(alignment: .leading, spacing: 16) {
-                        ForEach(transcript.components(separatedBy: "\n\n").indices, id: \.self) { index in
-                            let paragraph = transcript.components(separatedBy: "\n\n")[index]
+                        let paragraphs = transcript.components(separatedBy: "\n\n")
+                        ForEach(Array(zip(paragraphs.indices, paragraphs)), id: \.0) { index, paragraph in
                             if !paragraph.isEmpty {
                                 // Try to find a timestamp in the format [MM:SS]
                                 if let timeRange = paragraph.range(of: "\\[\\d+:\\d{2}\\]", options: [.regularExpression]) {

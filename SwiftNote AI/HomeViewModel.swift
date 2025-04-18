@@ -395,12 +395,10 @@ final class HomeViewModel: ObservableObject {
 
         let request = NSFetchRequest<Note>(entityName: "Note")
 
-        // Create predicates for searching in title and content
+        // Create predicate for searching in title
         let titlePredicate = NSPredicate(format: "title CONTAINS[cd] %@", searchText)
 
-        // For content, we need to search in both originalContent and aiGeneratedContent
-        let originalContentPredicate = NSPredicate(format: "originalContent != nil")
-        let aiContentPredicate = NSPredicate(format: "aiGeneratedContent != nil")
+        // Note: We'll handle content search separately with manual filtering
 
         // Apply folder filter if a folder is selected
         if let folderId = currentFolderId {
@@ -414,7 +412,7 @@ final class HomeViewModel: ObservableObject {
 
         do {
             // First fetch notes matching the title
-            var results = try viewContext.fetch(request)
+            let results = try viewContext.fetch(request)
 
             // Now fetch notes that might contain the search text in their content
             // We'll do this as a separate query to avoid complex binary data predicates
@@ -455,7 +453,7 @@ final class HomeViewModel: ObservableObject {
                     #if DEBUG
                     print("📝 HomeViewModel: Skipping note with missing required properties")
                     #endif
-                    return nil // This will be filtered out by compactMap
+                    return nil as NoteCardConfiguration? // Explicitly typed nil to satisfy compiler
                 }
 
                 return NoteCardConfiguration(

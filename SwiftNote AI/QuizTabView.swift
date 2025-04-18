@@ -31,40 +31,53 @@ struct QuizTabView: View {
             .padding(.bottom, Theme.Spacing.md)
 
             VStack(spacing: Theme.Spacing.lg) {
-            switch viewModel.loadingState {
-            case .loading(let message):
-                LoadingIndicator(message: message)
+                ZStack {
+                    switch viewModel.loadingState {
+                    case .loading(let message):
+                        LoadingIndicator(message: message)
 
-            case .error(let message):
-                ErrorView(
-                    error: NSError(domain: "Quiz", code: -1, userInfo: [
-                        NSLocalizedDescriptionKey: message
-                    ])
-                ) {
-                    Task { @MainActor in
-                        try? await viewModel.generateQuiz()
-                    }
-                }
+                    case .error(let message):
+                        ErrorView(
+                            error: NSError(domain: "Quiz", code: -1, userInfo: [
+                                NSLocalizedDescriptionKey: message
+                            ])
+                        ) {
+                            Task { @MainActor in
+                                try? await viewModel.generateQuiz()
+                            }
+                        }
 
-            case .success, .idle:
-                if viewModel.questions.isEmpty {
-                    EmptyQuizView {
-                        Task { @MainActor in
-                            try? await viewModel.generateQuiz()
+                    case .success, .idle:
+                        if viewModel.questions.isEmpty {
+                            EmptyQuizView {
+                                Task { @MainActor in
+                                    try? await viewModel.generateQuiz()
+                                }
+                            }
+                        } else {
+                            QuizContentView(viewModel: viewModel)
                         }
                     }
-                } else {
-                    QuizContentView(viewModel: viewModel)
                 }
-            }
+                .animation(nil, value: viewModel.loadingState)
 
-            if let analytics = viewModel.analytics {
-                QuizAnalyticsView(analytics: analytics)
-            }
+                if let analytics = viewModel.analytics {
+                    QuizAnalyticsView(analytics: analytics)
+                }
             }
             .padding()
         }
         .padding(.vertical)
+        .onAppear {
+            // Delay loading to prevent flickering during tab transition
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                if viewModel.questions.isEmpty && viewModel.loadingState == .idle {
+                    Task { @MainActor in
+                        try? await viewModel.generateQuiz()
+                    }
+                }
+            }
+        }
     }
 }
 

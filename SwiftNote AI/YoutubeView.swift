@@ -191,7 +191,7 @@ class YouTubeViewModel: ObservableObject {
             #endif
 
             loadingState = .loading(message: "Extracting transcript...")
-            let (transcript, language) = try await youtubeService.getTranscript(videoId: videoId)
+            let (transcript, _) = try await youtubeService.getTranscript(videoId: videoId)
 
             loadingState = .loading(message: "Generating note...")
             let noteContent = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: selectedLanguage.code)
