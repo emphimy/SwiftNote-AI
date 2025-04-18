@@ -364,6 +364,7 @@ enum NoteSourceType: String {
     case video = "video"
     case upload = "upload"
     case recording = "recording"
+    case web = "web"
 
     var icon: Image {
         let iconName: String = {
@@ -373,6 +374,7 @@ enum NoteSourceType: String {
             case .text: return "doc"
             case .video: return "play.circle.fill"
             case .upload: return "arrow.up.circle.fill"
+            case .web: return "globe"
             }
         }()
         return Image(systemName: iconName)
@@ -384,6 +386,7 @@ enum NoteSourceType: String {
         case .text: return .green
         case .video: return .red
         case .upload: return .orange
+        case .web: return .purple
         }
     }
 }

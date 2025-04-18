@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		C950AFAC2D5D0AD600558875 /* AIProxy in Frameworks */ = {isa = PBXBuildFile; productRef = C950AFAB2D5D0AD600558875 /* AIProxy */; };
 		C950B0352D5E1EAC00558875 /* Down in Frameworks */ = {isa = PBXBuildFile; productRef = C950B0342D5E1EAC00558875 /* Down */; };
+		C98454D02DB2307C0008CDDB /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = C98454CF2DB2307C0008CDDB /* SwiftSoup */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -72,6 +73,7 @@
 			files = (
 				C950B0352D5E1EAC00558875 /* Down in Frameworks */,
 				C950AFAC2D5D0AD600558875 /* AIProxy in Frameworks */,
+				C98454D02DB2307C0008CDDB /* SwiftSoup in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -134,6 +136,7 @@
 			packageProductDependencies = (
 				C950AFAB2D5D0AD600558875 /* AIProxy */,
 				C950B0342D5E1EAC00558875 /* Down */,
+				C98454CF2DB2307C0008CDDB /* SwiftSoup */,
 			);
 			productName = "SwiftNote AI";
 			productReference = C9F047082CF92F080031419E /* SwiftNote AI.app */;
@@ -220,6 +223,7 @@
 			packageReferences = (
 				C950AFAA2D5D0AD600558875 /* XCRemoteSwiftPackageReference "AIProxySwift" */,
 				C950B0332D5E1EAC00558875 /* XCRemoteSwiftPackageReference "Down" */,
+				C98454CE2DB2307C0008CDDB /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C9F047092CF92F080031419E /* Products */;
@@ -622,6 +626,14 @@
 				kind = branch;
 			};
 		};
+		C98454CE2DB2307C0008CDDB /* XCRemoteSwiftPackageReference "SwiftSoup" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/scinfu/SwiftSoup";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.8.7;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -634,6 +646,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C950B0332D5E1EAC00558875 /* XCRemoteSwiftPackageReference "Down" */;
 			productName = Down;
+		};
+		C98454CF2DB2307C0008CDDB /* SwiftSoup */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C98454CE2DB2307C0008CDDB /* XCRemoteSwiftPackageReference "SwiftSoup" */;
+			productName = SwiftSoup;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
