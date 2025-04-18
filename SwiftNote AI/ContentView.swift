@@ -295,7 +295,7 @@ private struct AddNoteActionSheet: View {
                     viewModel.isShowingTextScan = true
                 },
 
-                ActionCardItem(title: "Import Text", icon: "doc", color: .blue) {
+                ActionCardItem(title: "Import PDF", icon: "doc", color: .blue) {
                     #if DEBUG
                     print("🏠 AddNoteSheet: Upload text selected")
                     #endif
