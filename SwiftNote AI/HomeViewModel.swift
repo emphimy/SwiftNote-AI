@@ -194,10 +194,10 @@ final class HomeViewModel: ObservableObject {
                         "rawTranscript": String(decoding: note.originalContent!, as: UTF8.self),
                         "aiGeneratedContent": note.aiGeneratedContent != nil ?
                             String(decoding: note.aiGeneratedContent!, as: UTF8.self) : nil,
-                        "videoId": note.videoId
+                        "videoId": note.videoId,
+                        "language": note.transcriptLanguage
                     ].compactMapValues { $0 },
-                    sourceURL: note.sourceURL,
-                    languageCode: note.transcriptLanguage
+                    sourceURL: note.sourceURL
                 )
             }
 
@@ -453,7 +453,7 @@ final class HomeViewModel: ObservableObject {
                     #if DEBUG
                     print("📝 HomeViewModel: Skipping note with missing required properties")
                     #endif
-                    return nil as NoteCardConfiguration? // Explicitly typed nil to satisfy compiler
+                    return nil
                 }
 
                 return NoteCardConfiguration(
@@ -466,8 +466,8 @@ final class HomeViewModel: ObservableObject {
                     sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
                     isFavorite: note.isFavorite,
                     folder: note.folder,
-                    sourceURL: note.sourceURL,
-                    languageCode: note.transcriptLanguage
+                    metadata: ["language": note.transcriptLanguage].compactMapValues { $0 },
+                    sourceURL: note.sourceURL
                 )
             }
 
