@@ -2,7 +2,6 @@ import SwiftUI
 
 // MARK: - Imports
 import Foundation
-import SwiftUI
 import UIKit
 
 // MARK: - YouTube View
@@ -81,6 +80,11 @@ struct YouTubeView: View {
                         )
                         .animation(.easeInOut, value: isURLFieldFocused)
 
+                        // Language Picker Section
+                        LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                            .padding(.vertical, Theme.Spacing.sm)
+                            .padding(.horizontal, Theme.Spacing.xs)
+
                         Button(action: processVideo) {
                             HStack {
                                 if viewModel.isProcessing {
@@ -153,6 +157,7 @@ class YouTubeViewModel: ObservableObject {
     @Published var shouldNavigateToNote = false
     @Published var generatedNote: NoteCardConfiguration?
     @Published private(set) var loadingState: LoadingState = .idle
+    @Published var selectedLanguage: Language = Language.supportedLanguages[0] // Default to English
     private var videoId: String?
 
     init() {
@@ -189,10 +194,10 @@ class YouTubeViewModel: ObservableObject {
             let (transcript, language) = try await youtubeService.getTranscript(videoId: videoId)
 
             loadingState = .loading(message: "Generating note...")
-            let noteContent = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: language)
+            let noteContent = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: selectedLanguage.code)
 
             loadingState = .loading(message: "Generating title...")
-            let title = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: language)
+            let title = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: selectedLanguage.code)
 
             // Save to Core Data
             loadingState = .loading(message: "Saving note...")
@@ -212,6 +217,9 @@ class YouTubeViewModel: ObservableObject {
                 note.sourceType = "video"
                 note.isFavorite = false
                 note.processingStatus = "completed"
+
+                // Store language information
+                note.transcriptLanguage = selectedLanguage.code
 
                 // Store video ID directly
                 note.videoId = videoId
@@ -246,7 +254,9 @@ class YouTubeViewModel: ObservableObject {
                 metadata: [
                     "rawTranscript": transcript,  // Make sure the transcript is saved in metadata
                     "aiGeneratedContent": noteContent,
-                    "videoId": videoId  // Include video ID for possible player embedding
+                    "videoId": videoId,  // Include video ID for possible player embedding
+                    "language": selectedLanguage.code,
+                    "languageName": selectedLanguage.name
                 ]
             )
 

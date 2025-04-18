@@ -310,9 +310,15 @@ struct NoteDetailsView: View {
                 }
             }
 
-            Text(viewModel.note.date, style: .date)
-                .font(Theme.Typography.caption)
-                .foregroundColor(Theme.Colors.secondaryText)
+            HStack(spacing: Theme.Spacing.md) {
+                Text(viewModel.note.date, style: .date)
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.secondaryText)
+
+                if let language = viewModel.note.language {
+                    LanguageDisplay(language: language, compact: true)
+                }
+            }
         }
     }
 

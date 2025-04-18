@@ -42,10 +42,18 @@ actor NoteGenerationService {
 
         #if DEBUG
         print("🤖 NoteGenerationService: Generating note from transcript of length: \(transcript.count)")
+        if let language = detectedLanguage {
+            print("🤖 NoteGenerationService: Using specified language: \(language)")
+        }
         #endif
 
+        // Language instruction based on whether a language was specified
+        let languageInstruction = detectedLanguage != nil ?
+            "Write ALL output—including headers—in \(detectedLanguage!) language." :
+            "Detect the language of the transcript and write ALL output—including headers—in that language."
+
         let prompt = """
-        Detect the language of the transcript and write ALL output—including headers—in that language.
+        \(languageInstruction)
 
         ## Summary
         Give a 2‑paragraph overview (≤120 words total).
@@ -92,7 +100,13 @@ actor NoteGenerationService {
             throw NoteGenerationError.emptyTranscript
         }
 
-        let languagePrompt = detectedLanguage != nil ? "Generate the title in \(detectedLanguage!) language." : ""
+        #if DEBUG
+        if let language = detectedLanguage {
+            print("🤖 NoteGenerationService: Generating title using language: \(language)")
+        }
+        #endif
+
+        let languagePrompt = detectedLanguage != nil ? "Generate the title in \(detectedLanguage!) language." : "Detect the language of the transcript and generate the title in that same language."
 
         let prompt = """
         Based on this transcript, generate a concise but descriptive title (maximum 60 characters) that captures the main topic or theme.

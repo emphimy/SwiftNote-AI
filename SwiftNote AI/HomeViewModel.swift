@@ -196,7 +196,8 @@ final class HomeViewModel: ObservableObject {
                             String(decoding: note.aiGeneratedContent!, as: UTF8.self) : nil,
                         "videoId": note.videoId
                     ].compactMapValues { $0 },
-                    sourceURL: note.sourceURL
+                    sourceURL: note.sourceURL,
+                    languageCode: note.transcriptLanguage
                 )
             }
 
@@ -467,7 +468,8 @@ final class HomeViewModel: ObservableObject {
                     sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
                     isFavorite: note.isFavorite,
                     folder: note.folder,
-                    sourceURL: note.sourceURL
+                    sourceURL: note.sourceURL,
+                    languageCode: note.transcriptLanguage
                 )
             }
 

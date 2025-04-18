@@ -11,6 +11,7 @@ struct NoteCardConfiguration: Identifiable {
     var tags: [String]
     var metadata: [String: Any]?
     var sourceURL: URL?
+    var languageCode: String?
 
     var audioURL: URL? {
         // For audio and recording types, we need to find the audio file
@@ -105,6 +106,11 @@ struct NoteCardConfiguration: Identifiable {
         return Color(colorName)
     }
 
+    var language: Language? {
+        guard let code = languageCode else { return nil }
+        return Language.getLanguageByCode(code) ?? Language.supportedLanguages[0] // Default to English if code not found
+    }
+
     // MARK: - Initialization
     init(
         id: UUID = UUID(),
@@ -116,7 +122,8 @@ struct NoteCardConfiguration: Identifiable {
         tags: [String] = [],
         folder: Folder? = nil,
         metadata: [String: Any]? = nil,
-        sourceURL: URL? = nil
+        sourceURL: URL? = nil,
+        languageCode: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -128,6 +135,7 @@ struct NoteCardConfiguration: Identifiable {
         self.folder = folder
         self.metadata = metadata
         self.sourceURL = sourceURL
+        self.languageCode = languageCode
 
         #if DEBUG
         print("""
