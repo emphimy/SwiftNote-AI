@@ -13,6 +13,7 @@ final class WebLinkImportViewModel: ObservableObject {
     @Published var aiProcessedContent: String?
     @Published var isProcessingComplete = false
     @Published private(set) var loadingState: LoadingState = .idle
+    @Published var selectedLanguage: Language = Language.supportedLanguages[0] // Default to English
 
     // MARK: - Private Properties
     private let viewContext: NSManagedObjectContext
@@ -103,10 +104,10 @@ final class WebLinkImportViewModel: ObservableObject {
     private func processWithAI(content: String) async {
         do {
             // Generate note content
-            let processedContent = try await noteGenerationService.generateNote(from: content, detectedLanguage: nil)
+            let processedContent = try await noteGenerationService.generateNote(from: content, detectedLanguage: selectedLanguage.code)
 
             // Generate title
-            let generatedTitle = try await noteGenerationService.generateTitle(from: content, detectedLanguage: nil)
+            let generatedTitle = try await noteGenerationService.generateTitle(from: content, detectedLanguage: selectedLanguage.code)
 
             await MainActor.run {
                 self.aiProcessedContent = processedContent
@@ -170,6 +171,9 @@ final class WebLinkImportViewModel: ObservableObject {
                     if let aiContent = self.aiProcessedContent {
                         note.setValue(aiContent.data(using: .utf8), forKey: "aiGeneratedContent")
                     }
+
+                    // Store language information
+                    note.setValue(self.selectedLanguage.code, forKey: "transcriptLanguage")
                 } else {
                     throw WebLinkError.processingFailed("No content available")
                 }
@@ -293,6 +297,15 @@ struct WebLinkImportView: View {
 
                     // URL Input Section
                     VStack(spacing: Theme.Spacing.md) {
+                        // Language Picker Section
+                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                            Text("Language")
+                                .font(Theme.Typography.caption)
+                                .foregroundColor(Theme.Colors.secondaryText)
+
+                            LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                                .padding(.vertical, Theme.Spacing.sm)
+                        }
                         HStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: "link")
                                 .foregroundColor(isURLFieldFocused ? Theme.Colors.primary : .gray)

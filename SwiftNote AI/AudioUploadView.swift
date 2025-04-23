@@ -60,6 +60,7 @@ final class AudioUploadViewModel: ObservableObject {
     // Removed recordedFiles and showingRecordedFilesPicker
     @Published var transcript = ""
     @Published var transcriptSegments: [TranscriptSegment] = []
+    @Published var selectedLanguage: Language = Language.supportedLanguages[0] // Default to English
 
     // MARK: - Private Properties
     private let viewContext: NSManagedObjectContext
@@ -245,7 +246,7 @@ final class AudioUploadViewModel: ObservableObject {
         loadingState = .loading(message: "Transcribing audio...")
         let transcription: String
         do {
-            let result = try await transcriptionService.transcribeAudioWithTimestamps(fileURL: audioURL)
+            let result = try await transcriptionService.transcribeAudioWithTimestamps(fileURL: audioURL, language: selectedLanguage.code)
             transcription = result.text
             transcriptSegments = result.segments
             transcript = transcription
@@ -265,7 +266,7 @@ final class AudioUploadViewModel: ObservableObject {
         loadingState = .loading(message: "Generating note content...")
         let noteContent: String
         do {
-            noteContent = try await noteGenerationService.generateNote(from: transcript)
+            noteContent = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: selectedLanguage.code)
 
             #if DEBUG
             print("🎵 AudioUploadVM: Successfully generated note content with \(noteContent.count) characters")
@@ -282,7 +283,8 @@ final class AudioUploadViewModel: ObservableObject {
         if let title = title, !title.isEmpty {
             noteTitle = title
         } else {
-            noteTitle = try await generateTitle()
+            loadingState = .loading(message: "Generating title...")
+            noteTitle = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: selectedLanguage.code)
         }
 
         // Save to Core Data
@@ -310,6 +312,9 @@ final class AudioUploadViewModel: ObservableObject {
             note.setValue(transcription, forKey: "transcript")
             note.setValue(noteContent.data(using: .utf8), forKey: "aiGeneratedContent")
             note.setValue(transcription.data(using: .utf8), forKey: "originalContent")
+
+            // Store language information
+            note.setValue(self.selectedLanguage.code, forKey: "transcriptLanguage")
 
             // Skip storing transcript segments for now to avoid crashes
             // We'll implement this properly after examining the Core Data model
@@ -617,10 +622,23 @@ struct AudioUploadView: View {
     }
 
     private var audioDetails: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            if let stats = viewModel.stats {
-                AudioDetailRow(label: "Format", value: stats.format)
-                AudioDetailRow(label: "Sample Rate", value: "\(Int(stats.sampleRate))Hz")
+        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            // Audio details
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                if let stats = viewModel.stats {
+                    AudioDetailRow(label: "Format", value: stats.format)
+                    AudioDetailRow(label: "Sample Rate", value: "\(Int(stats.sampleRate))Hz")
+                }
+            }
+
+            // Language Picker Section
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text("Language")
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.secondaryText)
+
+                LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                    .padding(.vertical, Theme.Spacing.sm)
             }
         }
         .padding()

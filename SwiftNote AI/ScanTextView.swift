@@ -47,6 +47,7 @@ final class ScanTextViewModel: ObservableObject {
     @Published var noteTitle: String = ""
     @Published var aiGeneratedContent: String? = nil
     @Published var isProcessingComplete = false
+    @Published var selectedLanguage: Language = Language.supportedLanguages[0] // Default to English
 
     // MARK: - Private Properties
     private let viewContext: NSManagedObjectContext
@@ -162,10 +163,10 @@ final class ScanTextViewModel: ObservableObject {
             loadingState = .loading(message: "Generating note with AI...")
 
             // Generate note content
-            let processedContent = try await noteGenerationService.generateNote(from: combinedText, detectedLanguage: nil)
+            let processedContent = try await noteGenerationService.generateNote(from: combinedText, detectedLanguage: selectedLanguage.code)
 
             // Generate title
-            let generatedTitle = try await noteGenerationService.generateTitle(from: combinedText, detectedLanguage: nil)
+            let generatedTitle = try await noteGenerationService.generateTitle(from: combinedText, detectedLanguage: selectedLanguage.code)
 
             await MainActor.run {
                 self.aiGeneratedContent = processedContent
@@ -235,6 +236,9 @@ final class ScanTextViewModel: ObservableObject {
                 if let aiContent = self.aiGeneratedContent {
                     note.setValue(aiContent.data(using: .utf8), forKey: "aiGeneratedContent")
                 }
+
+                // Store language information
+                note.setValue(self.selectedLanguage.code, forKey: "transcriptLanguage")
 
                 // Assign to All Notes folder
                 if let allNotesFolder = FolderListViewModel.getAllNotesFolder(context: self.viewContext) {
@@ -463,6 +467,18 @@ struct ScanTextView: View {
                     // Floating Action Buttons - positioned at the top
                     if !viewModel.scannedPages.isEmpty && !viewModel.isProcessingComplete {
                         VStack(spacing: Theme.Spacing.md) {
+                            // Language Picker Section
+                            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                                Text("Language")
+                                    .font(Theme.Typography.caption)
+                                    .foregroundColor(Theme.Colors.secondaryText)
+
+                                LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                                    .padding(.vertical, Theme.Spacing.sm)
+                            }
+                            .padding(.horizontal)
+                            .padding(.bottom, Theme.Spacing.sm)
+
                             // Generate Note Button
                             Button(action: {
                                 isTextFieldFocused = false // Dismiss keyboard

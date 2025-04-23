@@ -45,6 +45,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
     @Published var loadingState: LoadingState = .idle
     @Published var shouldNavigateToNote = false
     @Published var generatedNote: NoteCardConfiguration?
+    @Published var selectedLanguage: Language = Language.supportedLanguages[0] // Default to English
 
     // MARK: - Loading State Enum
     enum LoadingState: Equatable {
@@ -237,7 +238,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
 
                 // Generate note content from transcript
                 loadingState = .loading(message: "Generating note content...")
-                let noteContent = try await noteGenerationService.generateNote(from: transcript)
+                let noteContent = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: selectedLanguage.code)
 
                 #if DEBUG
                 print("🎙️ AudioRecordingViewModel: Successfully generated note content with \(noteContent.count) characters")
@@ -245,7 +246,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
 
                 // Generate title from transcript
                 loadingState = .loading(message: "Generating title...")
-                let title = try await noteGenerationService.generateTitle(from: transcript)
+                let title = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: selectedLanguage.code)
 
                 // Save to Core Data
                 loadingState = .loading(message: "Saving note...")
@@ -288,6 +289,9 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
             note.setValue(transcript, forKey: "transcript")
             note.setValue(content.data(using: .utf8), forKey: "aiGeneratedContent")
             note.setValue(transcript.data(using: .utf8), forKey: "originalContent")
+
+            // Store language information
+            note.setValue(self.selectedLanguage.code, forKey: "transcriptLanguage")
 
             // Save audio file to documents directory
             guard let recordingURL = self.recordingURL else {
@@ -339,7 +343,9 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
                     tags: [],
                     metadata: [
                         "rawTranscript": transcript,
-                        "aiGeneratedContent": content
+                        "aiGeneratedContent": content,
+                        "language": self.selectedLanguage.code,
+                        "languageName": self.selectedLanguage.name
                     ],
                     sourceURL: destinationURL
                 )
@@ -676,6 +682,13 @@ struct AudioRecordingView: View {
                         ClassicWaveformView(audioLevel: viewModel.audioLevel)
                             .frame(height: 180)
                             .padding(.horizontal)
+
+                        // Language Picker Section
+                        if viewModel.recordingState == .finished {
+                            LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                                .padding(.vertical, Theme.Spacing.sm)
+                                .padding(.horizontal, Theme.Spacing.xs)
+                        }
 
                         // Recording Controls
                         VStack(spacing: Theme.Spacing.md) {

@@ -96,6 +96,7 @@ final class TextUploadViewModel: ObservableObject {
     @Published private(set) var loadingState: LoadingState = .idle
     @Published var aiGeneratedContent: Data?
     @Published private(set) var pdfPageCount: Int?
+    @Published var selectedLanguage: Language = Language.supportedLanguages[0] // Default to English
 
     // MARK: - Private Properties
     private let viewContext: NSManagedObjectContext
@@ -294,48 +295,10 @@ final class TextUploadViewModel: ObservableObject {
     }
 
     private func processWithAI(text: String) async throws -> Data {
-        let prompt = """
-        Detect the language of the transcript and write ALL output—including headers—in that language.
-
-        ## Summary
-        Give a 2‑paragraph overview (≤120 words total).
-
-        ## Key Points
-        - Bullet the 6‑10 most important takeaways.
-
-        ## Important Details
-        For each major theme you find (create as many as needed):
-
-        ### {{Theme Name}}
-        - Concise detail bullets (≤25 words each).
-        > ### 💡 **Feynman Simplification**
-        >
-        > One plain‑language paragraph that could be read to a novice.
-
-        ## Notable Quotes
-        > Include only impactful quotations. Omit this section if none.
-
-        ## Tables
-        If—and only if—information (dates, stats, comparisons, steps) would be clearer in a table, add up to **2** tables here. Otherwise omit this section entirely.
-
-        ## Conclusion
-        Wrap up in 1‑2 paragraphs, linking back to the Key Points.
-
-        ### Style Rules
-        1. Use **##** for main headers, **###** for sub‑headers.
-        2. Bullet lists with **-**.
-        3. Format tables with `|` and `-`.
-        4. Inline code or technical terms with back‑ticks.
-        5. Bold sparingly for emphasis.
-        6. Never invent facts not present in the transcript.
-        7. Output *only* Markdown—no explanations, no apologies.
-
-        Document to analyze:
-        \(text)
-        """
-
-        let aiResponse = try await aiService.generateCompletion(prompt: prompt)
-        return aiResponse.data(using: .utf8) ?? Data()
+        // Use NoteGenerationService instead of direct prompt
+        let noteGenerationService = NoteGenerationService()
+        let processedContent = try await noteGenerationService.generateNote(from: text, detectedLanguage: selectedLanguage.code)
+        return processedContent.data(using: .utf8) ?? Data()
     }
 
     // MARK: - Generate Title
@@ -348,7 +311,7 @@ final class TextUploadViewModel: ObservableObject {
 
         do {
             let noteGenerationService = NoteGenerationService()
-            let title = try await noteGenerationService.generateTitle(from: textContent)
+            let title = try await noteGenerationService.generateTitle(from: textContent, detectedLanguage: selectedLanguage.code)
 
             #if DEBUG
             print("📄 TextUploadVM: Generated title: \(title)")
@@ -395,6 +358,9 @@ final class TextUploadViewModel: ObservableObject {
             if let aiContent = aiGeneratedContent {
                 note.setValue(aiContent, forKey: "aiGeneratedContent")
             }
+
+            // Store language information
+            note.setValue(self.selectedLanguage.code, forKey: "transcriptLanguage")
 
             // Create a preview from the first few lines
             let preview = String(textContent.prefix(500))
@@ -861,6 +827,17 @@ struct TextUploadView: View {
 
             // Document Stats Section
             documentStatsSection
+
+            // Language Picker Section
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text("Language")
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.secondaryText)
+                    .padding(.horizontal)
+
+                LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                    .padding(.vertical, Theme.Spacing.sm)
+            }
 
             // Content Preview with Markdown Support
             contentPreviewSection
