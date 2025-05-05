@@ -184,7 +184,7 @@ enum Theme {
 
     // MARK: - Settings
     enum Settings {
-        static let iconSize: CGFloat = 32
+        static let iconSize: CGFloat = 26
         static let cardPadding: CGFloat = 16
         static let cornerRadius: CGFloat = 12
         static let animationDuration: Double = 0.3
@@ -220,12 +220,7 @@ enum Theme {
                 icon: "questionmark.circle.fill",
                 color: Colors.success
             ),
-            .init(
-                id: "about",
-                title: "About",
-                icon: "info.circle.fill",
-                color: Colors.primary
-            )
+            // About section removed
         ]
     }
 }

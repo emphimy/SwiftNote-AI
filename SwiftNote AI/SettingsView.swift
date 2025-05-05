@@ -354,8 +354,6 @@ struct SettingsView: View {
             privacySection
         case "support":
             supportSection
-        case "about":
-            AboutSection()
         default:
             EmptyView()
         }
@@ -372,7 +370,7 @@ struct SettingsView: View {
                         .foregroundColor(section.color)
 
                     Text(section.title)
-                        .font(Theme.Typography.h3)
+                        .font(.system(size: 18, weight: .semibold)) // Custom smaller size
                 }
 
                 // Section Content - reduced padding for more compact look
@@ -570,10 +568,24 @@ struct SettingsView: View {
                 SettingsRow(
                     icon: "envelope.fill",
                     title: "Contact Support",
-                    color: Theme.Colors.primary,
-                    showDivider: false
+                    color: Theme.Colors.primary
                 )
             }
+
+            // App Version moved from About section
+            SettingsRow(
+                icon: "info.circle.fill",
+                title: "App Version",
+                color: Theme.Colors.primary,
+                showDivider: false,
+                rightContent: {
+                    AnyView(
+                        Text(Bundle.main.appVersion)
+                            .font(Theme.Typography.caption)
+                            .foregroundColor(Theme.Colors.secondaryText)
+                    )
+                }
+            )
         }
     }
 
@@ -729,31 +741,7 @@ struct LegalSection: View {
     }
 }
 
-// MARK: - About Section
-struct AboutSection: View {
-    var body: some View {
-        VStack(spacing: 0) { // No spacing between rows
-            SettingsRow(
-                icon: "info.circle.fill",
-                title: "App Version",
-                color: Theme.Colors.primary,
-                rightContent: {
-                    AnyView(
-                        Text(Bundle.main.appVersion)
-                            .font(Theme.Typography.caption)
-                            .foregroundColor(Theme.Colors.secondaryText)
-                    )
-                }
-            )
-
-            SettingsRow(
-                icon: "doc.text.fill",
-                title: "Acknowledgments",
-                color: Theme.Colors.primary
-            )
-        }
-    }
-}
+// About section removed
 
 // MARK: - Bundle Extension
 extension Bundle {
