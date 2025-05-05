@@ -279,7 +279,7 @@ struct SettingsView: View {
     // MARK: - Content Views
     @ViewBuilder
     private var settingsContent: some View {
-        LazyVStack(spacing: Theme.Spacing.sm) { // Reduced spacing between sections
+        LazyVStack(spacing: 16) { // Moderate spacing between sections
             ForEach(Theme.Settings.sections) { section in
                 sectionView(for: section)
             }
@@ -364,7 +364,7 @@ struct SettingsView: View {
         // MARK: - Update Original sectionView
         @ViewBuilder
         func sectionView(for section: SettingsSection) -> some View {
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) { // Reduced spacing
+            VStack(alignment: .leading, spacing: 8) { // Reduced spacing between header and content
                 // Section Header
                 HStack {
                     Image(systemName: section.icon)
@@ -374,18 +374,18 @@ struct SettingsView: View {
                     Text(section.title)
                         .font(Theme.Typography.h3)
                 }
-                .padding(.bottom, Theme.Spacing.xxs) // Reduced bottom padding
 
-                // Section Content
+                // Section Content - reduced padding for more compact look
                 sectionContent(for: section)
-                    .padding(Theme.Settings.cardPadding)
+                    .padding(.vertical, 8) // Reduced vertical padding
+                    .padding(.horizontal, 12) // Reduced horizontal padding
                     .background(Theme.Colors.secondaryBackground)
                     .cornerRadius(Theme.Settings.cornerRadius)
             }
         }
 
     private var accountSection: some View {
-        VStack(spacing: Theme.Spacing.md) {
+        VStack(spacing: 0) { // No spacing between rows
             NavigationLink {
                 ProfileView(context: viewContext)
             } label: {
@@ -413,7 +413,7 @@ struct SettingsView: View {
     }
 
     private var appearanceSection: some View {
-        VStack(spacing: Theme.Spacing.md) {
+        VStack(spacing: 6) { // Minimal spacing for appearance controls
             Picker("Theme", selection: Binding(
                 get: { themeManager.currentTheme },
                 set: { newTheme in
@@ -440,7 +440,7 @@ struct SettingsView: View {
     // Notifications section removed
 
     private var storageSection: some View {
-        VStack(spacing: Theme.Spacing.md) {
+        VStack(spacing: 8) { // Slightly more spacing for storage section
             if let usage = viewModel.storageUsage {
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                     Text("Storage Used")
@@ -531,7 +531,7 @@ struct SettingsView: View {
     }
 
     private var privacySection: some View {
-        VStack(spacing: Theme.Spacing.md) {
+        VStack(spacing: 8) { // Consistent spacing
             // Biometric Authentication
             Toggle(viewModel.biometricType == .faceID ? "Use Face ID" : "Use Touch ID", isOn: .init(
                 get: { viewModel.biometricEnabled },
@@ -557,7 +557,7 @@ struct SettingsView: View {
     }
 
     private var supportSection: some View {
-        VStack(spacing: Theme.Spacing.md) {
+        VStack(spacing: 0) { // No spacing between rows
             Link(destination: URL(string: "https://example.com/faq")!) {
                 SettingsRow(
                     icon: "questionmark.circle.fill",
@@ -700,7 +700,7 @@ struct LegalSection: View {
     private let termsOfUseURL = URL(string: "https://kybdigital.com/terms-of-use")!
 
     var body: some View {
-        VStack(spacing: Theme.Spacing.md) {
+        VStack(spacing: 0) { // No spacing between rows
             // Privacy Policy Row
             SettingsRow(
                 icon: "doc.text.fill",
@@ -732,7 +732,7 @@ struct LegalSection: View {
 // MARK: - About Section
 struct AboutSection: View {
     var body: some View {
-        VStack(spacing: Theme.Spacing.md) {
+        VStack(spacing: 0) { // No spacing between rows
             SettingsRow(
                 icon: "info.circle.fill",
                 title: "App Version",
@@ -796,6 +796,7 @@ struct SettingsRow: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // Row content
             HStack {
                 Image(systemName: icon)
                     .foregroundColor(color.opacity(colorScheme == .dark ? 0.9 : 1.0))
@@ -814,18 +815,14 @@ struct SettingsRow: View {
                         .foregroundColor(Theme.Colors.secondaryText)
                 }
             }
-            .padding(.vertical, Theme.Spacing.xs)
+            .padding(.vertical, 8) // Fixed vertical padding
 
+            // Divider with no extra spacing
             if showDivider {
                 Divider()
                     .background(Theme.Colors.tertiaryBackground)
                     .padding(.leading, 32)
             }
-        }
-        .onChange(of: themeManager.currentTheme) { newTheme in
-            #if DEBUG
-            print("⚙️ SettingsRow: Theme changed to \(newTheme) for row: \(title)")
-            #endif
         }
     }
 }
