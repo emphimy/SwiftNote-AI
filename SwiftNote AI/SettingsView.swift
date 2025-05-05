@@ -218,13 +218,13 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationView {
-            ScrollView {
+            ScrollView(showsIndicators: false) {
                 settingsContent
             }
             .background(Theme.Colors.background.ignoresSafeArea())
             .preferredColorScheme(themeManager.currentTheme.colorScheme)
             .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline) // Change to inline title
             .toolbar { settingsToolbar }
             .alert("Sign Out", isPresented: $viewModel.showingLogoutAlert) {
                 logoutAlert
@@ -248,14 +248,13 @@ struct SettingsView: View {
     // MARK: - Content Views
     @ViewBuilder
     private var settingsContent: some View {
-        VStack {
-            LazyVStack(spacing: Theme.Spacing.lg) {
-                ForEach(Theme.Settings.sections) { section in
-                    sectionView(for: section)
-                }
+        LazyVStack(spacing: Theme.Spacing.sm) { // Reduced spacing between sections
+            ForEach(Theme.Settings.sections) { section in
+                sectionView(for: section)
             }
-            .padding()
         }
+        .padding(.horizontal)
+        .padding(.top, Theme.Spacing.xs) // Small top padding
     }
 
     // MARK: - Alert Views
@@ -336,7 +335,7 @@ struct SettingsView: View {
         // MARK: - Update Original sectionView
         @ViewBuilder
         func sectionView(for section: SettingsSection) -> some View {
-            VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) { // Reduced spacing
                 // Section Header
                 HStack {
                     Image(systemName: section.icon)
@@ -346,7 +345,7 @@ struct SettingsView: View {
                     Text(section.title)
                         .font(Theme.Typography.h3)
                 }
-                .padding(.bottom, Theme.Spacing.xs)
+                .padding(.bottom, Theme.Spacing.xxs) // Reduced bottom padding
 
                 // Section Content
                 sectionContent(for: section)
@@ -397,6 +396,7 @@ struct SettingsView: View {
                     }
                 }
             )) {
+                Text("System").tag(ThemeMode.system)
                 Text("Light").tag(ThemeMode.light)
                 Text("Dark").tag(ThemeMode.dark)
             }
@@ -696,8 +696,8 @@ struct SafariView: UIViewControllerRepresentable {
 
 // MARK: - Legal Section
 struct LegalSection: View {
-    private let privacyPolicyURL = URL(string: "https://example.com/privacy")!
-    private let termsOfUseURL = URL(string: "https://example.com/terms")!
+    private let privacyPolicyURL = URL(string: "https://kybdigital.com/swift-ai-privacy-policy")!
+    private let termsOfUseURL = URL(string: "https://kybdigital.com/terms-of-use")!
 
     var body: some View {
         VStack(spacing: Theme.Spacing.md) {

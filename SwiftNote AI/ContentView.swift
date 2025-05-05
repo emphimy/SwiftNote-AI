@@ -458,7 +458,7 @@ struct ContentView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $viewModel.isShowingSettings) {
+            .fullScreenCover(isPresented: $viewModel.isShowingSettings) {
                 NavigationView {
                     SettingsView()
                 }
