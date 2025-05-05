@@ -462,6 +462,7 @@ struct ContentView: View {
                 NavigationView {
                     SettingsView()
                 }
+                .navigationViewStyle(StackNavigationViewStyle()) // Use stack style to prevent split view on iPad
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {

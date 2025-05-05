@@ -114,11 +114,8 @@ final class SettingsViewModel: ObservableObject {
         print("⚙️ SettingsViewModel: Fetching failed recordings")
         #endif
 
-        // Simulate fetching failed recordings
-        failedRecordings = [
-            FailedRecording(date: Date().addingTimeInterval(-3600), duration: 45, errorMessage: "Network connection lost"),
-            FailedRecording(date: Date().addingTimeInterval(-7200), duration: 120, errorMessage: "Insufficient storage")
-        ]
+        // Data is already pre-populated in init, so we don't need to do anything here
+        // This method is kept for compatibility with existing code
     }
 
     func deleteFailedRecording(_ recording: FailedRecording) {
@@ -129,40 +126,62 @@ final class SettingsViewModel: ObservableObject {
         failedRecordings.removeAll { $0.id == recording.id }
     }
 
+    // Storage data is pre-loaded to avoid loading indicator
+    init() {
+        // Pre-populate storage data
+        self.storageUsage = StorageUsage(
+            used: 1_200_000_000,  // 1.2 GB
+            total: 5_000_000_000  // 5 GB
+        )
+
+        // Pre-populate failed recordings
+        self.failedRecordings = [
+            FailedRecording(date: Date().addingTimeInterval(-3600), duration: 45, errorMessage: "Network connection lost"),
+            FailedRecording(date: Date().addingTimeInterval(-7200), duration: 120, errorMessage: "Insufficient storage")
+        ]
+
+        #if DEBUG
+        print("⚙️ SettingsViewModel: Initialized with pre-populated data")
+        #endif
+    }
+
     func calculateStorageUsage() {
         #if DEBUG
         print("⚙️ SettingsViewModel: Calculating storage usage")
         #endif
 
-        isLoading = true
+        // Only show loading if we don't already have storage data
+        if storageUsage == nil {
+            isLoading = true
 
-        Task {
-            do {
-                // Simulate API call
-                try await Task.sleep(nanoseconds: 1_000_000_000)
+            Task {
+                do {
+                    // Simulate API call with minimal delay
+                    try await Task.sleep(nanoseconds: 100_000_000) // Reduced to 0.1 seconds
 
-                let usage = StorageUsage(
-                    used: 1_200_000_000,  // 1.2 GB
-                    total: 5_000_000_000  // 5 GB
-                )
+                    let usage = StorageUsage(
+                        used: 1_200_000_000,  // 1.2 GB
+                        total: 5_000_000_000  // 5 GB
+                    )
 
-                await MainActor.run {
-                    self.storageUsage = usage
-                    self.isLoading = false
+                    await MainActor.run {
+                        self.storageUsage = usage
+                        self.isLoading = false
+                    }
+
+                    #if DEBUG
+                    print("⚙️ SettingsViewModel: Storage calculation complete - Used: \(usage.formattedUsed)")
+                    #endif
+                } catch {
+                    await MainActor.run {
+                        self.errorMessage = "Failed to calculate storage usage"
+                        self.isLoading = false
+                    }
+
+                    #if DEBUG
+                    print("⚙️ SettingsViewModel: Storage calculation failed - \(error.localizedDescription)")
+                    #endif
                 }
-
-                #if DEBUG
-                print("⚙️ SettingsViewModel: Storage calculation complete - Used: \(usage.formattedUsed)")
-                #endif
-            } catch {
-                await MainActor.run {
-                    self.errorMessage = "Failed to calculate storage usage"
-                    self.isLoading = false
-                }
-
-                #if DEBUG
-                print("⚙️ SettingsViewModel: Storage calculation failed - \(error.localizedDescription)")
-                #endif
             }
         }
     }
@@ -215,12 +234,13 @@ struct SettingsView: View {
     @Environment(\.toastManager) private var toastManager
     @Environment(\.managedObjectContext) private var viewContext
     @State private var noteTitle: String = ""
+    @State private var refreshToggle = false
 
     var body: some View {
-        NavigationView {
-            ScrollView(showsIndicators: false) {
-                settingsContent
-            }
+        ScrollView(showsIndicators: false) {
+            settingsContent
+                .id(refreshToggle) // Force refresh when theme changes
+        }
             .background(Theme.Colors.background.ignoresSafeArea())
             .preferredColorScheme(themeManager.currentTheme.colorScheme)
             .navigationTitle("Settings")
@@ -238,11 +258,22 @@ struct SettingsView: View {
                 #if DEBUG
                 print("⚙️ SettingsView: Theme changed to \(newTheme), triggering view update")
                 #endif
+                refreshToggle.toggle() // Force UI refresh
+            }
+            .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("ThemeChanged"))) { _ in
+                // Force view to update with the new theme
+                #if DEBUG
+                print("⚙️ SettingsView: Received ThemeChanged notification")
+                #endif
+                refreshToggle.toggle() // Force UI refresh
+
+                // Add haptic feedback
+                let impact = UIImpactFeedbackGenerator(style: .light)
+                impact.impactOccurred()
             }
             .sheet(item: $viewModel.exportURL) { wrapper in
                 ShareSheet(items: [wrapper.url])
             }
-        }
     }
 
     // MARK: - Content Views
@@ -708,16 +739,7 @@ struct LegalSection: View {
                 color: Theme.Colors.primary,
                 rightContent: {
                     AnyView(
-                        Link(destination: privacyPolicyURL) {
-                            HStack {
-                                Text("View")
-                                    .font(Theme.Typography.caption)
-                                    .foregroundColor(Theme.Colors.secondaryText)
-                                Image(systemName: "arrow.up.right")
-                                    .font(.caption)
-                                    .foregroundColor(Theme.Colors.secondaryText)
-                            }
-                        }
+                        WebViewLink(url: privacyPolicyURL, title: "")
                     )
                 }
             )
@@ -730,16 +752,7 @@ struct LegalSection: View {
                 showDivider: false,
                 rightContent: {
                     AnyView(
-                        Link(destination: termsOfUseURL) {
-                            HStack {
-                                Text("View")
-                                    .font(Theme.Typography.caption)
-                                    .foregroundColor(Theme.Colors.secondaryText)
-                                Image(systemName: "arrow.up.right")
-                                    .font(.caption)
-                                    .foregroundColor(Theme.Colors.secondaryText)
-                            }
-                        }
+                        WebViewLink(url: termsOfUseURL, title: "")
                     )
                 }
             )
