@@ -549,16 +549,7 @@ struct SettingsView: View {
                 viewModel.biometricType = BiometricAuthManager.shared.biometricType()
             }
 
-            // Data Collection & Privacy Settings
-            NavigationLink {
-                PrivacySettingsView(context: viewContext)
-            } label: {
-                SettingsRow(
-                    icon: "hand.raised.fill",
-                    title: "Privacy Settings",
-                    color: Theme.Colors.error
-                )
-            }
+            // Privacy Settings section removed
 
             // Legal Links
             LegalSection()
