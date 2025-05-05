@@ -19,7 +19,9 @@ final class SettingsViewModel: ObservableObject {
     @AppStorage("autoBackupEnabled") var autoBackupEnabled = true
     @AppStorage("biometricLockEnabled") var biometricLockEnabled = false
     @AppStorage("biometricEnabled") var biometricEnabled = false
-    
+
+    @Published var biometricType: BiometricType = .none
+
     @Published var showingSaveDialog = false
     @Published var storageUsage: StorageUsage?
     @Published var isLoading = false
@@ -29,18 +31,18 @@ final class SettingsViewModel: ObservableObject {
     @Published var showingLogoutAlert = false
     @Published var failedRecordings: [FailedRecording] = []
     @Published var exportURL: ExportURLWrapper?
-    
+
     private var cancellables = Set<AnyCancellable>()
-    
+
     struct StorageUsage {
         let used: Int64
         let total: Int64
         var usedPercentage: Double { Double(used) / Double(total) }
-        
+
         var formattedUsed: String { ByteCountFormatter.string(fromByteCount: used, countStyle: .file) }
         var formattedTotal: String { ByteCountFormatter.string(fromByteCount: total, countStyle: .file) }
     }
-    
+
     struct FailedRecording: Identifiable {
         let id = UUID()
         let date: Date
@@ -58,36 +60,47 @@ final class SettingsViewModel: ObservableObject {
             return String(format: "%d:%02d", minutes, seconds)
         }
     }
-    
+
     func toggleBiometric() async throws {
         #if DEBUG
         print("⚙️ SettingsViewModel: Attempting to toggle biometric auth")
         #endif
-        
-        let context = LAContext()
-        var error: NSError?
-        
-        // First check if biometric auth is available
-        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
+
+        // Get the current biometric type
+        biometricType = BiometricAuthManager.shared.biometricType()
+
+        // Check if biometric auth is available
+        guard biometricType != .none else {
             #if DEBUG
-            print("⚙️ SettingsViewModel: Biometric auth not available - \(String(describing: error))")
+            print("⚙️ SettingsViewModel: Biometric auth not available")
             #endif
-            throw error ?? NSError(domain: "Settings", code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Biometric authentication not available"])
+            throw NSError(domain: "Settings", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Biometric authentication not available on this device"])
         }
-        
+
+        // If we're turning it off, no need to authenticate first
+        if biometricEnabled {
+            biometricEnabled = false
+            BiometricAuthManager.shared.setAppLock(enabled: false)
+            return
+        }
+
         // Request biometric authentication
         do {
-            try await context.evaluatePolicy(
-                .deviceOwnerAuthenticationWithBiometrics,
-                localizedReason: "Enable biometric authentication for SwiftNote AI"
+            let success = try await BiometricAuthManager.shared.authenticate(
+                reason: "Enable \(biometricType.description) for SwiftNote AI"
             )
-            
-            #if DEBUG
-            print("⚙️ SettingsViewModel: Biometric auth toggle successful")
-            #endif
-            
-            biometricEnabled.toggle()
+
+            if success {
+                #if DEBUG
+                print("⚙️ SettingsViewModel: Biometric auth toggle successful")
+                #endif
+
+                biometricEnabled = true
+                // Ask if they want to lock the app with biometrics
+                biometricLockEnabled = true
+                BiometricAuthManager.shared.setAppLock(enabled: true)
+            }
         } catch {
             #if DEBUG
             print("⚙️ SettingsViewModel: Biometric auth failed - \(error)")
@@ -95,12 +108,12 @@ final class SettingsViewModel: ObservableObject {
             throw error
         }
     }
-        
+
     func fetchFailedRecordings() {
         #if DEBUG
         print("⚙️ SettingsViewModel: Fetching failed recordings")
         #endif
-        
+
         // Simulate fetching failed recordings
         failedRecordings = [
             FailedRecording(date: Date().addingTimeInterval(-3600), duration: 45, errorMessage: "Network connection lost"),
@@ -112,7 +125,7 @@ final class SettingsViewModel: ObservableObject {
         #if DEBUG
         print("⚙️ SettingsViewModel: Deleting failed recording: \(recording.id)")
         #endif
-        
+
         failedRecordings.removeAll { $0.id == recording.id }
     }
 
@@ -120,24 +133,24 @@ final class SettingsViewModel: ObservableObject {
         #if DEBUG
         print("⚙️ SettingsViewModel: Calculating storage usage")
         #endif
-        
+
         isLoading = true
-        
+
         Task {
             do {
                 // Simulate API call
                 try await Task.sleep(nanoseconds: 1_000_000_000)
-                
+
                 let usage = StorageUsage(
                     used: 1_200_000_000,  // 1.2 GB
                     total: 5_000_000_000  // 5 GB
                 )
-                
+
                 await MainActor.run {
                     self.storageUsage = usage
                     self.isLoading = false
                 }
-                
+
                 #if DEBUG
                 print("⚙️ SettingsViewModel: Storage calculation complete - Used: \(usage.formattedUsed)")
                 #endif
@@ -146,48 +159,48 @@ final class SettingsViewModel: ObservableObject {
                     self.errorMessage = "Failed to calculate storage usage"
                     self.isLoading = false
                 }
-                
+
                 #if DEBUG
                 print("⚙️ SettingsViewModel: Storage calculation failed - \(error.localizedDescription)")
                 #endif
             }
         }
     }
-    
+
     func cleanup() async {
         #if DEBUG
         print("⚙️ SettingsViewModel: Performing cleanup")
         #endif
         // Cleanup logic here
     }
-    
+
     func clearCache() async throws {
         #if DEBUG
         print("⚙️ SettingsViewModel: Clearing cache")
         #endif
-        
+
         isLoading = true
         defer { isLoading = false }
-        
+
         // Simulate cache clearing
         try await Task.sleep(nanoseconds: 2_000_000_000)
-        
+
         #if DEBUG
         print("⚙️ SettingsViewModel: Cache cleared successfully")
         #endif
     }
-    
+
     func logout() async throws {
         #if DEBUG
         print("⚙️ SettingsViewModel: Processing logout")
         #endif
-        
+
         isLoading = true
         defer { isLoading = false }
-        
+
         // Simulate logout process
         try await Task.sleep(nanoseconds: 1_000_000_000)
-        
+
         #if DEBUG
         print("⚙️ SettingsViewModel: Logout successful")
         #endif
@@ -202,7 +215,7 @@ struct SettingsView: View {
     @Environment(\.toastManager) private var toastManager
     @Environment(\.managedObjectContext) private var viewContext
     @State private var noteTitle: String = ""
-    
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -231,7 +244,7 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     // MARK: - Content Views
     @ViewBuilder
     private var settingsContent: some View {
@@ -244,7 +257,7 @@ struct SettingsView: View {
             .padding()
         }
     }
-    
+
     // MARK: - Alert Views
     @ViewBuilder
     private var logoutAlert: some View {
@@ -253,7 +266,7 @@ struct SettingsView: View {
             handleLogout()
         }
     }
-    
+
     @ViewBuilder
     private var saveRecordingAlert: some View {
         TextField("Note Title", text: $noteTitle)
@@ -266,7 +279,7 @@ struct SettingsView: View {
             saveRecording()
         }
     }
-    
+
     // MARK: - Toolbar
     @ToolbarContentBuilder
     private var settingsToolbar: some ToolbarContent {
@@ -279,7 +292,7 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     // MARK: - Loading Overlay
     @ViewBuilder
     private var loadingOverlay: some View {
@@ -287,7 +300,7 @@ struct SettingsView: View {
             LoadingIndicator(message: "Saving changes...")
         }
     }
-    
+
     // MARK: - Lifecycle Methods
     private func handleOnAppear() {
         #if DEBUG
@@ -296,7 +309,7 @@ struct SettingsView: View {
         viewModel.calculateStorageUsage()
         viewModel.fetchFailedRecordings()
     }
-    
+
     // MARK: - Section Views
     @ViewBuilder
     func sectionContent(for section: SettingsSection) -> some View {
@@ -329,12 +342,12 @@ struct SettingsView: View {
                     Image(systemName: section.icon)
                         .font(.system(size: Theme.Settings.iconSize))
                         .foregroundColor(section.color)
-                    
+
                     Text(section.title)
                         .font(Theme.Typography.h3)
                 }
                 .padding(.bottom, Theme.Spacing.xs)
-                
+
                 // Section Content
                 sectionContent(for: section)
                     .padding(Theme.Settings.cardPadding)
@@ -342,7 +355,7 @@ struct SettingsView: View {
                     .cornerRadius(Theme.Settings.cornerRadius)
             }
         }
-    
+
     private var accountSection: some View {
         VStack(spacing: Theme.Spacing.md) {
             NavigationLink {
@@ -354,7 +367,7 @@ struct SettingsView: View {
                     color: Theme.Colors.primary
                 )
             }
-            
+
             Button {
                 #if DEBUG
                 print("⚙️ SettingsView: Logout initiated")
@@ -370,7 +383,7 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     private var appearanceSection: some View {
         VStack(spacing: Theme.Spacing.md) {
             Picker("Theme", selection: Binding(
@@ -388,13 +401,13 @@ struct SettingsView: View {
                 Text("Dark").tag(ThemeMode.dark)
             }
             .pickerStyle(.segmented)
-            
+
             Text("Choose how SwiftNote AI appears to you")
                 .font(Theme.Typography.caption)
                 .foregroundColor(Theme.Colors.secondaryText)
         }
     }
-    
+
     private var notificationsSection: some View {
         VStack(spacing: Theme.Spacing.md) {
             Toggle("Push Notifications", isOn: $viewModel.notificationsEnabled)
@@ -403,7 +416,7 @@ struct SettingsView: View {
                     print("⚙️ SettingsView: Notifications toggled: \(newValue)")
                     #endif
                 }
-            
+
             NavigationLink {
                 NotificationView(context: viewContext)
             } label: {
@@ -416,7 +429,7 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     private var storageSection: some View {
         VStack(spacing: Theme.Spacing.md) {
             if let usage = viewModel.storageUsage {
@@ -424,7 +437,7 @@ struct SettingsView: View {
                     Text("Storage Used")
                         .font(Theme.Typography.caption)
                         .foregroundColor(Theme.Colors.secondaryText)
-                    
+
                     StorageProgressBar(
                         used: usage.usedPercentage,
                         usedText: usage.formattedUsed,
@@ -434,20 +447,20 @@ struct SettingsView: View {
             } else if viewModel.isLoading {
                 ProgressView()
             }
-            
+
             Toggle("Auto Backup", isOn: $viewModel.autoBackupEnabled)
                 .onChange(of: viewModel.autoBackupEnabled) { newValue in
                     #if DEBUG
                     print("⚙️ SettingsView: Auto backup toggled: \(newValue)")
                     #endif
                 }
-            
+
             if !viewModel.failedRecordings.isEmpty {
                 VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                     Text("Failed Recordings")
                         .font(Theme.Typography.caption)
                         .foregroundColor(Theme.Colors.secondaryText)
-                    
+
                     ForEach(viewModel.failedRecordings) { recording in
                         HStack {
                             VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
@@ -457,13 +470,13 @@ struct SettingsView: View {
                                     .font(Theme.Typography.small)
                                     .foregroundColor(Theme.Colors.error)
                             }
-                            
+
                             Spacer()
-                            
+
                             Text(recording.formattedDuration)
                                 .font(Theme.Typography.caption)
                                 .foregroundColor(Theme.Colors.secondaryText)
-                            
+
                             Button {
                                 #if DEBUG
                                 print("⚙️ SettingsView: Delete recording button tapped for ID: \(recording.id)")
@@ -477,14 +490,14 @@ struct SettingsView: View {
                             }
                         }
                         .padding(.vertical, Theme.Spacing.xxs)
-                        
+
                         if recording.id != viewModel.failedRecordings.last?.id {
                             Divider()
                         }
                     }
                 }
             }
-            
+
             Button {
                 Task {
                     do {
@@ -507,11 +520,11 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     private var privacySection: some View {
         VStack(spacing: Theme.Spacing.md) {
             // Biometric Authentication
-            Toggle("Use Face ID / Touch ID", isOn: .init(
+            Toggle(viewModel.biometricType == .faceID ? "Use Face ID" : "Use Touch ID", isOn: .init(
                 get: { viewModel.biometricEnabled },
                 set: { _ in
                     handleBiometricToggle()
@@ -522,7 +535,11 @@ struct SettingsView: View {
                 print("⚙️ SettingsView: Biometric setting changed to: \(newValue)")
                 #endif
             }
-            
+            .onAppear {
+                // Update the biometric type when the view appears
+                viewModel.biometricType = BiometricAuthManager.shared.biometricType()
+            }
+
             // Data Collection & Privacy Settings
             NavigationLink {
                 PrivacySettingsView(context: viewContext)
@@ -533,12 +550,12 @@ struct SettingsView: View {
                     color: Theme.Colors.error
                 )
             }
-            
+
             // Legal Links
             LegalSection()
         }
     }
-    
+
     private var supportSection: some View {
         VStack(spacing: Theme.Spacing.md) {
             Link(destination: URL(string: "https://example.com/faq")!) {
@@ -548,7 +565,7 @@ struct SettingsView: View {
                     color: Theme.Colors.success
                 )
             }
-            
+
             Link(destination: URL(string: "https://example.com/support")!) {
                 SettingsRow(
                     icon: "envelope.fill",
@@ -559,7 +576,7 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     // MARK: - Helper Methods
     private func handleBiometricToggle() {
         Task {
@@ -579,7 +596,7 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     private func handleLogout() {
         Task {
             do {
@@ -594,12 +611,12 @@ struct SettingsView: View {
             }
         }
     }
-    
+
     private func saveRecording() {
         #if DEBUG
         print("⚙️ SettingsView: Attempting to save recording with title: \(noteTitle)")
         #endif
-        
+
         guard !noteTitle.isEmpty else {
             #if DEBUG
             print("⚙️ SettingsView: Error - Empty note title")
@@ -607,17 +624,17 @@ struct SettingsView: View {
             toastManager.show("Please enter a title", type: .error)
             return
         }
-        
+
         Task {
             do {
                 try await Task.sleep(nanoseconds: 1_000_000_000) // Simulating save operation
                 toastManager.show("Recording saved successfully", type: .success)
                 viewModel.showingSaveDialog = false
-                
+
                 #if DEBUG
                 print("⚙️ SettingsView: Recording saved successfully with title: \(noteTitle)")
                 #endif
-                
+
             } catch {
                 #if DEBUG
                 print("⚙️ SettingsView: Error saving recording - \(error)")
@@ -634,7 +651,7 @@ struct WebViewLink: View {
     let title: String
     @State private var isShowingSafari = false
     @Environment(\.toastManager) private var toastManager
-    
+
     var body: some View {
         Button(action: {
             #if DEBUG
@@ -666,14 +683,14 @@ struct WebViewLink: View {
 // MARK: - Safari View
 struct SafariView: UIViewControllerRepresentable {
     let url: URL
-    
+
     func makeUIViewController(context: Context) -> SFSafariViewController {
         #if DEBUG
         print("🌐 SafariView: Creating Safari controller for URL: \(url)")
         #endif
         return SFSafariViewController(url: url)
     }
-    
+
     func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
 }
 
@@ -681,7 +698,7 @@ struct SafariView: UIViewControllerRepresentable {
 struct LegalSection: View {
     private let privacyPolicyURL = URL(string: "https://example.com/privacy")!
     private let termsOfUseURL = URL(string: "https://example.com/terms")!
-    
+
     var body: some View {
         VStack(spacing: Theme.Spacing.md) {
             // Privacy Policy Row
@@ -704,7 +721,7 @@ struct LegalSection: View {
                     )
                 }
             )
-            
+
             // Terms of Use Row
             SettingsRow(
                 icon: "doc.text.fill",
@@ -746,7 +763,7 @@ struct AboutSection: View {
                     )
                 }
             )
-            
+
             SettingsRow(
                 icon: "doc.text.fill",
                 title: "Acknowledgments",
@@ -769,14 +786,14 @@ extension Bundle {
 struct SettingsRow: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @Environment(\.colorScheme) private var colorScheme
-    
+
     let icon: String
     let title: String
     let color: Color
     var showDivider: Bool = true
-    
+
     var rightContent: (() -> AnyView)? = nil
-    
+
     init(
         icon: String,
         title: String,
@@ -789,24 +806,24 @@ struct SettingsRow: View {
         self.color = color
         self.showDivider = showDivider
         self.rightContent = rightContent
-        
+
         #if DEBUG
         print("⚙️ SettingsRow: Initializing row with title: \(title)")
         #endif
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: icon)
                     .foregroundColor(color.opacity(colorScheme == .dark ? 0.9 : 1.0))
                     .frame(width: 24)
-                
+
                 Text(title)
                     .foregroundColor(Theme.Colors.text)
-                
+
                 Spacer()
-                
+
                 if let rightContent = rightContent {
                     rightContent()
                 } else {
@@ -816,7 +833,7 @@ struct SettingsRow: View {
                 }
             }
             .padding(.vertical, Theme.Spacing.xs)
-            
+
             if showDivider {
                 Divider()
                     .background(Theme.Colors.tertiaryBackground)
@@ -834,11 +851,11 @@ struct SettingsRow: View {
 struct StorageProgressBar: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @Environment(\.colorScheme) private var colorScheme
-    
+
     let used: Double
     let usedText: String
     let totalText: String
-    
+
     var body: some View {
         VStack(spacing: Theme.Spacing.xxs) {
             GeometryReader { geometry in
@@ -846,7 +863,7 @@ struct StorageProgressBar: View {
                     Rectangle()
                         .fill(Theme.Colors.tertiaryBackground)
                         .cornerRadius(4)
-                    
+
                     Rectangle()
                         .fill(
                             LinearGradient(
@@ -863,14 +880,14 @@ struct StorageProgressBar: View {
                 }
             }
             .frame(height: 8)
-            
+
             HStack {
                 Text(usedText)
                     .font(Theme.Typography.caption)
                     .foregroundColor(Theme.Colors.primary)
-                
+
                 Spacer()
-                
+
                 Text(totalText)
                     .font(Theme.Typography.caption)
                     .foregroundColor(Theme.Colors.secondaryText)
@@ -894,7 +911,7 @@ struct SettingsView_Previews: PreviewProvider {
                 .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
         }
         .previewDisplayName("Settings View")
-        
+
         // Individual component previews
         Group {
             SettingsRow(
@@ -906,7 +923,7 @@ struct SettingsView_Previews: PreviewProvider {
             .padding()
             .previewLayout(.sizeThatFits)
             .previewDisplayName("Settings Row")
-            
+
             StorageProgressBar(
                 used: 0.7,
                 usedText: "3.5 GB",

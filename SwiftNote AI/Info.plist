@@ -83,6 +83,8 @@
 	<dict/>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>SwiftNote AI uses Face ID to securely lock your notes and provide quick access to your content.</string>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
