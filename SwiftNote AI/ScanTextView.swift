@@ -349,17 +349,32 @@ struct ScanTextView: View {
                         // Content Section
                         VStack(spacing: Theme.Spacing.lg) {
                             if viewModel.scannedPages.isEmpty {
-                                Button(action: { isShowingScanner = true }) {
-                                    VStack(spacing: Theme.Spacing.md) {
-                                        Image(systemName: "doc.viewfinder")
-                                            .font(.system(size: 40))
-                                        Text("Tap to Scan")
-                                            .font(.headline)
+                                VStack(spacing: Theme.Spacing.md) {
+                                    Button(action: { isShowingScanner = true }) {
+                                        VStack(spacing: Theme.Spacing.md) {
+                                            Image(systemName: "doc.viewfinder")
+                                                .font(.system(size: 40))
+                                            Text("Tap to Scan")
+                                                .font(.headline)
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding(Theme.Spacing.xl)
+                                        .background(Theme.Colors.secondaryBackground)
+                                        .foregroundColor(Theme.Colors.primary)
+                                        .cornerRadius(Theme.Layout.cornerRadius)
                                     }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(Theme.Spacing.xl)
+
+                                    // Language Picker Section
+                                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                                        Text("Language")
+                                            .font(Theme.Typography.caption)
+                                            .foregroundColor(Theme.Colors.secondaryText)
+
+                                        LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                                            .padding(.vertical, Theme.Spacing.sm)
+                                    }
+                                    .padding()
                                     .background(Theme.Colors.secondaryBackground)
-                                    .foregroundColor(Theme.Colors.primary)
                                     .cornerRadius(Theme.Layout.cornerRadius)
                                 }
                             } else {

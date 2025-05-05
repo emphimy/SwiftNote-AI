@@ -793,6 +793,19 @@ struct TextUploadView: View {
             .padding()
             .background(Theme.Colors.tertiaryBackground.opacity(0.3))
             .cornerRadius(Theme.Layout.cornerRadius)
+
+            // Language Picker Section
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text("Language")
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.secondaryText)
+
+                LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                    .padding(.vertical, Theme.Spacing.sm)
+            }
+            .padding()
+            .background(Theme.Colors.secondaryBackground)
+            .cornerRadius(Theme.Layout.cornerRadius)
         }
     }
 

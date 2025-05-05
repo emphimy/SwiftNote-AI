@@ -555,6 +555,19 @@ struct AudioUploadView: View {
                 )
             }
 
+            // Language Picker Section
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                Text("Language")
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.secondaryText)
+
+                LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                    .padding(.vertical, Theme.Spacing.sm)
+            }
+            .padding()
+            .background(Theme.Colors.secondaryBackground)
+            .cornerRadius(Theme.Layout.cornerRadius)
+
             supportedFormatsSection
         }
     }
