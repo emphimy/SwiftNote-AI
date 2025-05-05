@@ -192,7 +192,7 @@ enum Theme {
         static let sections: [SettingsSection] = [
             .init(
                 id: "account",
-                title: "Account & Security",
+                title: "Account",
                 icon: "person.circle.fill",
                 color: Colors.primary
             ),
@@ -201,12 +201,6 @@ enum Theme {
                 title: "Appearance",
                 icon: "paintbrush.fill",
                 color: Colors.accent
-            ),
-            .init(
-                id: "notifications",
-                title: "Notifications",
-                icon: "bell.fill",
-                color: Colors.warning
             ),
             .init(
                 id: "storage",

@@ -15,7 +15,7 @@ struct SettingsSection: Identifiable {
 // MARK: - ViewModel
 @MainActor
 final class SettingsViewModel: ObservableObject {
-    @AppStorage("notificationsEnabled") var notificationsEnabled = true
+    // Notifications removed
     @AppStorage("autoBackupEnabled") var autoBackupEnabled = true
     @AppStorage("biometricLockEnabled") var biometricLockEnabled = false
     @AppStorage("biometricEnabled") var biometricEnabled = false
@@ -348,8 +348,6 @@ struct SettingsView: View {
             accountSection
         case "appearance":
             appearanceSection
-        case "notifications":
-            notificationsSection
         case "storage":
             storageSection
         case "privacy":
@@ -439,27 +437,7 @@ struct SettingsView: View {
         }
     }
 
-    private var notificationsSection: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            Toggle("Push Notifications", isOn: $viewModel.notificationsEnabled)
-                .onChange(of: viewModel.notificationsEnabled) { newValue in
-                    #if DEBUG
-                    print("⚙️ SettingsView: Notifications toggled: \(newValue)")
-                    #endif
-                }
-
-            NavigationLink {
-                NotificationView(context: viewContext)
-            } label: {
-                SettingsRow(
-                    icon: "bell.badge.fill",
-                    title: "Notification Preferences",
-                    color: Theme.Colors.warning,
-                    showDivider: false
-                )
-            }
-        }
-    }
+    // Notifications section removed
 
     private var storageSection: some View {
         VStack(spacing: Theme.Spacing.md) {
