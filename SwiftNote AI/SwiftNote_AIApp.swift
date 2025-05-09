@@ -6,9 +6,22 @@ struct SwiftNote_AIApp: App {
     let persistenceController = PersistenceController.shared
     @StateObject private var themeManager = ThemeManager()
     @Environment(\.scenePhase) private var scenePhase
+    @State private var supabaseInitialized = false
 
     init() {
         // Initialize app without UserDefaults restoration
+    }
+
+    // Initialize Supabase when the app starts
+    private func initializeSupabase() async {
+        if !supabaseInitialized {
+            await SupabaseService.shared.initialize()
+            supabaseInitialized = true
+
+            #if DEBUG
+            print("📱 App: Supabase initialized")
+            #endif
+        }
     }
 
     var body: some Scene {
@@ -43,6 +56,11 @@ struct SwiftNote_AIApp: App {
                 #if DEBUG
                 print("📱 App: Becoming active")
                 #endif
+
+                // Initialize Supabase
+                Task {
+                    await initializeSupabase()
+                }
 
                 // Post notification to refresh notes when app becomes active
                 NotificationCenter.default.post(name: .init("RefreshNotes"), object: nil)

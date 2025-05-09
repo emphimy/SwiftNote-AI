@@ -425,6 +425,15 @@ struct ContentView: View {
         #if DEBUG
         print("🏠 ContentView: Initializing with context")
         #endif
+
+        // Initialize Supabase when ContentView is created
+        Task {
+            await SupabaseService.shared.initialize()
+
+            #if DEBUG
+            print("🏠 ContentView: Supabase initialized")
+            #endif
+        }
     }
 
     var body: some View {
