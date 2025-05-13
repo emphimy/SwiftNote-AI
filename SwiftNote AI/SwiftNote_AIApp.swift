@@ -7,9 +7,36 @@ struct SwiftNote_AIApp: App {
     @StateObject private var themeManager = ThemeManager()
     @Environment(\.scenePhase) private var scenePhase
     @State private var supabaseInitialized = false
+    @State private var deepLinkURL: URL?
 
     init() {
         // Initialize app without UserDefaults restoration
+    }
+
+    // Handle deep links for authentication
+    func handleDeepLink(_ url: URL) {
+        #if DEBUG
+        print("📱 App: Handling deep link: \(url)")
+        #endif
+
+        // Store the deep link URL to be processed by the AuthenticationManager
+        deepLinkURL = url
+
+        // Extract the code from the URL
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: true),
+           let queryItems = components.queryItems,
+           let code = queryItems.first(where: { $0.name == "code" })?.value {
+            #if DEBUG
+            print("📱 App: Extracted code from deep link: \(code)")
+            #endif
+
+            // Post a notification with the code that the AuthenticationManager can listen for
+            NotificationCenter.default.post(
+                name: Notification.Name("AuthCodeReceived"),
+                object: nil,
+                userInfo: ["code": code]
+            )
+        }
     }
 
     // Initialize Supabase when the app starts
@@ -26,16 +53,22 @@ struct SwiftNote_AIApp: App {
 
     var body: some Scene {
         WindowGroup {
-            AppLockWrapper {
-                ContentView()
-                    .environment(\.managedObjectContext, persistenceController.container.viewContext)
-                    .environmentObject(themeManager)
-                    .preferredColorScheme(themeManager.currentTheme.colorScheme)
-                    .onChange(of: themeManager.currentTheme) { newTheme in
-                        #if DEBUG
-                        print("🎨 App: Theme changed to \(newTheme) with colorScheme: \(String(describing: newTheme.colorScheme))")
-                        #endif
-                    }
+            AuthenticationWrapper {
+                AppLockWrapper {
+                    ContentView()
+                        .environment(\.managedObjectContext, persistenceController.container.viewContext)
+                        .environmentObject(themeManager)
+                        .preferredColorScheme(themeManager.currentTheme.colorScheme)
+                        .onChange(of: themeManager.currentTheme) { newTheme in
+                            #if DEBUG
+                            print("🎨 App: Theme changed to \(newTheme) with colorScheme: \(String(describing: newTheme.colorScheme))")
+                            #endif
+                        }
+                }
+            }
+            .onOpenURL { url in
+                // Handle deep links
+                handleDeepLink(url)
             }
         }
         .onChange(of: scenePhase) { newPhase in

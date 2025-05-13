@@ -17,6 +17,7 @@ final class HomeViewModel: ObservableObject {
     @Published var isShowingAddNote: Bool = false
     @Published var isLoading: Bool = false
     @Published var isShowingSettings = false
+    @Published var isShowingProfile = false
     @Published var isShowingRecording = false
     @Published var isShowingYouTubeInput = false
     @Published var isShowingTextUpload = false

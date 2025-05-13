@@ -85,6 +85,19 @@
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>SwiftNote AI uses Face ID to securely lock your notes and provide quick access to your content.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.kyb.SwiftNote-AI</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>swiftnoteai</string>
+			</array>
+		</dict>
+	</array>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

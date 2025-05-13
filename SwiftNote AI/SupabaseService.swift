@@ -107,6 +107,22 @@ class SupabaseService {
         }
     }
 
+    /// Verify email with confirmation token
+    /// - Parameters:
+    ///   - email: User's email
+    ///   - token: The confirmation token from the email link
+    func verifyEmail(email: String, token: String) async throws {
+        #if DEBUG
+        print("🔌 SupabaseService: Verifying email: \(email) with token: \(token)")
+        #endif
+
+        try await client.auth.verifyOTP(
+            email: email,
+            token: token,
+            type: .signup
+        )
+    }
+
     // MARK: - Database Methods
 
     /// Generic method to fetch data from a table
