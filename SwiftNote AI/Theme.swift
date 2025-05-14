@@ -191,22 +191,10 @@ enum Theme {
 
         static let sections: [SettingsSection] = [
             .init(
-                id: "account",
-                title: "Account",
-                icon: "person.circle.fill",
-                color: Colors.primary
-            ),
-            .init(
                 id: "appearance",
                 title: "Appearance",
                 icon: "paintbrush.fill",
                 color: Colors.accent
-            ),
-            .init(
-                id: "storage",
-                title: "Storage & Data",
-                icon: "internaldrive.fill",
-                color: Colors.secondary
             ),
             .init(
                 id: "privacy",
@@ -220,7 +208,7 @@ enum Theme {
                 icon: "questionmark.circle.fill",
                 color: Colors.success
             ),
-            // About section removed
+            // Account and Storage sections removed
         ]
     }
 }

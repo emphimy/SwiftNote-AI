@@ -28,7 +28,7 @@ final class SettingsViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var showingPrivacyPolicy = false
     @Published var showingDeleteAccountAlert = false
-    @Published var showingLogoutAlert = false
+    // Logout alert removed
     @Published var failedRecordings: [FailedRecording] = []
     @Published var exportURL: ExportURLWrapper?
 
@@ -209,21 +209,7 @@ final class SettingsViewModel: ObservableObject {
         #endif
     }
 
-    func logout() async throws {
-        #if DEBUG
-        print("⚙️ SettingsViewModel: Processing logout")
-        #endif
-
-        isLoading = true
-        defer { isLoading = false }
-
-        // Simulate logout process
-        try await Task.sleep(nanoseconds: 1_000_000_000)
-
-        #if DEBUG
-        print("⚙️ SettingsViewModel: Logout successful")
-        #endif
-    }
+    // Logout method removed
 }
 
 // MARK: - Settings View
@@ -246,9 +232,7 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline) // Change to inline title
             .toolbar { settingsToolbar }
-            .alert("Sign Out", isPresented: $viewModel.showingLogoutAlert) {
-                logoutAlert
-            }
+            // Logout alert removed
             .onAppear(perform: handleOnAppear)
             .overlay { loadingOverlay }
             .alert("Save Recording", isPresented: $viewModel.showingSaveDialog) {
@@ -290,14 +274,6 @@ struct SettingsView: View {
 
     // MARK: - Alert Views
     @ViewBuilder
-    private var logoutAlert: some View {
-        Button("Cancel", role: .cancel) {}
-        Button("Sign Out", role: .destructive) {
-            handleLogout()
-        }
-    }
-
-    @ViewBuilder
     private var saveRecordingAlert: some View {
         TextField("Note Title", text: $noteTitle)
         Button("Cancel", role: .cancel) {
@@ -336,7 +312,7 @@ struct SettingsView: View {
         #if DEBUG
         print("⚙️ SettingsView: View appeared")
         #endif
-        viewModel.calculateStorageUsage()
+        // Storage usage calculation removed
         viewModel.fetchFailedRecordings()
     }
 
@@ -344,12 +320,8 @@ struct SettingsView: View {
     @ViewBuilder
     func sectionContent(for section: SettingsSection) -> some View {
         switch section.id {
-        case "account":
-            accountSection
         case "appearance":
             appearanceSection
-        case "storage":
-            storageSection
         case "privacy":
             privacySection
         case "support":
@@ -382,34 +354,6 @@ struct SettingsView: View {
             }
         }
 
-    private var accountSection: some View {
-        VStack(spacing: 0) { // No spacing between rows
-            NavigationLink {
-                ProfileView(context: viewContext)
-            } label: {
-                SettingsRow(
-                    icon: "person.fill",
-                    title: "Edit Profile",
-                    color: Theme.Colors.primary
-                )
-            }
-
-            Button {
-                #if DEBUG
-                print("⚙️ SettingsView: Logout initiated")
-                #endif
-                viewModel.showingLogoutAlert = true
-            } label: {
-                SettingsRow(
-                    icon: "arrow.right.square.fill",
-                    title: "Sign Out",
-                    color: Theme.Colors.error,
-                    showDivider: false
-                )
-            }
-        }
-    }
-
     private var appearanceSection: some View {
         VStack(spacing: 6) { // Minimal spacing for appearance controls
             Picker("Theme", selection: Binding(
@@ -432,99 +376,6 @@ struct SettingsView: View {
             Text("Choose how SwiftNote AI appears to you")
                 .font(Theme.Typography.caption)
                 .foregroundColor(Theme.Colors.secondaryText)
-        }
-    }
-
-    // Notifications section removed
-
-    private var storageSection: some View {
-        VStack(spacing: 8) { // Slightly more spacing for storage section
-            if let usage = viewModel.storageUsage {
-                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    Text("Storage Used")
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.secondaryText)
-
-                    StorageProgressBar(
-                        used: usage.usedPercentage,
-                        usedText: usage.formattedUsed,
-                        totalText: usage.formattedTotal
-                    )
-                }
-            } else if viewModel.isLoading {
-                ProgressView()
-            }
-
-            Toggle("Auto Backup", isOn: $viewModel.autoBackupEnabled)
-                .onChange(of: viewModel.autoBackupEnabled) { newValue in
-                    #if DEBUG
-                    print("⚙️ SettingsView: Auto backup toggled: \(newValue)")
-                    #endif
-                }
-
-            if !viewModel.failedRecordings.isEmpty {
-                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    Text("Failed Recordings")
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.secondaryText)
-
-                    ForEach(viewModel.failedRecordings) { recording in
-                        HStack {
-                            VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                                Text(recording.formattedDate)
-                                    .font(Theme.Typography.caption)
-                                Text(recording.errorMessage)
-                                    .font(Theme.Typography.small)
-                                    .foregroundColor(Theme.Colors.error)
-                            }
-
-                            Spacer()
-
-                            Text(recording.formattedDuration)
-                                .font(Theme.Typography.caption)
-                                .foregroundColor(Theme.Colors.secondaryText)
-
-                            Button {
-                                #if DEBUG
-                                print("⚙️ SettingsView: Delete recording button tapped for ID: \(recording.id)")
-                                #endif
-                                withAnimation {
-                                    viewModel.deleteFailedRecording(recording)
-                                }
-                            } label: {
-                                Image(systemName: "trash")
-                                    .foregroundColor(Theme.Colors.error)
-                            }
-                        }
-                        .padding(.vertical, Theme.Spacing.xxs)
-
-                        if recording.id != viewModel.failedRecordings.last?.id {
-                            Divider()
-                        }
-                    }
-                }
-            }
-
-            Button {
-                Task {
-                    do {
-                        try await viewModel.clearCache()
-                        toastManager.show("Cache cleared successfully", type: .success)
-                    } catch {
-                        #if DEBUG
-                        print("⚙️ SettingsView: Cache clear failed - \(error)")
-                        #endif
-                        toastManager.show("Failed to clear cache", type: .error)
-                    }
-                }
-            } label: {
-                SettingsRow(
-                    icon: "trash.fill",
-                    title: "Clear Cache",
-                    color: Theme.Colors.error,
-                    showDivider: false
-                )
-            }
         }
     }
 
@@ -604,21 +455,6 @@ struct SettingsView: View {
                 print("⚙️ SettingsView: Biometric toggle failed - \(error)")
                 #endif
                 toastManager.show(error.localizedDescription, type: .error)
-            }
-        }
-    }
-
-    private func handleLogout() {
-        Task {
-            do {
-                try await viewModel.logout()
-                dismiss()
-                toastManager.show("Successfully signed out", type: .success)
-            } catch {
-                #if DEBUG
-                print("⚙️ SettingsView: Logout failed - \(error)")
-                #endif
-                toastManager.show("Failed to sign out", type: .error)
             }
         }
     }
@@ -740,8 +576,6 @@ struct LegalSection: View {
     }
 }
 
-// About section removed
-
 // MARK: - Bundle Extension
 extension Bundle {
     var appVersion: String {
@@ -812,93 +646,3 @@ struct SettingsRow: View {
         }
     }
 }
-
-struct StorageProgressBar: View {
-    @EnvironmentObject private var themeManager: ThemeManager
-    @Environment(\.colorScheme) private var colorScheme
-
-    let used: Double
-    let usedText: String
-    let totalText: String
-
-    var body: some View {
-        VStack(spacing: Theme.Spacing.xxs) {
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Rectangle()
-                        .fill(Theme.Colors.tertiaryBackground)
-                        .cornerRadius(4)
-
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Theme.Colors.primary,
-                                    Theme.Colors.primary.opacity(0.8)
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: geometry.size.width * used)
-                        .cornerRadius(4)
-                }
-            }
-            .frame(height: 8)
-
-            HStack {
-                Text(usedText)
-                    .font(Theme.Typography.caption)
-                    .foregroundColor(Theme.Colors.primary)
-
-                Spacer()
-
-                Text(totalText)
-                    .font(Theme.Typography.caption)
-                    .foregroundColor(Theme.Colors.secondaryText)
-            }
-        }
-        .onChange(of: themeManager.currentTheme) { newTheme in
-            #if DEBUG
-            print("⚙️ StorageProgressBar: Theme changed to \(newTheme)")
-            #endif
-        }
-    }
-}
-
-// MARK: - Preview Provider
-#if DEBUG
-struct SettingsView_Previews: PreviewProvider {
-    static var previews: some View {
-        NavigationView {
-            SettingsView()
-                .environmentObject(ThemeManager())
-                .environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
-        }
-        .previewDisplayName("Settings View")
-
-        // Individual component previews
-        Group {
-            SettingsRow(
-                icon: "person.fill",
-                title: "Edit Profile",
-                color: Theme.Colors.primary
-            )
-            .environmentObject(ThemeManager())
-            .padding()
-            .previewLayout(.sizeThatFits)
-            .previewDisplayName("Settings Row")
-
-            StorageProgressBar(
-                used: 0.7,
-                usedText: "3.5 GB",
-                totalText: "5 GB"
-            )
-            .environmentObject(ThemeManager())
-            .padding()
-            .previewLayout(.sizeThatFits)
-            .previewDisplayName("Storage Progress Bar")
-        }
-    }
-}
-#endif
