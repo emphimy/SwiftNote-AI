@@ -92,7 +92,7 @@ class AuthenticationManager: ObservableObject {
     // MARK: - Error Message Handling
 
     /// Set an error message with auto-dismissal
-    private func setErrorMessage(_ message: String?) {
+    func setErrorMessage(_ message: String?) {
         // Cancel any existing timer
         errorMessageTimer?.invalidate()
 
@@ -694,7 +694,7 @@ class AuthenticationManager: ObservableObject {
         #endif
 
         isLoading = true
-        errorMessage = nil
+        setErrorMessage(nil)
 
         do {
             // Sign out with Supabase
@@ -708,10 +708,116 @@ class AuthenticationManager: ObservableObject {
             print("🔐 AuthenticationManager: Sign out successful")
             #endif
         } catch {
-            errorMessage = "Failed to sign out: \(error.localizedDescription)"
+            setErrorMessage("Failed to sign out: \(error.localizedDescription)")
 
             #if DEBUG
             print("🔐 AuthenticationManager: Sign out failed - \(error)")
+            #endif
+        }
+
+        isLoading = false
+    }
+
+    /// Check if the user signed in with email/password
+    /// - Returns: Boolean indicating if the user signed in with email/password
+    func isEmailPasswordUser() -> Bool {
+        // If we have a user profile and the user has an email, assume they can change their email/password
+        // This is a simplification - in a real app, you might want to store the provider in the user profile
+        return userProfile != nil && authState == .signedIn
+    }
+
+    /// Change the user's password
+    /// - Parameters:
+    ///   - currentPassword: Current password for verification
+    ///   - newPassword: New password to set
+    func changePassword(currentPassword: String, newPassword: String) async {
+        #if DEBUG
+        print("🔐 AuthenticationManager: Attempting to change password")
+        #endif
+
+        isLoading = true
+        setErrorMessage(nil)
+
+        // Validate passwords
+        guard !currentPassword.isEmpty else {
+            setErrorMessage("Please enter your current password")
+            isLoading = false
+            return
+        }
+
+        guard !newPassword.isEmpty else {
+            setErrorMessage("Please enter a new password")
+            isLoading = false
+            return
+        }
+
+        guard newPassword.count >= 6 else {
+            setErrorMessage("New password must be at least 6 characters")
+            isLoading = false
+            return
+        }
+
+        do {
+            // Change the password
+            try await supabaseService.changePassword(currentPassword: currentPassword, newPassword: newPassword)
+
+            // Show success message
+            setErrorMessage("Password changed successfully")
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Password changed successfully")
+            #endif
+        } catch {
+            setErrorMessage("Failed to change password: \(error.localizedDescription)")
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Failed to change password - \(error)")
+            #endif
+        }
+
+        isLoading = false
+    }
+
+    /// Change the user's email
+    /// - Parameters:
+    ///   - newEmail: New email address
+    ///   - password: Current password for verification
+    func changeEmail(newEmail: String, password: String) async {
+        #if DEBUG
+        print("🔐 AuthenticationManager: Attempting to change email to: \(newEmail)")
+        #endif
+
+        isLoading = true
+        setErrorMessage(nil)
+
+        // Validate email and password
+        guard !newEmail.isEmpty else {
+            setErrorMessage("Please enter a new email address")
+            isLoading = false
+            return
+        }
+
+        guard !password.isEmpty else {
+            setErrorMessage("Please enter your password")
+            isLoading = false
+            return
+        }
+
+        do {
+            // Change the email
+            try await supabaseService.changeEmail(newEmail: newEmail, password: password)
+
+            // Show success message
+            setErrorMessage("Email change initiated. Please check your new email for confirmation.")
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Email change initiated")
+            #endif
+        } catch {
+            setErrorMessage("Failed to change email: \(error.localizedDescription)")
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Failed to change email - \(error)")
             #endif
         }
 

@@ -572,7 +572,6 @@ struct SettingsView: View {
                 )
             }
 
-            // App Version moved from About section
             SettingsRow(
                 icon: "info.circle.fill",
                 title: "App Version",
@@ -747,8 +746,7 @@ struct LegalSection: View {
 extension Bundle {
     var appVersion: String {
         let version = object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
-        let build = object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
-        return "\(version) (\(build))"
+        return "\(version)"
     }
 }
 

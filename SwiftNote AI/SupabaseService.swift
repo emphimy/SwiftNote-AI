@@ -187,6 +187,72 @@ class SupabaseService {
         #endif
     }
 
+    /// Change user's password
+    /// - Parameters:
+    ///   - currentPassword: Current password for verification
+    ///   - newPassword: New password to set
+    func changePassword(currentPassword: String, newPassword: String) async throws {
+        #if DEBUG
+        print("🔌 SupabaseService: Changing user password")
+        #endif
+
+        // First verify the current password by attempting to sign in
+        let session = try await client.auth.session
+        let email = session.user.email ?? ""
+
+        // Verify current password by attempting to sign in
+        do {
+            _ = try await client.auth.signIn(email: email, password: currentPassword)
+        } catch {
+            #if DEBUG
+            print("🔌 SupabaseService: Current password verification failed")
+            #endif
+            throw NSError(domain: "SupabaseService", code: 401, userInfo: [
+                NSLocalizedDescriptionKey: "Current password is incorrect"
+            ])
+        }
+
+        // Update the password
+        try await client.auth.update(user: UserAttributes(password: newPassword))
+
+        #if DEBUG
+        print("🔌 SupabaseService: Password changed successfully")
+        #endif
+    }
+
+    /// Change user's email
+    /// - Parameters:
+    ///   - newEmail: New email address
+    ///   - password: Current password for verification
+    func changeEmail(newEmail: String, password: String) async throws {
+        #if DEBUG
+        print("🔌 SupabaseService: Changing user email to: \(newEmail)")
+        #endif
+
+        // First verify the password by attempting to sign in
+        let session = try await client.auth.session
+        let currentEmail = session.user.email ?? ""
+
+        // Verify password by attempting to sign in
+        do {
+            _ = try await client.auth.signIn(email: currentEmail, password: password)
+        } catch {
+            #if DEBUG
+            print("🔌 SupabaseService: Password verification failed")
+            #endif
+            throw NSError(domain: "SupabaseService", code: 401, userInfo: [
+                NSLocalizedDescriptionKey: "Password is incorrect"
+            ])
+        }
+
+        // Update the email
+        try await client.auth.update(user: UserAttributes(email: newEmail))
+
+        #if DEBUG
+        print("🔌 SupabaseService: Email change initiated, confirmation email sent")
+        #endif
+    }
+
     // MARK: - Database Methods
 
     /// Generic method to fetch data from a table
