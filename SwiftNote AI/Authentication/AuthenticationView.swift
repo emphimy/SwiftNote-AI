@@ -9,11 +9,22 @@ struct AuthenticationView: View {
     @State private var confirmPassword = ""
     @State private var isPasswordVisible = false
     @State private var isConfirmPasswordVisible = false
+    @State private var showingForgotPasswordAlert = false
+    @State private var forgotPasswordEmail = ""
+    @FocusState private var focusedField: Field?
+
+    enum Field {
+        case email, password, confirmPassword
+    }
 
     var body: some View {
         ZStack {
+            // Background with tap gesture to dismiss keyboard
             Theme.Colors.background
                 .ignoresSafeArea()
+                .onTapGesture {
+                    dismissKeyboard()
+                }
 
             VStack(spacing: Theme.Spacing.lg) {
                 // Logo and title
@@ -40,6 +51,11 @@ struct AuthenticationView: View {
                         .keyboardType(.emailAddress)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
+                        .focused($focusedField, equals: .email)
+                        .submitLabel(.next)
+                        .onSubmit {
+                            focusedField = .password
+                        }
                         .padding()
                         .background(Theme.Colors.secondaryBackground)
                         .cornerRadius(Theme.Layout.cornerRadius)
@@ -49,9 +65,27 @@ struct AuthenticationView: View {
                         if isPasswordVisible {
                             TextField("Password", text: $password)
                                 .textContentType(isSignIn ? .password : .newPassword)
+                                .focused($focusedField, equals: .password)
+                                .submitLabel(isSignIn ? .done : .next)
+                                .onSubmit {
+                                    if isSignIn {
+                                        dismissKeyboard()
+                                    } else {
+                                        focusedField = .confirmPassword
+                                    }
+                                }
                         } else {
                             SecureField("Password", text: $password)
                                 .textContentType(isSignIn ? .password : .newPassword)
+                                .focused($focusedField, equals: .password)
+                                .submitLabel(isSignIn ? .done : .next)
+                                .onSubmit {
+                                    if isSignIn {
+                                        dismissKeyboard()
+                                    } else {
+                                        focusedField = .confirmPassword
+                                    }
+                                }
                         }
 
                         Button(action: {
@@ -71,9 +105,19 @@ struct AuthenticationView: View {
                             if isConfirmPasswordVisible {
                                 TextField("Confirm Password", text: $confirmPassword)
                                     .textContentType(.newPassword)
+                                    .focused($focusedField, equals: .confirmPassword)
+                                    .submitLabel(.done)
+                                    .onSubmit {
+                                        dismissKeyboard()
+                                    }
                             } else {
                                 SecureField("Confirm Password", text: $confirmPassword)
                                     .textContentType(.newPassword)
+                                    .focused($focusedField, equals: .confirmPassword)
+                                    .submitLabel(.done)
+                                    .onSubmit {
+                                        dismissKeyboard()
+                                    }
                             }
 
                             Button(action: {
@@ -86,6 +130,20 @@ struct AuthenticationView: View {
                         .padding()
                         .background(Theme.Colors.secondaryBackground)
                         .cornerRadius(Theme.Layout.cornerRadius)
+                    }
+
+                    // Forgot password button (sign in only)
+                    if isSignIn {
+                        Button(action: {
+                            forgotPasswordEmail = email // Pre-fill with current email
+                            showingForgotPasswordAlert = true
+                        }) {
+                            Text("Forgot Password?")
+                                .font(Theme.Typography.caption)
+                                .foregroundColor(Theme.Colors.primary)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .padding(.trailing, 4)
+                        }
                     }
 
                     // Sign in/up button
@@ -181,6 +239,11 @@ struct AuthenticationView: View {
                         .background(Color.red.opacity(0.8))
                         .cornerRadius(Theme.Layout.cornerRadius)
                         .padding()
+                        .onTapGesture {
+                            authManager.dismissErrorMessage()
+                        }
+                        .transition(.opacity)
+                        .animation(.easeInOut, value: authManager.errorMessage != nil)
                 }
             }
 
@@ -194,6 +257,27 @@ struct AuthenticationView: View {
                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
             }
         }
+        // Forgot password alert
+        .alert("Reset Password", isPresented: $showingForgotPasswordAlert) {
+            TextField("Email", text: $forgotPasswordEmail)
+                .autocapitalization(.none)
+                .keyboardType(.emailAddress)
+
+            Button("Cancel", role: .cancel) {}
+
+            Button("Send Reset Link") {
+                Task {
+                    await authManager.resetPassword(email: forgotPasswordEmail)
+                }
+            }
+        } message: {
+            Text("Enter your email address and we'll send you a link to reset your password.")
+        }
+    }
+
+    // Dismiss the keyboard
+    private func dismissKeyboard() {
+        focusedField = nil
     }
 
     // Validate form fields

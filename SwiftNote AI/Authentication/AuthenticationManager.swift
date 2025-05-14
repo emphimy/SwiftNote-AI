@@ -2,6 +2,7 @@ import Foundation
 import Supabase
 import Combine
 import AuthenticationServices
+import PostgREST
 
 /// Manages authentication state and operations
 @MainActor
@@ -24,8 +25,20 @@ class AuthenticationManager: ObservableObject {
     private let supabaseService = SupabaseService.shared
     private var cancellables = Set<AnyCancellable>()
 
+    /// Timer for auto-dismissing error messages
+    private var errorMessageTimer: Timer?
+
+    /// Duration for error messages to be displayed (in seconds)
+    private let errorMessageDuration: TimeInterval = 5.0
+
     /// Last email used for signup or signin
     private var lastEmail: String?
+
+    /// Last password used for signup (stored temporarily for auto sign-in after confirmation)
+    private var lastPassword: String?
+
+    /// Key for storing confirmation data in UserDefaults
+    private let confirmationDataKey = "com.kyb.SwiftNote-AI.confirmationData"
 
     // MARK: - Initialization
     init() {
@@ -45,10 +58,117 @@ class AuthenticationManager: ObservableObject {
             name: Notification.Name("AuthCodeReceived"),
             object: nil
         )
+
+        // Listen for email confirmation success notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleEmailConfirmationSuccess),
+            name: Notification.Name("EmailConfirmationSuccess"),
+            object: nil
+        )
+
+        // Listen for password reset redirect notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handlePasswordResetRedirect(_:)),
+            name: Notification.Name("PasswordResetRedirect"),
+            object: nil
+        )
+
+        // Listen for email change success notifications
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleEmailChangeSuccess),
+            name: Notification.Name("EmailChangeSuccess"),
+            object: nil
+        )
     }
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        errorMessageTimer?.invalidate()
+    }
+
+    // MARK: - Error Message Handling
+
+    /// Set an error message with auto-dismissal
+    private func setErrorMessage(_ message: String?) {
+        // Cancel any existing timer
+        errorMessageTimer?.invalidate()
+
+        // Set the new error message
+        errorMessage = message
+
+        // If there's a message, start a timer to clear it
+        if message != nil {
+            errorMessageTimer = Timer.scheduledTimer(withTimeInterval: errorMessageDuration, repeats: false) { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.errorMessage = nil
+                }
+            }
+        }
+    }
+
+    /// Dismiss the current error message
+    func dismissErrorMessage() {
+        errorMessageTimer?.invalidate()
+        errorMessage = nil
+    }
+
+    // MARK: - Confirmation Data Management
+
+    /// Save confirmation data for later use
+    private func saveConfirmationData(email: String, password: String) {
+        // Store in memory
+        lastEmail = email
+        lastPassword = password
+
+        // Also store in UserDefaults in case app is terminated during confirmation
+        let data = ["email": email, "password": password]
+        if let encoded = try? JSONEncoder().encode(data) {
+            UserDefaults.standard.set(encoded, forKey: confirmationDataKey)
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Saved confirmation data for email: \(email)")
+            #endif
+        }
+    }
+
+    /// Retrieve confirmation data
+    private func retrieveConfirmationData() -> (email: String?, password: String?)? {
+        // First try memory
+        if let email = lastEmail, let password = lastPassword {
+            return (email, password)
+        }
+
+        // Fall back to UserDefaults
+        if let data = UserDefaults.standard.data(forKey: confirmationDataKey),
+           let decoded = try? JSONDecoder().decode([String: String].self, from: data),
+           let email = decoded["email"],
+           let password = decoded["password"] {
+
+            // Restore memory values
+            lastEmail = email
+            lastPassword = password
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Retrieved confirmation data for email: \(email)")
+            #endif
+
+            return (email, password)
+        }
+
+        return nil
+    }
+
+    /// Clear confirmation data
+    private func clearConfirmationData() {
+        lastPassword = nil
+        UserDefaults.standard.removeObject(forKey: confirmationDataKey)
+
+        #if DEBUG
+        print("🔐 AuthenticationManager: Cleared confirmation data")
+        #endif
     }
 
     @objc private func handleAuthCode(_ notification: Notification) {
@@ -63,9 +183,175 @@ class AuthenticationManager: ObservableObject {
         print("🔐 AuthenticationManager: Received auth code: \(code)")
         #endif
 
+        // We don't need to verify the email again since Supabase has already done it
+        // Just note that we received a code, but don't try to verify it
+        #if DEBUG
+        print("🔐 AuthenticationManager: Received auth code, but not verifying it since Supabase already did")
+        #endif
+
+        // We'll rely on the EmailConfirmationSuccess notification to trigger auto sign-in
+    }
+
+    @objc private func handleEmailConfirmationSuccess() {
+        #if DEBUG
+        print("🔐 AuthenticationManager: Received email confirmation success notification")
+        #endif
+
         Task {
-            await verifyEmailWithCode(code)
+            await attemptAutoSignIn()
         }
+    }
+
+    @objc private func handlePasswordResetRedirect(_ notification: Notification) {
+        #if DEBUG
+        print("🔐 AuthenticationManager: Received password reset redirect notification")
+        #endif
+
+        // For now, just show a message to the user
+        // In a future implementation, you could show a password reset form
+        setErrorMessage("Password reset link detected. Please use the sign-in screen to reset your password.")
+        authState = .signedOut
+    }
+
+    @objc private func handleEmailChangeSuccess() {
+        #if DEBUG
+        print("🔐 AuthenticationManager: Received email change success notification")
+        #endif
+
+        // For now, just show a message to the user
+        setErrorMessage("Email change confirmed successfully. Please sign in with your new email.")
+        authState = .signedOut
+    }
+
+    /// Resend confirmation email to the user
+    func resendConfirmationEmail() async {
+        #if DEBUG
+        print("🔐 AuthenticationManager: Attempting to resend confirmation email")
+        #endif
+
+        isLoading = true
+        setErrorMessage(nil)
+
+        // Retrieve the email from saved confirmation data
+        guard let confirmationData = retrieveConfirmationData(),
+              let email = confirmationData.email else {
+            #if DEBUG
+            print("🔐 AuthenticationManager: No email found for resending confirmation")
+            #endif
+
+            setErrorMessage("No email address found. Please try signing up again.")
+            isLoading = false
+            return
+        }
+
+        do {
+            // Resend the confirmation email
+            try await supabaseService.resendConfirmationEmail(email: email)
+
+            // Show success message
+            setErrorMessage("Confirmation email has been resent to \(email)")
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Confirmation email resent successfully")
+            #endif
+        } catch {
+            setErrorMessage("Failed to resend confirmation email: \(error.localizedDescription)")
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Failed to resend confirmation email - \(error)")
+            #endif
+        }
+
+        isLoading = false
+    }
+
+    /// Send password reset email to the user
+    func resetPassword(email: String) async {
+        #if DEBUG
+        print("🔐 AuthenticationManager: Attempting to send password reset email")
+        #endif
+
+        isLoading = true
+        setErrorMessage(nil)
+
+        // Validate email
+        guard !email.isEmpty else {
+            setErrorMessage("Please enter your email address")
+            isLoading = false
+            return
+        }
+
+        do {
+            // Send the password reset email
+            try await supabaseService.resetPassword(email: email)
+
+            // Show success message
+            setErrorMessage("Password reset instructions have been sent to \(email)")
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Password reset email sent successfully")
+            #endif
+        } catch {
+            setErrorMessage("Failed to send password reset email: \(error.localizedDescription)")
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Failed to send password reset email - \(error)")
+            #endif
+        }
+
+        isLoading = false
+    }
+
+    /// Attempt to automatically sign in the user after email confirmation
+    private func attemptAutoSignIn() async {
+        #if DEBUG
+        print("🔐 AuthenticationManager: Attempting auto sign-in after email confirmation")
+        #endif
+
+        isLoading = true
+        setErrorMessage(nil)
+
+        // Retrieve saved confirmation data
+        guard let confirmationData = retrieveConfirmationData(),
+              let email = confirmationData.email,
+              let password = confirmationData.password else {
+            #if DEBUG
+            print("🔐 AuthenticationManager: No saved credentials found for auto sign-in")
+            #endif
+
+            setErrorMessage("Email confirmed, but no saved credentials found. Please sign in manually.")
+            authState = .signedOut
+            isLoading = false
+            return
+        }
+
+        do {
+            // Sign in with Supabase
+            _ = try await supabaseService.signIn(email: email, password: password)
+
+            // Fetch user profile
+            try await fetchUserProfile()
+
+            // Update auth state
+            authState = .signedIn
+
+            // Clear saved credentials after successful sign-in
+            clearConfirmationData()
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Auto sign-in successful after email confirmation")
+            #endif
+        } catch {
+            // If auto sign-in fails, we'll show a message to the user to sign in manually
+            authState = .signedOut
+            setErrorMessage("Email confirmed successfully. Please sign in with your credentials.")
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Auto sign-in failed after email confirmation - \(error)")
+            #endif
+        }
+
+        isLoading = false
     }
 
     /// Verify email with confirmation code
@@ -75,30 +361,55 @@ class AuthenticationManager: ObservableObject {
         #endif
 
         isLoading = true
-        errorMessage = nil
+        setErrorMessage(nil)
 
         do {
-            // Use the stored email for verification
-            guard let email = lastEmail else {
+            // Retrieve saved confirmation data
+            guard let confirmationData = retrieveConfirmationData(),
+                  let email = confirmationData.email,
+                  let password = confirmationData.password else {
                 throw NSError(domain: "AuthenticationManager", code: 400, userInfo: [
-                    NSLocalizedDescriptionKey: "No email available for verification"
+                    NSLocalizedDescriptionKey: "No email or password available for verification"
                 ])
             }
 
             // Verify the email with Supabase
             try await supabaseService.verifyEmail(email: email, token: code)
 
-            // Fetch user profile
-            try await fetchUserProfile()
-
-            // Update auth state
-            authState = .signedIn
-
             #if DEBUG
-            print("🔐 AuthenticationManager: Email verification successful")
+            print("🔐 AuthenticationManager: Email verification successful, attempting auto sign-in")
             #endif
+
+            // Automatically sign in the user with the saved credentials
+            do {
+                // Sign in with Supabase
+                _ = try await supabaseService.signIn(email: email, password: password)
+
+                // Fetch user profile
+                try await fetchUserProfile()
+
+                // Update auth state
+                authState = .signedIn
+
+                // Clear saved credentials after successful sign-in
+                clearConfirmationData()
+
+                #if DEBUG
+                print("🔐 AuthenticationManager: Auto sign-in successful after email verification")
+                #endif
+            } catch {
+                // If auto sign-in fails, we still consider the verification successful
+                // but we'll show a message to the user to sign in manually
+                authState = .signedOut
+                setErrorMessage("Email verified successfully. Please sign in with your credentials.")
+
+                #if DEBUG
+                print("🔐 AuthenticationManager: Auto sign-in failed after email verification - \(error)")
+                #endif
+            }
         } catch {
-            errorMessage = "Failed to verify email: \(error.localizedDescription)"
+            setErrorMessage("Failed to verify email: \(error.localizedDescription)")
+            authState = .signedOut
 
             #if DEBUG
             print("🔐 AuthenticationManager: Email verification failed - \(error)")
@@ -119,6 +430,9 @@ class AuthenticationManager: ObservableObject {
         authState = .initializing
         isLoading = true
 
+        // Clear any previous error message
+        setErrorMessage(nil)
+
         do {
             let isSignedIn = await supabaseService.isSignedIn()
 
@@ -131,7 +445,7 @@ class AuthenticationManager: ObservableObject {
                 print("🔐 AuthenticationManager: User is signed in")
                 #endif
             } else {
-                // User is not signed in
+                // User is not signed in - this is normal for a fresh install
                 authState = .signedOut
                 userProfile = nil
 
@@ -139,12 +453,30 @@ class AuthenticationManager: ObservableObject {
                 print("🔐 AuthenticationManager: User is signed out")
                 #endif
             }
-        } catch {
-            // Error occurred, assume user is signed out
+        } catch let error as AuthError {
+            // Handle Supabase auth errors
             authState = .signedOut
             userProfile = nil
-            errorMessage = "Failed to check authentication state: \(error.localizedDescription)"
 
+            // Only set error message for unexpected errors, not for normal "not signed in" cases
+            if case .api(_, let errorCode, _, _) = error,
+               errorCode.rawValue == "refresh_token_not_found" {
+                // This is normal for a fresh install, don't show an error
+                #if DEBUG
+                print("🔐 AuthenticationManager: No active session (refresh token not found)")
+                #endif
+            } else {
+                setErrorMessage("Authentication error: \(error.localizedDescription)")
+                #if DEBUG
+                print("🔐 AuthenticationManager: Error checking auth state - \(error)")
+                #endif
+            }
+        } catch {
+            // Handle other errors
+            authState = .signedOut
+            userProfile = nil
+
+            // Only show error message for unexpected errors
             #if DEBUG
             print("🔐 AuthenticationManager: Error checking auth state - \(error)")
             #endif
@@ -180,15 +512,40 @@ class AuthenticationManager: ObservableObject {
                 print("🔐 AuthenticationManager: User profile fetched successfully")
                 #endif
             } else {
+                // No profile found for this user ID
+                #if DEBUG
+                print("🔐 AuthenticationManager: User profile not found for ID: \(session.user.id.uuidString)")
+                #endif
+
                 throw NSError(domain: "AuthenticationManager", code: 404, userInfo: [
                     NSLocalizedDescriptionKey: "User profile not found"
                 ])
             }
+        } catch let error as AuthError {
+            // Handle Supabase auth errors
+            if case .api(_, let errorCode, _, _) = error,
+               errorCode.rawValue == "refresh_token_not_found" {
+                // This is normal for a fresh install
+                #if DEBUG
+                print("🔐 AuthenticationManager: No active session when fetching profile (refresh token not found)")
+                #endif
+            } else {
+                #if DEBUG
+                print("🔐 AuthenticationManager: Auth error fetching user profile - \(error)")
+                #endif
+            }
+            throw error
+        } catch let error as PostgrestError {
+            // Handle database query errors
+            #if DEBUG
+            print("🔐 AuthenticationManager: Database error fetching user profile - \(error)")
+            #endif
+            throw error
         } catch {
+            // Handle other errors
             #if DEBUG
             print("🔐 AuthenticationManager: Error fetching user profile - \(error)")
             #endif
-
             throw error
         }
     }
@@ -202,7 +559,7 @@ class AuthenticationManager: ObservableObject {
         #endif
 
         isLoading = true
-        errorMessage = nil
+        setErrorMessage(nil)
 
         // Store the email for later use
         lastEmail = email
@@ -221,7 +578,7 @@ class AuthenticationManager: ObservableObject {
             print("🔐 AuthenticationManager: Sign in successful")
             #endif
         } catch {
-            errorMessage = "Failed to sign in: \(error.localizedDescription)"
+            setErrorMessage("Failed to sign in: \(error.localizedDescription)")
             authState = .signedOut
 
             #if DEBUG
@@ -239,10 +596,10 @@ class AuthenticationManager: ObservableObject {
         #endif
 
         isLoading = true
-        errorMessage = nil
+        setErrorMessage(nil)
 
-        // Store the email for later use in email verification
-        lastEmail = email
+        // Save credentials for later use in email verification and auto sign-in
+        saveConfirmationData(email: email, password: password)
 
         do {
             // Sign up with Supabase
@@ -256,6 +613,9 @@ class AuthenticationManager: ObservableObject {
                 // Update auth state
                 authState = .signedIn
 
+                // Clear saved credentials since we're already signed in
+                clearConfirmationData()
+
                 #if DEBUG
                 print("🔐 AuthenticationManager: Sign up successful")
                 #endif
@@ -268,8 +628,11 @@ class AuthenticationManager: ObservableObject {
                 #endif
             }
         } catch {
-            errorMessage = "Failed to sign up: \(error.localizedDescription)"
+            setErrorMessage("Failed to sign up: \(error.localizedDescription)")
             authState = .signedOut
+
+            // Clear saved credentials on error
+            clearConfirmationData()
 
             #if DEBUG
             print("🔐 AuthenticationManager: Sign up failed - \(error)")
@@ -286,11 +649,11 @@ class AuthenticationManager: ObservableObject {
         #endif
 
         isLoading = true
-        errorMessage = nil
+        setErrorMessage(nil)
 
         // This will be implemented with ASAuthorizationController
         // For now, we'll just show an error message
-        errorMessage = "Apple sign in is not yet implemented"
+        setErrorMessage("Apple sign in is not yet implemented")
         isLoading = false
     }
 
@@ -301,11 +664,11 @@ class AuthenticationManager: ObservableObject {
         #endif
 
         isLoading = true
-        errorMessage = nil
+        setErrorMessage(nil)
 
         // This will be implemented with GoogleSignIn SDK
         // For now, we'll just show an error message
-        errorMessage = "Google sign in is not yet implemented"
+        setErrorMessage("Google sign in is not yet implemented")
         isLoading = false
     }
 
@@ -316,11 +679,11 @@ class AuthenticationManager: ObservableObject {
         #endif
 
         isLoading = true
-        errorMessage = nil
+        setErrorMessage(nil)
 
         // This will be implemented with Facebook SDK
         // For now, we'll just show an error message
-        errorMessage = "Facebook sign in is not yet implemented"
+        setErrorMessage("Facebook sign in is not yet implemented")
         isLoading = false
     }
 

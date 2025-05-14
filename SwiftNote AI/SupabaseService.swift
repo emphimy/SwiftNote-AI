@@ -28,12 +28,14 @@ class SupabaseService {
         #endif
 
         // Check if user is signed in by trying to get the session
+        // This will handle the refresh token not found error gracefully
         let isUserSignedIn = await isSignedIn()
 
         #if DEBUG
         if isUserSignedIn {
             print("🔌 SupabaseService: User is signed in")
         } else {
+            // This is normal for a fresh install or when no user is logged in
             print("🔌 SupabaseService: No user is signed in")
         }
         #endif
@@ -88,6 +90,19 @@ class SupabaseService {
         do {
             // In newer versions of the SDK, session is an async property that throws
             return try await client.auth.session
+        } catch let error as AuthError {
+            // Check if this is a refresh token not found error, which is expected when no user is logged in
+            if case .api(_, let errorCode, _, _) = error,
+               errorCode.rawValue == "refresh_token_not_found" {
+                #if DEBUG
+                print("🔌 SupabaseService: No active session found (refresh token not found)")
+                #endif
+            } else {
+                #if DEBUG
+                print("🔌 SupabaseService: Error getting session - \(error)")
+                #endif
+            }
+            throw error
         } catch {
             #if DEBUG
             print("🔌 SupabaseService: Error getting session - \(error)")
@@ -102,7 +117,23 @@ class SupabaseService {
         do {
             _ = try await getSession()
             return true
+        } catch let error as AuthError {
+            // Check if this is a refresh token not found error, which is expected when no user is logged in
+            if case .api(_, let errorCode, _, _) = error,
+               errorCode.rawValue == "refresh_token_not_found" {
+                #if DEBUG
+                print("🔌 SupabaseService: No user is signed in (refresh token not found)")
+                #endif
+            } else {
+                #if DEBUG
+                print("🔌 SupabaseService: Error checking if user is signed in - \(error)")
+                #endif
+            }
+            return false
         } catch {
+            #if DEBUG
+            print("🔌 SupabaseService: Error checking if user is signed in - \(error)")
+            #endif
             return false
         }
     }
@@ -121,6 +152,39 @@ class SupabaseService {
             token: token,
             type: .signup
         )
+    }
+
+    /// Resend confirmation email
+    /// - Parameter email: User's email
+    func resendConfirmationEmail(email: String) async throws {
+        #if DEBUG
+        print("🔌 SupabaseService: Resending confirmation email to: \(email)")
+        #endif
+
+        // Use the OTP method to resend the confirmation email
+        try await client.auth.resend(
+            email: email,
+            type: .signup
+        )
+
+        #if DEBUG
+        print("🔌 SupabaseService: Confirmation email resent successfully")
+        #endif
+    }
+
+    /// Send password reset email
+    /// - Parameter email: User's email
+    func resetPassword(email: String) async throws {
+        #if DEBUG
+        print("🔌 SupabaseService: Sending password reset email to: \(email)")
+        #endif
+
+        // Use the resetPasswordForEmail method to send a password reset email
+        try await client.auth.resetPasswordForEmail(email)
+
+        #if DEBUG
+        print("🔌 SupabaseService: Password reset email sent successfully")
+        #endif
     }
 
     // MARK: - Database Methods
