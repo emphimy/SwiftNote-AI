@@ -40,6 +40,9 @@ class AuthenticationManager: ObservableObject {
     /// Key for storing confirmation data in UserDefaults
     private let confirmationDataKey = "com.kyb.SwiftNote-AI.confirmationData"
 
+    /// Key for storing email change data in UserDefaults
+    private let emailChangeDataKey = "com.kyb.SwiftNote-AI.emailChangeData"
+
     // MARK: - Initialization
     init() {
         #if DEBUG
@@ -171,6 +174,52 @@ class AuthenticationManager: ObservableObject {
         #endif
     }
 
+    /// Save email change data for later use
+    private func saveEmailChangeData(currentEmail: String, newEmail: String, password: String) {
+        // Store the data in UserDefaults
+        let data = [
+            "currentEmail": currentEmail,
+            "newEmail": newEmail,
+            "password": password
+        ]
+
+        if let encoded = try? JSONEncoder().encode(data) {
+            UserDefaults.standard.set(encoded, forKey: emailChangeDataKey)
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Saved email change data for email change from \(currentEmail) to \(newEmail)")
+            #endif
+        }
+    }
+
+    /// Retrieve email change data
+    private func retrieveEmailChangeData() -> (currentEmail: String, newEmail: String, password: String)? {
+        // Get the data from UserDefaults
+        if let data = UserDefaults.standard.data(forKey: emailChangeDataKey),
+           let decoded = try? JSONDecoder().decode([String: String].self, from: data),
+           let currentEmail = decoded["currentEmail"],
+           let newEmail = decoded["newEmail"],
+           let password = decoded["password"] {
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Retrieved email change data for email change from \(currentEmail) to \(newEmail)")
+            #endif
+
+            return (currentEmail, newEmail, password)
+        }
+
+        return nil
+    }
+
+    /// Clear email change data
+    private func clearEmailChangeData() {
+        UserDefaults.standard.removeObject(forKey: emailChangeDataKey)
+
+        #if DEBUG
+        print("🔐 AuthenticationManager: Cleared email change data")
+        #endif
+    }
+
     @objc private func handleAuthCode(_ notification: Notification) {
         guard let code = notification.userInfo?["code"] as? String else {
             #if DEBUG
@@ -198,8 +247,65 @@ class AuthenticationManager: ObservableObject {
         #endif
 
         Task {
-            await attemptAutoSignIn()
+            // First check if this is an email change confirmation
+            if let emailChangeData = retrieveEmailChangeData() {
+                #if DEBUG
+                print("🔐 AuthenticationManager: Detected email change confirmation")
+                #endif
+
+                await handleEmailChangeConfirmation(emailChangeData: emailChangeData)
+            } else {
+                // Regular signup confirmation
+                await attemptAutoSignIn()
+            }
         }
+    }
+
+    /// Handle email change confirmation
+    private func handleEmailChangeConfirmation(emailChangeData: (currentEmail: String, newEmail: String, password: String)) async {
+        #if DEBUG
+        print("🔐 AuthenticationManager: Handling email change confirmation")
+        #endif
+
+        isLoading = true
+        setErrorMessage(nil)
+
+        do {
+            // Sign in with the new email and password
+            _ = try await supabaseService.signIn(email: emailChangeData.newEmail, password: emailChangeData.password)
+
+            // Refresh user profile to get the updated email
+            await refreshUserProfile()
+
+            // Update auth state
+            authState = .signedIn
+
+            // Clear email change data
+            clearEmailChangeData()
+
+            // Show success message
+            setErrorMessage("Email changed successfully to \(emailChangeData.newEmail)")
+
+            // Post a notification that the profile has been updated
+            NotificationCenter.default.post(name: .userProfileUpdated, object: nil)
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Email change confirmed and signed in successfully")
+            #endif
+        } catch {
+            // If auto sign-in fails, we'll show a message to the user to sign in manually
+            authState = .signedOut
+            setErrorMessage("Email changed successfully to \(emailChangeData.newEmail). Please sign in with your new email.")
+
+            // Clear email change data
+            clearEmailChangeData()
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Auto sign-in failed after email change - \(error)")
+            #endif
+        }
+
+        isLoading = false
     }
 
     @objc private func handlePasswordResetRedirect(_ notification: Notification) {
@@ -550,6 +656,41 @@ class AuthenticationManager: ObservableObject {
         }
     }
 
+    /// Refresh the user profile
+    func refreshUserProfile() async {
+        do {
+            // Get the current session
+            let session = try await supabaseService.getSession()
+
+            // Update the email in the user profile
+            if var currentProfile = userProfile {
+                currentProfile.email = session.user.email ?? currentProfile.email
+                userProfile = currentProfile
+
+                // Post a notification that the profile has been updated
+                NotificationCenter.default.post(name: .userProfileUpdated, object: nil)
+
+                #if DEBUG
+                print("🔐 AuthenticationManager: User profile refreshed successfully")
+                if let email = userProfile?.email {
+                    print("🔐 AuthenticationManager: Updated user email: \(email)")
+                }
+                #endif
+            } else {
+                // If no profile exists, fetch it
+                try await fetchUserProfile()
+
+                #if DEBUG
+                print("🔐 AuthenticationManager: User profile fetched during refresh")
+                #endif
+            }
+        } catch {
+            #if DEBUG
+            print("🔐 AuthenticationManager: Failed to refresh user profile - \(error)")
+            #endif
+        }
+    }
+
     // MARK: - Authentication Methods
 
     /// Sign in with email and password
@@ -804,6 +945,13 @@ class AuthenticationManager: ObservableObject {
         }
 
         do {
+            // Get the current email
+            let currentEmail = userProfile?.email ?? ""
+
+            // Save credentials for auto sign-in after confirmation
+            // We'll use a special key to indicate this is for email change
+            saveEmailChangeData(currentEmail: currentEmail, newEmail: newEmail, password: password)
+
             // Change the email
             try await supabaseService.changeEmail(newEmail: newEmail, password: password)
 
@@ -831,4 +979,9 @@ enum AuthState {
     case signedOut
     case signedIn
     case confirmationRequired
+}
+
+// MARK: - Notification Names
+extension Notification.Name {
+    static let userProfileUpdated = Notification.Name("com.kyb.SwiftNote-AI.userProfileUpdated")
 }

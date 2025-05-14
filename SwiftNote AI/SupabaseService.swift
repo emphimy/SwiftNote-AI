@@ -233,6 +233,19 @@ class SupabaseService {
         let session = try await client.auth.session
         let currentEmail = session.user.email ?? ""
 
+        // Check if the new email is the same as the current email
+        if newEmail.lowercased() == currentEmail.lowercased() {
+            #if DEBUG
+            print("🔌 SupabaseService: New email is the same as current email")
+            #endif
+            throw NSError(domain: "SupabaseService", code: 400, userInfo: [
+                NSLocalizedDescriptionKey: "New email is the same as your current email"
+            ])
+        }
+
+        // Check if the new email already exists
+        // Note: Supabase will handle this check server-side, but we can add additional checks here if needed
+
         // Verify password by attempting to sign in
         do {
             _ = try await client.auth.signIn(email: currentEmail, password: password)

@@ -28,6 +28,9 @@ struct AuthProfileView: View {
         case current, new, confirm
     }
 
+    // For profile updates
+    @State private var profileUpdateCounter = 0
+
     var body: some View {
         NavigationView {
             ZStack {
@@ -181,11 +184,19 @@ struct AuthProfileView: View {
             }
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationBarItems(leading:
-                Button(action: {
+            .navigationBarItems(
+                leading: Button(action: {
                     presentationMode.wrappedValue.dismiss()
                 }) {
                     Image(systemName: "xmark")
+                        .foregroundColor(Theme.Colors.primary)
+                },
+                trailing: Button(action: {
+                    Task {
+                        await authManager.refreshUserProfile()
+                    }
+                }) {
+                    Image(systemName: "arrow.clockwise")
                         .foregroundColor(Theme.Colors.primary)
                 }
             )
@@ -200,6 +211,24 @@ struct AuthProfileView: View {
                     },
                     secondaryButton: .cancel()
                 )
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .userProfileUpdated)) { _ in
+                // Force view to refresh when profile is updated
+                profileUpdateCounter += 1
+
+                #if DEBUG
+                print("🔐 AuthProfileView: Received profile update notification")
+                if let email = authManager.userProfile?.email {
+                    print("🔐 AuthProfileView: Current email in profile: \(email)")
+                }
+                #endif
+            }
+            .id(profileUpdateCounter) // Force view to refresh when counter changes
+            .onAppear {
+                // Refresh the profile when the view appears
+                Task {
+                    await authManager.refreshUserProfile()
+                }
             }
             // Change Email Sheet
             .sheet(isPresented: $showingChangeEmailSheet) {
@@ -253,7 +282,11 @@ struct AuthProfileView: View {
                             Button(action: {
                                 Task {
                                     await authManager.changeEmail(newEmail: newEmail, password: emailPassword)
-                                    if authManager.errorMessage?.contains("successfully") ?? false {
+                                    if authManager.errorMessage?.contains("initiated") ?? false {
+                                        // Show a toast or alert that the email change has been initiated
+                                        authManager.setErrorMessage("Email change initiated. Please check your new email for confirmation.")
+
+                                        // Close the sheet
                                         showingChangeEmailSheet = false
                                     }
                                 }
@@ -269,6 +302,20 @@ struct AuthProfileView: View {
                             }
                             .disabled(authManager.isLoading || newEmail.isEmpty || emailPassword.isEmpty)
                             .opacity((newEmail.isEmpty || emailPassword.isEmpty) ? 0.6 : 1.0)
+
+                            // Email change instructions
+                            VStack(spacing: 8) {
+                                Text("Important:")
+                                    .font(Theme.Typography.caption.bold())
+                                    .foregroundColor(Theme.Colors.primary)
+
+                                Text("After submitting, you'll receive a confirmation email at your new address. You must click the link in that email to complete the change.")
+                                    .font(Theme.Typography.caption)
+                                    .foregroundColor(Theme.Colors.secondaryText)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal)
+                            }
+                            .padding(.top, 8)
 
                             Spacer()
 
