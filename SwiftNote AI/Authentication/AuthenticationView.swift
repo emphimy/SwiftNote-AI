@@ -3,6 +3,9 @@ import AuthenticationServices
 import Combine
 
 struct AuthenticationView: View {
+    // Flag to control whether email authentication is enabled
+    private let isEmailAuthEnabled = false // Set to false to hide email auth
+
     @EnvironmentObject private var authManager: AuthenticationManager
     @Environment(\.colorScheme) private var colorScheme
     @State private var isSignIn = true
@@ -39,145 +42,147 @@ struct AuthenticationView: View {
                         .font(Theme.Typography.h1)
                         .foregroundColor(Theme.Colors.text)
 
-                    Text(isSignIn ? "Sign in to your account" : "Create a new account")
+                    Text("Sign in to your account")
                         .font(Theme.Typography.body)
                         .foregroundColor(Theme.Colors.secondaryText)
                 }
                 .padding(.top, Theme.Spacing.xl)
 
-                // Form
-                VStack(spacing: Theme.Spacing.md) {
-                    // Email field
-                    TextField("Email", text: $email)
-                        .textContentType(.emailAddress)
-                        .keyboardType(.emailAddress)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
-                        .focused($focusedField, equals: .email)
-                        .submitLabel(.next)
-                        .onSubmit {
-                            focusedField = .password
-                        }
-                        .padding()
-                        .background(Theme.Colors.secondaryBackground)
-                        .cornerRadius(Theme.Layout.cornerRadius)
+                // Email authentication form (only shown if enabled)
+                if isEmailAuthEnabled {
+                    VStack(spacing: Theme.Spacing.md) {
+                        // Email field
+                        TextField("Email", text: $email)
+                            .textContentType(.emailAddress)
+                            .keyboardType(.emailAddress)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                            .focused($focusedField, equals: .email)
+                            .submitLabel(.next)
+                            .onSubmit {
+                                focusedField = .password
+                            }
+                            .padding()
+                            .background(Theme.Colors.secondaryBackground)
+                            .cornerRadius(Theme.Layout.cornerRadius)
 
-                    // Password field
-                    HStack {
-                        if isPasswordVisible {
-                            TextField("Password", text: $password)
-                                .textContentType(isSignIn ? .password : .newPassword)
-                                .focused($focusedField, equals: .password)
-                                .submitLabel(isSignIn ? .done : .next)
-                                .onSubmit {
-                                    if isSignIn {
-                                        dismissKeyboard()
-                                    } else {
-                                        focusedField = .confirmPassword
-                                    }
-                                }
-                        } else {
-                            SecureField("Password", text: $password)
-                                .textContentType(isSignIn ? .password : .newPassword)
-                                .focused($focusedField, equals: .password)
-                                .submitLabel(isSignIn ? .done : .next)
-                                .onSubmit {
-                                    if isSignIn {
-                                        dismissKeyboard()
-                                    } else {
-                                        focusedField = .confirmPassword
-                                    }
-                                }
-                        }
-
-                        Button(action: {
-                            isPasswordVisible.toggle()
-                        }) {
-                            Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
-                                .foregroundColor(Theme.Colors.secondaryText)
-                        }
-                    }
-                    .padding()
-                    .background(Theme.Colors.secondaryBackground)
-                    .cornerRadius(Theme.Layout.cornerRadius)
-
-                    // Confirm password field (sign up only)
-                    if !isSignIn {
+                        // Password field
                         HStack {
-                            if isConfirmPasswordVisible {
-                                TextField("Confirm Password", text: $confirmPassword)
-                                    .textContentType(.newPassword)
-                                    .focused($focusedField, equals: .confirmPassword)
-                                    .submitLabel(.done)
+                            if isPasswordVisible {
+                                TextField("Password", text: $password)
+                                    .textContentType(isSignIn ? .password : .newPassword)
+                                    .focused($focusedField, equals: .password)
+                                    .submitLabel(isSignIn ? .done : .next)
                                     .onSubmit {
-                                        dismissKeyboard()
+                                        if isSignIn {
+                                            dismissKeyboard()
+                                        } else {
+                                            focusedField = .confirmPassword
+                                        }
                                     }
                             } else {
-                                SecureField("Confirm Password", text: $confirmPassword)
-                                    .textContentType(.newPassword)
-                                    .focused($focusedField, equals: .confirmPassword)
-                                    .submitLabel(.done)
+                                SecureField("Password", text: $password)
+                                    .textContentType(isSignIn ? .password : .newPassword)
+                                    .focused($focusedField, equals: .password)
+                                    .submitLabel(isSignIn ? .done : .next)
                                     .onSubmit {
-                                        dismissKeyboard()
+                                        if isSignIn {
+                                            dismissKeyboard()
+                                        } else {
+                                            focusedField = .confirmPassword
+                                        }
                                     }
                             }
 
                             Button(action: {
-                                isConfirmPasswordVisible.toggle()
+                                isPasswordVisible.toggle()
                             }) {
-                                Image(systemName: isConfirmPasswordVisible ? "eye.slash" : "eye")
+                                Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
                                     .foregroundColor(Theme.Colors.secondaryText)
                             }
                         }
                         .padding()
                         .background(Theme.Colors.secondaryBackground)
                         .cornerRadius(Theme.Layout.cornerRadius)
-                    }
 
-                    // Forgot password button (sign in only)
-                    if isSignIn {
-                        Button(action: {
-                            forgotPasswordEmail = email // Pre-fill with current email
-                            showingForgotPasswordAlert = true
-                        }) {
-                            Text("Forgot Password?")
-                                .font(Theme.Typography.caption)
-                                .foregroundColor(Theme.Colors.primary)
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                                .padding(.trailing, 4)
-                        }
-                    }
-
-                    // Sign in/up button
-                    Button(action: {
-                        Task {
-                            if isSignIn {
-                                await authManager.signInWithEmail(email: email, password: password)
-                            } else {
-                                if password == confirmPassword {
-                                    await authManager.signUpWithEmail(email: email, password: password)
+                        // Confirm password field (sign up only)
+                        if !isSignIn {
+                            HStack {
+                                if isConfirmPasswordVisible {
+                                    TextField("Confirm Password", text: $confirmPassword)
+                                        .textContentType(.newPassword)
+                                        .focused($focusedField, equals: .confirmPassword)
+                                        .submitLabel(.done)
+                                        .onSubmit {
+                                            dismissKeyboard()
+                                        }
                                 } else {
-                                    authManager.errorMessage = "Passwords do not match"
+                                    SecureField("Confirm Password", text: $confirmPassword)
+                                        .textContentType(.newPassword)
+                                        .focused($focusedField, equals: .confirmPassword)
+                                        .submitLabel(.done)
+                                        .onSubmit {
+                                            dismissKeyboard()
+                                        }
+                                }
+
+                                Button(action: {
+                                    isConfirmPasswordVisible.toggle()
+                                }) {
+                                    Image(systemName: isConfirmPasswordVisible ? "eye.slash" : "eye")
+                                        .foregroundColor(Theme.Colors.secondaryText)
                                 }
                             }
-                        }
-                    }) {
-                        Text(isSignIn ? "Sign In" : "Sign Up")
-                            .font(Theme.Typography.body.bold())
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
                             .padding()
-                            .background(Theme.Colors.primary)
+                            .background(Theme.Colors.secondaryBackground)
                             .cornerRadius(Theme.Layout.cornerRadius)
+                        }
+
+                        // Forgot password button (sign in only)
+                        if isSignIn {
+                            Button(action: {
+                                forgotPasswordEmail = email // Pre-fill with current email
+                                showingForgotPasswordAlert = true
+                            }) {
+                                Text("Forgot Password?")
+                                    .font(Theme.Typography.caption)
+                                    .foregroundColor(Theme.Colors.primary)
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                                    .padding(.trailing, 4)
+                            }
+                        }
+
+                        // Sign in/up button
+                        Button(action: {
+                            Task {
+                                if isSignIn {
+                                    await authManager.signInWithEmail(email: email, password: password)
+                                } else {
+                                    if password == confirmPassword {
+                                        await authManager.signUpWithEmail(email: email, password: password)
+                                    } else {
+                                        authManager.errorMessage = "Passwords do not match"
+                                    }
+                                }
+                            }
+                        }) {
+                            Text(isSignIn ? "Sign In" : "Sign Up")
+                                .font(Theme.Typography.body.bold())
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(Theme.Colors.primary)
+                                .cornerRadius(Theme.Layout.cornerRadius)
+                        }
+                        .disabled(authManager.isLoading || !isFormValid)
+                        .opacity(isFormValid ? 1.0 : 0.6)
                     }
-                    .disabled(authManager.isLoading || !isFormValid)
-                    .opacity(isFormValid ? 1.0 : 0.6)
+                    .padding(.horizontal, Theme.Spacing.lg)
                 }
-                .padding(.horizontal, Theme.Spacing.lg)
 
                 // Social sign-in options
                 VStack(spacing: Theme.Spacing.md) {
-                    Text("Or continue with")
+                    Text(isEmailAuthEnabled ? "Or continue with" : "Sign in with")
                         .font(Theme.Typography.caption)
                         .foregroundColor(Theme.Colors.secondaryText)
 
@@ -214,18 +219,20 @@ struct AuthenticationView: View {
                     .frame(maxWidth: 280)
                 }
 
-                // Toggle between sign in and sign up
-                Button(action: {
-                    withAnimation {
-                        isSignIn.toggle()
-                        // Clear fields when switching modes
-                        password = ""
-                        confirmPassword = ""
+                // Toggle between sign in and sign up (only shown if email auth is enabled)
+                if isEmailAuthEnabled {
+                    Button(action: {
+                        withAnimation {
+                            isSignIn.toggle()
+                            // Clear fields when switching modes
+                            password = ""
+                            confirmPassword = ""
+                        }
+                    }) {
+                        Text(isSignIn ? "Don't have an account? Sign Up" : "Already have an account? Sign In")
+                            .font(Theme.Typography.caption)
+                            .foregroundColor(Theme.Colors.primary)
                     }
-                }) {
-                    Text(isSignIn ? "Don't have an account? Sign Up" : "Already have an account? Sign In")
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.primary)
                 }
 
                 Spacer()
@@ -287,6 +294,11 @@ struct AuthenticationView: View {
 
     // Validate form fields
     private var isFormValid: Bool {
+        // If email auth is disabled, we don't need to validate the form
+        if !isEmailAuthEnabled {
+            return true
+        }
+
         if isSignIn {
             return !email.isEmpty && !password.isEmpty
         } else {
