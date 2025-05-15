@@ -47,6 +47,7 @@ struct AuthenticationView: View {
                         .foregroundColor(Theme.Colors.secondaryText)
                 }
                 .padding(.top, Theme.Spacing.xl)
+                .padding(.bottom, isEmailAuthEnabled ? 0 : Theme.Spacing.xl)
 
                 // Email authentication form (only shown if enabled)
                 if isEmailAuthEnabled {
@@ -181,10 +182,11 @@ struct AuthenticationView: View {
                 }
 
                 // Social sign-in options
-                VStack(spacing: Theme.Spacing.md) {
+                VStack(spacing: Theme.Spacing.lg) {
                     Text(isEmailAuthEnabled ? "Or continue with" : "Sign in with")
-                        .font(Theme.Typography.caption)
+                        .font(Theme.Typography.body)
                         .foregroundColor(Theme.Colors.secondaryText)
+                        .padding(.top, Theme.Spacing.md)
 
                     VStack(spacing: Theme.Spacing.md) {
                         // Apple sign-in (default)
@@ -202,9 +204,10 @@ struct AuthenticationView: View {
                             },
                             style: colorScheme == .dark ? .white : .black,
                             cornerRadius: Theme.Layout.cornerRadius,
-                            height: 50
+                            height: 55
                         )
-                        .frame(height: 50)
+                        .frame(height: 55)
+                        .frame(maxWidth: .infinity) // Make button fill available width
 
                         // Google sign-in
                         GoogleSignInButton(
@@ -212,11 +215,13 @@ struct AuthenticationView: View {
                                 // Trigger the Google Sign In flow
                                 authManager.signInWithGoogle()
                             },
-                            height: 50,
+                            height: 55,
                             cornerRadius: Theme.Layout.cornerRadius
                         )
+                        .frame(height: 55)
+                        .frame(maxWidth: .infinity) // Make button fill available width
                     }
-                    .frame(maxWidth: 280)
+                    .padding(.horizontal, Theme.Spacing.lg) // Add horizontal padding like the email form had
                 }
 
                 // Toggle between sign in and sign up (only shown if email auth is enabled)
