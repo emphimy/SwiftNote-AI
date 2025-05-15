@@ -1,8 +1,10 @@
 import SwiftUI
 import AuthenticationServices
+import Combine
 
 struct AuthenticationView: View {
     @EnvironmentObject private var authManager: AuthenticationManager
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isSignIn = true
     @State private var email = ""
     @State private var password = ""
@@ -179,34 +181,35 @@ struct AuthenticationView: View {
                         .font(Theme.Typography.caption)
                         .foregroundColor(Theme.Colors.secondaryText)
 
-                    HStack(spacing: Theme.Spacing.md) {
-                        // Apple sign-in
-                        SocialSignInButton(
-                            icon: "apple.logo",
-                            backgroundColor: .black,
-                            foregroundColor: .white
-                        ) {
-                            authManager.signInWithApple()
-                        }
+                    VStack(spacing: Theme.Spacing.md) {
+                        // Apple sign-in (default)
+                        AppleSignInButton(
+                            onCompletion: { result in
+                                Task {
+                                    await authManager.handleAppleSignIn(result: result)
+                                }
+                            },
+                            onRequest: { request in
+                                request.nonce = authManager.prepareAppleSignIn()
+                            },
+                            style: colorScheme == .dark ? .white : .black,
+                            cornerRadius: Theme.Layout.cornerRadius,
+                            height: 50
+                        )
+                        .frame(height: 50)
 
                         // Google sign-in
-                        SocialSignInButton(
-                            icon: "g.circle.fill",
-                            backgroundColor: .white,
-                            foregroundColor: .red
-                        ) {
-                            authManager.signInWithGoogle()
-                        }
-
-                        // Facebook sign-in
-                        SocialSignInButton(
-                            icon: "f.circle.fill",
-                            backgroundColor: Color(red: 0.23, green: 0.35, blue: 0.6),
-                            foregroundColor: .white
-                        ) {
-                            authManager.signInWithFacebook()
-                        }
+                        GoogleSignInButton(
+                            action: {
+                                // In a real implementation, this would trigger the Google Sign In flow
+                                // For now, we'll just show an error message
+                                authManager.signInWithGoogle()
+                            },
+                            height: 50,
+                            cornerRadius: Theme.Layout.cornerRadius
+                        )
                     }
+                    .frame(maxWidth: 280)
                 }
 
                 // Toggle between sign in and sign up

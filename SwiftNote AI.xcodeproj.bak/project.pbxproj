@@ -7,11 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		245B8A582A5F645418A5DE7E /* Pods_SwiftNote_AI_SwiftNote_AIUITests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B1C469F7E9C918959913AF6E /* Pods_SwiftNote_AI_SwiftNote_AIUITests.framework */; };
+		92A81B51B8FC0860E72B57D6 /* Pods_SwiftNote_AI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F4EDFCF6B1AB7F4AF2931364 /* Pods_SwiftNote_AI.framework */; };
+		BF88E59E1234D1F5B2CFB1AB /* Pods_SwiftNote_AITests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0755E83C96F89E43BDAF2C74 /* Pods_SwiftNote_AITests.framework */; };
 		C950AFAC2D5D0AD600558875 /* AIProxy in Frameworks */ = {isa = PBXBuildFile; productRef = C950AFAB2D5D0AD600558875 /* AIProxy */; };
 		C950B0352D5E1EAC00558875 /* Down in Frameworks */ = {isa = PBXBuildFile; productRef = C950B0342D5E1EAC00558875 /* Down */; };
 		C98454D02DB2307C0008CDDB /* SwiftSoup in Frameworks */ = {isa = PBXBuildFile; productRef = C98454CF2DB2307C0008CDDB /* SwiftSoup */; };
-		C9A05C252DD5C6ED002317C4 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = C9A05C242DD5C6ED002317C4 /* GoogleSignIn */; };
-		C9A05C272DD5C6ED002317C4 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = C9A05C262DD5C6ED002317C4 /* GoogleSignInSwift */; };
 		C9BDA81D2DCE302E0039A5BB /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = C9BDA81C2DCE302E0039A5BB /* Auth */; };
 		C9BDA81F2DCE302E0039A5BB /* PostgREST in Frameworks */ = {isa = PBXBuildFile; productRef = C9BDA81E2DCE302E0039A5BB /* PostgREST */; };
 		C9BDA8212DCE302E0039A5BB /* Realtime in Frameworks */ = {isa = PBXBuildFile; productRef = C9BDA8202DCE302E0039A5BB /* Realtime */; };
@@ -37,9 +38,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0755E83C96F89E43BDAF2C74 /* Pods_SwiftNote_AITests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SwiftNote_AITests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		B1C469F7E9C918959913AF6E /* Pods_SwiftNote_AI_SwiftNote_AIUITests.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SwiftNote_AI_SwiftNote_AIUITests.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		C9F047082CF92F080031419E /* SwiftNote AI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SwiftNote AI.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C9F0471F2CF92F090031419E /* SwiftNote AITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "SwiftNote AITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		C9F047292CF92F090031419E /* SwiftNote AIUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "SwiftNote AIUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		F4EDFCF6B1AB7F4AF2931364 /* Pods_SwiftNote_AI.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_SwiftNote_AI.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -83,11 +87,10 @@
 				C9BDA8232DCE302E0039A5BB /* Storage in Frameworks */,
 				C9BDA81D2DCE302E0039A5BB /* Auth in Frameworks */,
 				C9BDA8252DCE302E0039A5BB /* Supabase in Frameworks */,
-				C9A05C272DD5C6ED002317C4 /* GoogleSignInSwift in Frameworks */,
 				C9BDA8212DCE302E0039A5BB /* Realtime in Frameworks */,
 				C98454D02DB2307C0008CDDB /* SwiftSoup in Frameworks */,
 				C9BDA81F2DCE302E0039A5BB /* PostgREST in Frameworks */,
-				C9A05C252DD5C6ED002317C4 /* GoogleSignIn in Frameworks */,
+				92A81B51B8FC0860E72B57D6 /* Pods_SwiftNote_AI.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -95,6 +98,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BF88E59E1234D1F5B2CFB1AB /* Pods_SwiftNote_AITests.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -102,12 +106,23 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				245B8A582A5F645418A5DE7E /* Pods_SwiftNote_AI_SwiftNote_AIUITests.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		9ABAA2075F71789557984A17 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				F4EDFCF6B1AB7F4AF2931364 /* Pods_SwiftNote_AI.framework */,
+				B1C469F7E9C918959913AF6E /* Pods_SwiftNote_AI_SwiftNote_AIUITests.framework */,
+				0755E83C96F89E43BDAF2C74 /* Pods_SwiftNote_AITests.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		C9F046FF2CF92F080031419E = {
 			isa = PBXGroup;
 			children = (
@@ -115,6 +130,7 @@
 				C9F047222CF92F090031419E /* SwiftNote AITests */,
 				C9F0472C2CF92F090031419E /* SwiftNote AIUITests */,
 				C9F047092CF92F080031419E /* Products */,
+				9ABAA2075F71789557984A17 /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -135,6 +151,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = C9F047322CF92F090031419E /* Build configuration list for PBXNativeTarget "SwiftNote AI" */;
 			buildPhases = (
+				C8669784B02D7FFE0D65D96D /* [CP] Check Pods Manifest.lock */,
 				C9F047042CF92F080031419E /* Sources */,
 				C9F047052CF92F080031419E /* Frameworks */,
 				C9F047062CF92F080031419E /* Resources */,
@@ -156,8 +173,6 @@
 				C9BDA8202DCE302E0039A5BB /* Realtime */,
 				C9BDA8222DCE302E0039A5BB /* Storage */,
 				C9BDA8242DCE302E0039A5BB /* Supabase */,
-				C9A05C242DD5C6ED002317C4 /* GoogleSignIn */,
-				C9A05C262DD5C6ED002317C4 /* GoogleSignInSwift */,
 			);
 			productName = "SwiftNote AI";
 			productReference = C9F047082CF92F080031419E /* SwiftNote AI.app */;
@@ -167,6 +182,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = C9F047372CF92F090031419E /* Build configuration list for PBXNativeTarget "SwiftNote AITests" */;
 			buildPhases = (
+				91D9DFCDC79DA2E97189EA71 /* [CP] Check Pods Manifest.lock */,
 				C9F0471B2CF92F090031419E /* Sources */,
 				C9F0471C2CF92F090031419E /* Frameworks */,
 				C9F0471D2CF92F090031419E /* Resources */,
@@ -188,6 +204,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = C9F0473A2CF92F090031419E /* Build configuration list for PBXNativeTarget "SwiftNote AIUITests" */;
 			buildPhases = (
+				21C643DAE9798CD89016B3BD /* [CP] Check Pods Manifest.lock */,
 				C9F047252CF92F090031419E /* Sources */,
 				C9F047262CF92F090031419E /* Frameworks */,
 				C9F047272CF92F090031419E /* Resources */,
@@ -242,7 +259,6 @@
 				C950B0332D5E1EAC00558875 /* XCRemoteSwiftPackageReference "Down" */,
 				C98454CE2DB2307C0008CDDB /* XCRemoteSwiftPackageReference "SwiftSoup" */,
 				C9BDA81B2DCE302E0039A5BB /* XCRemoteSwiftPackageReference "supabase-swift" */,
-				C9A05C232DD5C6ED002317C4 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C9F047092CF92F080031419E /* Products */;
@@ -279,6 +295,75 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		21C643DAE9798CD89016B3BD /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-SwiftNote AI-SwiftNote AIUITests-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		91D9DFCDC79DA2E97189EA71 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-SwiftNote AITests-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		C8669784B02D7FFE0D65D96D /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-SwiftNote AI-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		C9F047042CF92F080031419E /* Sources */ = {
@@ -653,14 +738,6 @@
 				minimumVersion = 2.8.7;
 			};
 		};
-		C9A05C232DD5C6ED002317C4 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 8.0.0;
-			};
-		};
 		C9BDA81B2DCE302E0039A5BB /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/supabase/supabase-swift.git";
@@ -686,16 +763,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = C98454CE2DB2307C0008CDDB /* XCRemoteSwiftPackageReference "SwiftSoup" */;
 			productName = SwiftSoup;
-		};
-		C9A05C242DD5C6ED002317C4 /* GoogleSignIn */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C9A05C232DD5C6ED002317C4 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
-			productName = GoogleSignIn;
-		};
-		C9A05C262DD5C6ED002317C4 /* GoogleSignInSwift */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = C9A05C232DD5C6ED002317C4 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
-			productName = GoogleSignInSwift;
 		};
 		C9BDA81C2DCE302E0039A5BB /* Auth */ = {
 			isa = XCSwiftPackageProductDependency;

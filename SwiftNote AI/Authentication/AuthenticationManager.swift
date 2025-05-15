@@ -783,49 +783,127 @@ class AuthenticationManager: ObservableObject {
         isLoading = false
     }
 
-    /// Sign in with Apple
+    // MARK: - Apple Sign In
+
+    /// Current nonce for Apple Sign In
+    private var currentNonce: String?
+
+    /// Prepare for Apple Sign In by generating a nonce
+    /// - Returns: The generated nonce
+    func prepareAppleSignIn() -> String {
+        let nonce = supabaseService.generateRandomNonce()
+        currentNonce = nonce
+        return nonce
+    }
+
+    /// Handle Apple Sign In authorization
+    /// - Parameter result: Result from the Apple Sign In process
+    func handleAppleSignIn(result: Result<ASAuthorization, Error>) async {
+        #if DEBUG
+        print("🔐 AuthenticationManager: Handling Apple sign in result")
+        #endif
+
+        isLoading = true
+        setErrorMessage(nil)
+
+        do {
+            switch result {
+            case .success(let authorization):
+                guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential,
+                      let nonce = currentNonce,
+                      let appleIDToken = appleIDCredential.identityToken,
+                      let idTokenString = String(data: appleIDToken, encoding: .utf8) else {
+                    throw NSError(domain: "AuthenticationManager", code: 400, userInfo: [
+                        NSLocalizedDescriptionKey: "Invalid Apple Sign In credentials"
+                    ])
+                }
+
+                // Sign in with Supabase using the Apple ID token
+                _ = try await supabaseService.signInWithApple(idToken: idTokenString, nonce: nonce)
+
+                // Fetch user profile
+                try await fetchUserProfile()
+
+                // Update auth state
+                authState = .signedIn
+
+                #if DEBUG
+                print("🔐 AuthenticationManager: Apple sign in successful")
+                #endif
+
+            case .failure(let error):
+                throw error
+            }
+        } catch {
+            setErrorMessage("Failed to sign in with Apple: \(error.localizedDescription)")
+            authState = .signedOut
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Apple sign in failed - \(error)")
+            #endif
+        }
+
+        isLoading = false
+    }
+
+    /// Sign in with Apple - initiates the Apple Sign In flow
     func signInWithApple() {
         #if DEBUG
         print("🔐 AuthenticationManager: Starting Apple sign in")
         #endif
 
+        // The actual sign-in process is handled by the AppleSignInButton
+        // This method is called when the user taps the button in AuthenticationView
+        // The actual implementation is in handleAppleSignIn(result:)
+    }
+
+    // MARK: - Google Sign In
+
+    /// Handle Google Sign In with ID token
+    /// - Parameter idToken: ID token from Google
+    func handleGoogleSignIn(idToken: String) async {
+        #if DEBUG
+        print("🔐 AuthenticationManager: Handling Google sign in with ID token")
+        #endif
+
         isLoading = true
         setErrorMessage(nil)
 
-        // This will be implemented with ASAuthorizationController
-        // For now, we'll just show an error message
-        setErrorMessage("Apple sign in is not yet implemented")
+        do {
+            // Sign in with Supabase using the Google ID token
+            _ = try await supabaseService.signInWithGoogle(idToken: idToken)
+
+            // Fetch user profile
+            try await fetchUserProfile()
+
+            // Update auth state
+            authState = .signedIn
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Google sign in successful")
+            #endif
+        } catch {
+            setErrorMessage("Failed to sign in with Google: \(error.localizedDescription)")
+            authState = .signedOut
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Google sign in failed - \(error)")
+            #endif
+        }
+
         isLoading = false
     }
 
-    /// Sign in with Google
+    /// Sign in with Google - initiates the Google Sign In flow
     func signInWithGoogle() {
         #if DEBUG
         print("🔐 AuthenticationManager: Starting Google sign in")
         #endif
 
-        isLoading = true
-        setErrorMessage(nil)
-
-        // This will be implemented with GoogleSignIn SDK
-        // For now, we'll just show an error message
-        setErrorMessage("Google sign in is not yet implemented")
-        isLoading = false
-    }
-
-    /// Sign in with Facebook
-    func signInWithFacebook() {
-        #if DEBUG
-        print("🔐 AuthenticationManager: Starting Facebook sign in")
-        #endif
-
-        isLoading = true
-        setErrorMessage(nil)
-
-        // This will be implemented with Facebook SDK
-        // For now, we'll just show an error message
-        setErrorMessage("Facebook sign in is not yet implemented")
-        isLoading = false
+        // The actual sign-in process is handled by the GoogleSignInButton
+        // This method is called when the user taps the button in AuthenticationView
+        // The actual implementation is in handleGoogleSignIn(idToken:)
+        setErrorMessage("Please use the Google Sign In button to sign in with Google")
     }
 
     /// Sign out the current user
