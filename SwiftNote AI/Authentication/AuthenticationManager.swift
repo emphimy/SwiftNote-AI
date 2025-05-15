@@ -716,6 +716,9 @@ class AuthenticationManager: ObservableObject {
             // Update auth state
             authState = .signedIn
 
+            // Record that we signed in with email/password
+            recordAuthProvider(provider: "email")
+
             #if DEBUG
             print("🔐 AuthenticationManager: Sign in successful")
             #endif
@@ -754,6 +757,9 @@ class AuthenticationManager: ObservableObject {
 
                 // Update auth state
                 authState = .signedIn
+
+                // Record that we signed in with email/password
+                recordAuthProvider(provider: "email")
 
                 // Clear saved credentials since we're already signed in
                 clearConfirmationData()
@@ -843,6 +849,9 @@ class AuthenticationManager: ObservableObject {
                 // Update auth state
                 authState = .signedIn
 
+                // Record that we signed in with Apple
+                recordAuthProvider(provider: "apple")
+
                 // Clear the nonce after successful sign-in
                 currentNonce = nil
 
@@ -897,6 +906,9 @@ class AuthenticationManager: ObservableObject {
 
             // Update auth state
             authState = .signedIn
+
+            // Record that we signed in with Google
+            recordAuthProvider(provider: "google")
 
             #if DEBUG
             print("🔐 AuthenticationManager: Google sign in successful")
@@ -1022,6 +1034,9 @@ class AuthenticationManager: ObservableObject {
         clearConfirmationData()
         clearEmailChangeData()
 
+        // Clear the auth provider
+        UserDefaults.standard.removeObject(forKey: "auth_provider")
+
         #if DEBUG
         print("🔐 AuthenticationManager: Local sign out completed")
         #endif
@@ -1029,12 +1044,34 @@ class AuthenticationManager: ObservableObject {
         isLoading = false
     }
 
-    /// Check if the user signed in with email/password
+    /// Check if the user signed in with email/password (not a social login)
     /// - Returns: Boolean indicating if the user signed in with email/password
     func isEmailPasswordUser() -> Bool {
-        // If we have a user profile and the user has an email, assume they can change their email/password
-        // This is a simplification - in a real app, you might want to store the provider in the user profile
-        return userProfile != nil && authState == .signedIn
+        guard let email = userProfile?.email, authState == .signedIn else {
+            return false
+        }
+
+        // Check if the email is from a known social provider
+        if email.contains("@privaterelay.appleid.com") {
+            // This is an Apple Sign In email (private relay)
+            return false
+        }
+
+        // Check if we have a record of signing in with a social provider
+        if let provider = UserDefaults.standard.string(forKey: "auth_provider") {
+            if provider == "apple" || provider == "google" {
+                return false
+            }
+        }
+
+        // If we don't have any indication of a social login, assume it's email/password
+        return true
+    }
+
+    /// Record the authentication provider used for sign-in
+    /// - Parameter provider: The provider name ("apple", "google", or "email")
+    func recordAuthProvider(provider: String) {
+        UserDefaults.standard.set(provider, forKey: "auth_provider")
     }
 
     /// Change the user's password
