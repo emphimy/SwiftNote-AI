@@ -317,6 +317,208 @@ class SupabaseService {
 
     // MARK: - Database Methods
 
+    /// Fetch minimal note data (without binary content) from a table
+    /// - Parameters:
+    ///   - userId: User ID to filter by
+    /// - Returns: Array of notes with minimal data
+    func fetchMinimalNotes(userId: UUID) async throws -> [SupabaseNote] {
+        #if DEBUG
+        print("🔌 SupabaseService: Fetching minimal notes for user: \(userId)")
+        #endif
+
+        // Fetch notes without binary content fields
+        let query = client.from("notes")
+            .select("id, title, source_type, timestamp, last_modified, is_favorite, processing_status, folder_id, user_id, summary, key_points, citations, duration, language_code, source_url, tags, transcript, video_id")
+            .eq("user_id", value: userId.uuidString)
+
+        let response = try await query.execute()
+        let data = response.data
+
+        // Check if data is empty
+        if data.isEmpty {
+            return [] // Return empty array instead of throwing an error
+        }
+
+        // Parse the JSON data manually to avoid decoding issues with binary content
+        let decoder = JSONDecoder()
+
+        // Create a custom date formatter that can handle Supabase's date format
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ"
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+
+        // Set up a custom date decoding strategy
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+
+            // Try different date formats
+            let formats = [
+                "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ",
+                "yyyy-MM-dd'T'HH:mm:ssZZZZZ",
+                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                "yyyy-MM-dd'T'HH:mm:ss'Z'"
+            ]
+
+            for format in formats {
+                dateFormatter.dateFormat = format
+                if let date = dateFormatter.date(from: dateString) {
+                    return date
+                }
+            }
+
+            #if DEBUG
+            print("🔌 SupabaseService: Failed to parse date: \(dateString)")
+            #endif
+
+            // If all formats fail, return current date as fallback
+            return Date()
+        }
+
+        do {
+            let notes = try decoder.decode([MinimalSupabaseNote].self, from: data)
+
+            // Convert to full SupabaseNote objects with nil binary content
+            return notes.map { minimalNote in
+                return SupabaseNote(
+                    id: minimalNote.id,
+                    title: minimalNote.title,
+                    originalContent: nil,
+                    aiGeneratedContent: nil,
+                    sourceType: minimalNote.sourceType,
+                    timestamp: minimalNote.timestamp,
+                    lastModified: minimalNote.lastModified,
+                    isFavorite: minimalNote.isFavorite,
+                    processingStatus: minimalNote.processingStatus,
+                    folderId: minimalNote.folderId,
+                    userId: minimalNote.userId,
+                    summary: minimalNote.summary,
+                    keyPoints: minimalNote.keyPoints,
+                    citations: minimalNote.citations,
+                    duration: minimalNote.duration,
+                    languageCode: minimalNote.languageCode,
+                    sourceURL: minimalNote.sourceURL,
+                    tags: minimalNote.tags,
+                    transcript: minimalNote.transcript,
+                    sections: nil,
+                    supplementaryMaterials: nil,
+                    mindMap: nil,
+                    videoId: minimalNote.videoId
+                )
+            }
+        } catch {
+            #if DEBUG
+            print("🔌 SupabaseService: Error decoding minimal notes: \(error)")
+            #endif
+            throw error
+        }
+    }
+
+    /// Minimal version of SupabaseNote without binary content
+    private struct MinimalSupabaseNote: Codable {
+        let id: UUID
+        var title: String
+        var sourceType: String
+        var timestamp: Date
+        var lastModified: Date
+        var isFavorite: Bool
+        var processingStatus: String
+        var folderId: UUID?
+        var userId: UUID
+        var summary: String?
+        var keyPoints: String?
+        var citations: String?
+        var duration: Double?
+        var languageCode: String?
+        var sourceURL: String?
+        var tags: String?
+        var transcript: String?
+        var videoId: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case title
+            case sourceType = "source_type"
+            case timestamp
+            case lastModified = "last_modified"
+            case isFavorite = "is_favorite"
+            case processingStatus = "processing_status"
+            case folderId = "folder_id"
+            case userId = "user_id"
+            case summary
+            case keyPoints = "key_points"
+            case citations
+            case duration
+            case languageCode = "language_code"
+            case sourceURL = "source_url"
+            case tags
+            case transcript
+            case videoId = "video_id"
+        }
+    }
+
+    /// Fetch a complete note with all content including binary data
+    /// - Parameters:
+    ///   - noteId: The ID of the note to fetch
+    ///   - userId: The user ID for security validation
+    /// - Returns: A complete SupabaseNote with all data
+    func fetchCompleteNote(noteId: UUID, userId: UUID) async throws -> SupabaseNote {
+        #if DEBUG
+        print("🔌 SupabaseService: Fetching complete note with ID: \(noteId)")
+        #endif
+
+        // Fetch the note with all fields
+        let query = client.from("notes")
+            .select("*")
+            .eq("id", value: noteId.uuidString)
+            .eq("user_id", value: userId.uuidString)
+            .single()
+
+        let response = try await query.execute()
+        let data = response.data
+
+        // Parse the JSON data
+        let decoder = JSONDecoder()
+
+        // Set up date decoding strategy
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ"
+        dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dateFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+
+            // Try different date formats
+            let formats = [
+                "yyyy-MM-dd'T'HH:mm:ss.SSSZZZZZ",
+                "yyyy-MM-dd'T'HH:mm:ssZZZZZ",
+                "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
+                "yyyy-MM-dd'T'HH:mm:ss'Z'"
+            ]
+
+            for format in formats {
+                dateFormatter.dateFormat = format
+                if let date = dateFormatter.date(from: dateString) {
+                    return date
+                }
+            }
+
+            return Date()
+        }
+
+        do {
+            return try decoder.decode(SupabaseNote.self, from: data)
+        } catch {
+            #if DEBUG
+            print("🔌 SupabaseService: Error decoding complete note: \(error)")
+            #endif
+            throw error
+        }
+    }
+
     /// Generic method to fetch data from a table
     /// - Parameters:
     ///   - table: Table name
