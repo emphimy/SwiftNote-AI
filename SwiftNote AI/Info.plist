@@ -47,6 +47,8 @@
 	<array>
 		<string>youtube</string>
 		<string>youtube-x-callback</string>
+		<string>googlechrome</string>
+		<string>googlechromes</string>
 	</array>
 	<key>MinimumOSVersion</key>
 	<string>16.6</string>
@@ -95,6 +97,16 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>swiftnoteai</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.googleusercontent.apps</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.17364962360-qjgkqlj8vs1les209p8j0pkfskl8ido8</string>
 			</array>
 		</dict>
 	</array>

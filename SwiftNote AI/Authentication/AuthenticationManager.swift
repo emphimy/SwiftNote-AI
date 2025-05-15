@@ -3,6 +3,7 @@ import Supabase
 import Combine
 import AuthenticationServices
 import PostgREST
+import GoogleSignIn
 
 /// Manages authentication state and operations
 @MainActor
@@ -918,10 +919,88 @@ class AuthenticationManager: ObservableObject {
         print("🔐 AuthenticationManager: Starting Google sign in")
         #endif
 
-        // The actual sign-in process is handled by the GoogleSignInButton
-        // This method is called when the user taps the button in AuthenticationView
-        // The actual implementation is in handleGoogleSignIn(idToken:)
-        setErrorMessage("Please use the Google Sign In button to sign in with Google")
+        isLoading = true
+        setErrorMessage(nil)
+
+        // Get the top view controller to present the Google Sign In UI
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let rootViewController = windowScene.windows.first?.rootViewController else {
+            setErrorMessage("Failed to present Google Sign In")
+            isLoading = false
+            return
+        }
+
+        // Get the top-most presented view controller
+        var topViewController = rootViewController
+        while let presented = topViewController.presentedViewController {
+            topViewController = presented
+        }
+
+        // Configure Google Sign In
+        GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: SupabaseConfig.shared.googleClientID)
+
+        #if DEBUG
+        print("🔐 AuthenticationManager: Starting Google Sign In with client ID: \(SupabaseConfig.shared.googleClientID)")
+        #endif
+
+        // Start the Google Sign In flow
+        do {
+            // Use a try-catch block to handle any exceptions during sign-in initialization
+            GIDSignIn.sharedInstance.signIn(withPresenting: topViewController) { [weak self] result, error in
+                guard let self = self else { return }
+
+                // Always reset loading state
+                defer {
+                    self.isLoading = false
+                }
+
+                if let error = error {
+                    self.setErrorMessage("Google sign in failed: \(error.localizedDescription)")
+
+                    #if DEBUG
+                    print("🔐 AuthenticationManager: Google sign in failed - \(error)")
+                    #endif
+                    return
+                }
+
+                guard let result = result else {
+                    self.setErrorMessage("Google sign in cancelled or failed")
+
+                    #if DEBUG
+                    print("🔐 AuthenticationManager: Google sign in result is nil")
+                    #endif
+                    return
+                }
+
+                guard let idToken = result.user.idToken?.tokenString else {
+                    self.setErrorMessage("Failed to get Google ID token")
+
+                    #if DEBUG
+                    print("🔐 AuthenticationManager: Failed to get Google ID token")
+                    #endif
+                    return
+                }
+
+                #if DEBUG
+                print("🔐 AuthenticationManager: Got Google ID token, proceeding with Supabase authentication")
+                if let email = result.user.profile?.email {
+                    print("🔐 AuthenticationManager: Google user email: \(email)")
+                }
+                #endif
+
+                // Now that we have the ID token, authenticate with Supabase
+                Task {
+                    await self.handleGoogleSignIn(idToken: idToken)
+                }
+            }
+        } catch {
+            setErrorMessage("Failed to initialize Google Sign In: \(error.localizedDescription)")
+            isLoading = false
+
+            #if DEBUG
+            print("🔐 AuthenticationManager: Failed to initialize Google Sign In - \(error)")
+            #endif
+        }
     }
 
     /// Sign out the current user

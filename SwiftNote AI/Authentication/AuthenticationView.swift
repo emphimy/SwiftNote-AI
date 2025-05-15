@@ -204,8 +204,7 @@ struct AuthenticationView: View {
                         // Google sign-in
                         GoogleSignInButton(
                             action: {
-                                // In a real implementation, this would trigger the Google Sign In flow
-                                // For now, we'll just show an error message
+                                // Trigger the Google Sign In flow
                                 authManager.signInWithGoogle()
                             },
                             height: 50,

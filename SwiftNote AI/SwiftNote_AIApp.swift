@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreData
+import GoogleSignIn
 
 @main
 struct SwiftNote_AIApp: App {
@@ -11,6 +12,16 @@ struct SwiftNote_AIApp: App {
 
     init() {
         // Initialize app without UserDefaults restoration
+    }
+
+    // Handle Google Sign In URL
+    func handleGoogleSignInURL(_ url: URL) {
+        #if DEBUG
+        print("📱 App: Handling Google Sign In URL: \(url)")
+        #endif
+
+        // Process the URL with Google Sign In
+        GIDSignIn.sharedInstance.handle(url)
     }
 
     // Handle deep links for authentication
@@ -217,7 +228,7 @@ struct SwiftNote_AIApp: App {
         }
     }
 
-    // Initialize Supabase when the app starts
+    // Initialize Supabase and Google Sign In when the app starts
     private func initializeSupabase() async {
         if !supabaseInitialized {
             await SupabaseService.shared.initialize()
@@ -226,6 +237,19 @@ struct SwiftNote_AIApp: App {
             #if DEBUG
             print("📱 App: Supabase initialized")
             #endif
+
+            // Restore Google Sign In if previously signed in
+            GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in
+                if let error = error {
+                    #if DEBUG
+                    print("📱 App: Error restoring Google Sign In: \(error)")
+                    #endif
+                } else if let user = user {
+                    #if DEBUG
+                    print("📱 App: Restored Google Sign In for user: \(user.profile?.email ?? "unknown")")
+                    #endif
+                }
+            }
         }
     }
 
@@ -245,8 +269,18 @@ struct SwiftNote_AIApp: App {
                 }
             }
             .onOpenURL { url in
-                // Handle deep links
-                handleDeepLink(url)
+                #if DEBUG
+                print("📱 App: Received URL: \(url)")
+                #endif
+
+                // Check if this is a Google Sign In URL
+                if let scheme = url.scheme, scheme.contains("com.googleusercontent.apps") {
+                    // Handle Google Sign In URL
+                    handleGoogleSignInURL(url)
+                } else {
+                    // Handle other deep links
+                    handleDeepLink(url)
+                }
             }
         }
         .onChange(of: scenePhase) { newPhase in

@@ -9,6 +9,11 @@ class SupabaseConfig {
     // MARK: - Properties
     private(set) var client: SupabaseClient
 
+    /// Google client ID for Google Sign In
+    var googleClientID: String {
+        return Secrets.googleClientID
+    }
+
     // MARK: - Initialization
     private init() {
         #if DEBUG
