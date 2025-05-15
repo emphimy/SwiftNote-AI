@@ -362,20 +362,40 @@ class SupabaseService {
     /// Sign in with Apple
     /// - Parameters:
     ///   - idToken: ID token from Apple
-    ///   - nonce: Nonce used for the request
+    ///   - nonce: Nonce used for the request (original, unhashed)
     /// - Returns: Session for the authenticated user
     func signInWithApple(idToken: String, nonce: String) async throws -> Session {
         #if DEBUG
         print("🔌 SupabaseService: Signing in with Apple")
+        print("🔌 SupabaseService: Using raw nonce: \(nonce)")
+        // Print only the first 10 characters of the token for security
+        let tokenPreview = String(idToken.prefix(10)) + "..."
+        print("🔌 SupabaseService: ID token preview: \(tokenPreview)")
         #endif
 
-        return try await client.auth.signInWithIdToken(
-            credentials: .init(
-                provider: .apple,
-                idToken: idToken,
-                nonce: nonce
+        do {
+            let session = try await client.auth.signInWithIdToken(
+                credentials: .init(
+                    provider: .apple,
+                    idToken: idToken,
+                    nonce: nonce // Supabase expects the original unhashed nonce
+                )
             )
-        )
+
+            #if DEBUG
+            print("🔌 SupabaseService: Apple sign in successful")
+            #endif
+
+            return session
+        } catch {
+            #if DEBUG
+            print("🔌 SupabaseService: Apple sign in failed - \(error)")
+            if let authError = error as? AuthError {
+                print("🔌 SupabaseService: Auth error details - \(authError)")
+            }
+            #endif
+            throw error
+        }
     }
 
     /// Sign in with Google

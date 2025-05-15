@@ -190,7 +190,10 @@ struct AuthenticationView: View {
                                 }
                             },
                             onRequest: { request in
-                                request.nonce = authManager.prepareAppleSignIn()
+                                // Get both the hashed nonce (for Apple) and raw nonce (stored for Supabase)
+                                let (hashedNonce, _) = authManager.prepareAppleSignIn()
+                                // Apple requires the hashed nonce
+                                request.nonce = hashedNonce
                             },
                             style: colorScheme == .dark ? .white : .black,
                             cornerRadius: Theme.Layout.cornerRadius,

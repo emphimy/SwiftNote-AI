@@ -785,15 +785,26 @@ class AuthenticationManager: ObservableObject {
 
     // MARK: - Apple Sign In
 
-    /// Current nonce for Apple Sign In
+    /// Current nonce for Apple Sign In (original, unhashed)
     private var currentNonce: String?
 
     /// Prepare for Apple Sign In by generating a nonce
-    /// - Returns: The generated nonce
-    func prepareAppleSignIn() -> String {
-        let nonce = supabaseService.generateRandomNonce()
-        currentNonce = nonce
-        return nonce
+    /// - Returns: The SHA256 hashed nonce for Apple's request
+    func prepareAppleSignIn() -> (hashedNonce: String, rawNonce: String) {
+        // Generate a random nonce
+        let rawNonce = supabaseService.generateRandomNonce()
+
+        // Store the original (unhashed) nonce for later verification
+        currentNonce = rawNonce
+
+        // Hash the nonce for Apple's request
+        let hashedNonce = supabaseService.sha256(rawNonce)
+
+        #if DEBUG
+        print("🔐 AuthenticationManager: Generated nonce - Raw: \(rawNonce), Hashed: \(hashedNonce)")
+        #endif
+
+        return (hashedNonce, rawNonce)
     }
 
     /// Handle Apple Sign In authorization
@@ -810,7 +821,7 @@ class AuthenticationManager: ObservableObject {
             switch result {
             case .success(let authorization):
                 guard let appleIDCredential = authorization.credential as? ASAuthorizationAppleIDCredential,
-                      let nonce = currentNonce,
+                      let rawNonce = currentNonce, // This is the original unhashed nonce
                       let appleIDToken = appleIDCredential.identityToken,
                       let idTokenString = String(data: appleIDToken, encoding: .utf8) else {
                     throw NSError(domain: "AuthenticationManager", code: 400, userInfo: [
@@ -818,14 +829,21 @@ class AuthenticationManager: ObservableObject {
                     ])
                 }
 
-                // Sign in with Supabase using the Apple ID token
-                _ = try await supabaseService.signInWithApple(idToken: idTokenString, nonce: nonce)
+                #if DEBUG
+                print("🔐 AuthenticationManager: Got Apple ID token, using raw nonce: \(rawNonce)")
+                #endif
+
+                // Sign in with Supabase using the Apple ID token and the ORIGINAL (unhashed) nonce
+                _ = try await supabaseService.signInWithApple(idToken: idTokenString, nonce: rawNonce)
 
                 // Fetch user profile
                 try await fetchUserProfile()
 
                 // Update auth state
                 authState = .signedIn
+
+                // Clear the nonce after successful sign-in
+                currentNonce = nil
 
                 #if DEBUG
                 print("🔐 AuthenticationManager: Apple sign in successful")
