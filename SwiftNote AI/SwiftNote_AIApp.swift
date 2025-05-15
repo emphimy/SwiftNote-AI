@@ -228,7 +228,7 @@ struct SwiftNote_AIApp: App {
         }
     }
 
-    // Initialize Supabase and Google Sign In when the app starts
+    // Initialize Supabase and restore authentication when the app starts
     private func initializeSupabase() async {
         if !supabaseInitialized {
             await SupabaseService.shared.initialize()
@@ -238,20 +238,35 @@ struct SwiftNote_AIApp: App {
             print("📱 App: Supabase initialized")
             #endif
 
-            // Restore Google Sign In if previously signed in
-            Task {
-                do {
-                    let result = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
-                    #if DEBUG
-                    if let email = result.profile?.email {
-                        print("📱 App: Restored Google Sign In for user: \(email)")
+            // Check which auth provider was used
+            let authProvider = UserDefaults.standard.string(forKey: "auth_provider")
+
+            #if DEBUG
+            print("📱 App: Stored auth provider: \(authProvider ?? "none")")
+            #endif
+
+            // Only restore Google Sign In if it was the last used provider
+            if authProvider == "google" {
+                Task {
+                    do {
+                        let result = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
+                        #if DEBUG
+                        if let email = result.profile?.email {
+                            print("📱 App: Restored Google Sign In for user: \(email)")
+                        }
+                        #endif
+                    } catch {
+                        #if DEBUG
+                        print("📱 App: Error restoring Google Sign In: \(error)")
+                        #endif
                     }
-                    #endif
-                } catch {
-                    #if DEBUG
-                    print("📱 App: Error restoring Google Sign In: \(error)")
-                    #endif
                 }
+            } else if authProvider != "google" {
+                // If we're not using Google, make sure to sign out from Google
+                GIDSignIn.sharedInstance.signOut()
+                #if DEBUG
+                print("📱 App: Signed out from Google since another provider is being used")
+                #endif
             }
         }
     }

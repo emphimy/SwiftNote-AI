@@ -540,6 +540,13 @@ class AuthenticationManager: ObservableObject {
         // Clear any previous error message
         setErrorMessage(nil)
 
+        // Get the stored auth provider
+        let authProvider = UserDefaults.standard.string(forKey: "auth_provider")
+
+        #if DEBUG
+        print("🔐 AuthenticationManager: Stored auth provider: \(authProvider ?? "none")")
+        #endif
+
         do {
             let isSignedIn = await supabaseService.isSignedIn()
 
@@ -548,6 +555,15 @@ class AuthenticationManager: ObservableObject {
                 try await fetchUserProfile()
                 authState = .signedIn
 
+                // If we're signed in but don't have a stored provider, set a default
+                if authProvider == nil {
+                    // Default to "supabase" as the provider if we can't determine it
+                    recordAuthProvider(provider: "supabase")
+                    #if DEBUG
+                    print("🔐 AuthenticationManager: Set default auth provider to 'supabase'")
+                    #endif
+                }
+
                 #if DEBUG
                 print("🔐 AuthenticationManager: User is signed in")
                 #endif
@@ -555,6 +571,22 @@ class AuthenticationManager: ObservableObject {
                 // User is not signed in - this is normal for a fresh install
                 authState = .signedOut
                 userProfile = nil
+
+                // If we're not signed in but have a stored provider, clear it
+                if authProvider != nil {
+                    UserDefaults.standard.removeObject(forKey: "auth_provider")
+                    #if DEBUG
+                    print("🔐 AuthenticationManager: Cleared stored auth provider since user is not signed in")
+                    #endif
+
+                    // If Google was the provider, explicitly sign out
+                    if authProvider == "google" {
+                        GIDSignIn.sharedInstance.signOut()
+                        #if DEBUG
+                        print("🔐 AuthenticationManager: Explicitly signed out from Google")
+                        #endif
+                    }
+                }
 
                 #if DEBUG
                 print("🔐 AuthenticationManager: User is signed out")
@@ -572,6 +604,22 @@ class AuthenticationManager: ObservableObject {
                 #if DEBUG
                 print("🔐 AuthenticationManager: No active session (refresh token not found)")
                 #endif
+
+                // Clear any stored auth provider since we're not signed in
+                if authProvider != nil {
+                    UserDefaults.standard.removeObject(forKey: "auth_provider")
+                    #if DEBUG
+                    print("🔐 AuthenticationManager: Cleared stored auth provider due to no active session")
+                    #endif
+
+                    // If Google was the provider, explicitly sign out
+                    if authProvider == "google" {
+                        GIDSignIn.sharedInstance.signOut()
+                        #if DEBUG
+                        print("🔐 AuthenticationManager: Explicitly signed out from Google")
+                        #endif
+                    }
+                }
             } else {
                 setErrorMessage("Authentication error: \(error.localizedDescription)")
                 #if DEBUG
@@ -587,6 +635,22 @@ class AuthenticationManager: ObservableObject {
             #if DEBUG
             print("🔐 AuthenticationManager: Error checking auth state - \(error)")
             #endif
+
+            // Clear any stored auth provider on error
+            if authProvider != nil {
+                UserDefaults.standard.removeObject(forKey: "auth_provider")
+                #if DEBUG
+                print("🔐 AuthenticationManager: Cleared stored auth provider due to error")
+                #endif
+
+                // If Google was the provider, explicitly sign out
+                if authProvider == "google" {
+                    GIDSignIn.sharedInstance.signOut()
+                    #if DEBUG
+                    print("🔐 AuthenticationManager: Explicitly signed out from Google")
+                    #endif
+                }
+            }
         }
 
         isLoading = false
@@ -1018,7 +1082,30 @@ class AuthenticationManager: ObservableObject {
         // Clear any stored nonce
         currentNonce = nil
 
-        // Try both global and local sign-out approaches
+        // Get the current auth provider before signing out
+        let authProvider = UserDefaults.standard.string(forKey: "auth_provider")
+
+        #if DEBUG
+        print("🔐 AuthenticationManager: Signing out user with provider: \(authProvider ?? "unknown")")
+        #endif
+
+        // Handle provider-specific sign out first
+        if authProvider == "google" {
+            // Sign out from Google
+            GIDSignIn.sharedInstance.signOut()
+            #if DEBUG
+            print("🔐 AuthenticationManager: Signed out from Google")
+            #endif
+        }
+
+        // Clear the stored auth provider
+        UserDefaults.standard.removeObject(forKey: "auth_provider")
+
+        #if DEBUG
+        print("🔐 AuthenticationManager: Cleared stored auth provider")
+        #endif
+
+        // Try both global and local sign-out approaches with Supabase
         // First attempt a global sign-out (affects all devices)
         await supabaseService.signOut(scope: .global)
 
@@ -1033,9 +1120,6 @@ class AuthenticationManager: ObservableObject {
         // Clear any stored credentials
         clearConfirmationData()
         clearEmailChangeData()
-
-        // Clear the auth provider
-        UserDefaults.standard.removeObject(forKey: "auth_provider")
 
         #if DEBUG
         print("🔐 AuthenticationManager: Local sign out completed")
