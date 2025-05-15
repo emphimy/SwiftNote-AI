@@ -544,7 +544,7 @@ struct SafariView: UIViewControllerRepresentable {
 // MARK: - Legal Section
 struct LegalSection: View {
     private let privacyPolicyURL = URL(string: "https://kybdigital.com/swift-ai-privacy-policy")!
-    private let termsOfUseURL = URL(string: "https://kybdigital.com/terms-of-use")!
+    private let termsOfUseURL = URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!
 
     var body: some View {
         VStack(spacing: 0) { // No spacing between rows
