@@ -944,9 +944,8 @@ class AuthenticationManager: ObservableObject {
         #endif
 
         // Start the Google Sign In flow
-        do {
-            // Use a try-catch block to handle any exceptions during sign-in initialization
-            GIDSignIn.sharedInstance.signIn(withPresenting: topViewController) { [weak self] result, error in
+        // Note: GIDSignIn.signIn doesn't throw errors directly, it uses the completion handler
+        GIDSignIn.sharedInstance.signIn(withPresenting: topViewController) { [weak self] result, error in
                 guard let self = self else { return }
 
                 // Always reset loading state
@@ -993,14 +992,6 @@ class AuthenticationManager: ObservableObject {
                     await self.handleGoogleSignIn(idToken: idToken)
                 }
             }
-        } catch {
-            setErrorMessage("Failed to initialize Google Sign In: \(error.localizedDescription)")
-            isLoading = false
-
-            #if DEBUG
-            print("🔐 AuthenticationManager: Failed to initialize Google Sign In - \(error)")
-            #endif
-        }
     }
 
     /// Sign out the current user

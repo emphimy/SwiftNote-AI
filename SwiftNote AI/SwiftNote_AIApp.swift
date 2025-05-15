@@ -239,14 +239,17 @@ struct SwiftNote_AIApp: App {
             #endif
 
             // Restore Google Sign In if previously signed in
-            GIDSignIn.sharedInstance.restorePreviousSignIn { user, error in
-                if let error = error {
+            Task {
+                do {
+                    let result = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
+                    #if DEBUG
+                    if let email = result.profile?.email {
+                        print("📱 App: Restored Google Sign In for user: \(email)")
+                    }
+                    #endif
+                } catch {
                     #if DEBUG
                     print("📱 App: Error restoring Google Sign In: \(error)")
-                    #endif
-                } else if let user = user {
-                    #if DEBUG
-                    print("📱 App: Restored Google Sign In for user: \(user.profile?.email ?? "unknown")")
                     #endif
                 }
             }
