@@ -74,12 +74,59 @@ class SupabaseService {
     }
 
     /// Sign out the current user
-    func signOut() async throws {
+    /// - Parameter scope: The scope of the sign out (.global or .local)
+    func signOut(scope: SignOutScope) async {
         #if DEBUG
-        print("🔌 SupabaseService: Signing out user")
+        print("🔌 SupabaseService: Signing out user with scope: \(scope)")
         #endif
 
-        try await client.auth.signOut()
+        do {
+            // Try to sign out with the specified scope
+            try await client.auth.signOut(scope: scope)
+
+            #if DEBUG
+            print("🔌 SupabaseService: Sign out successful with scope: \(scope)")
+            #endif
+        } catch let error as AuthError {
+            // Handle specific auth errors
+            if case .sessionMissing = error {
+                #if DEBUG
+                print("🔌 SupabaseService: Session already missing, considering sign out successful")
+                #endif
+                // This is not a critical error - the user is effectively signed out
+                return
+            } else {
+                #if DEBUG
+                print("🔌 SupabaseService: Sign out failed with auth error - \(error)")
+                #endif
+                // For other auth errors, we'll still consider the user signed out locally
+                return
+            }
+        } catch {
+            // Handle network or other errors
+            #if DEBUG
+            print("🔌 SupabaseService: Sign out failed with error - \(error)")
+            print("🔌 SupabaseService: Will try to clear local session data anyway")
+            #endif
+
+            // If this was a global sign-out and it failed, try a local sign-out as fallback
+            if scope == .global {
+                #if DEBUG
+                print("🔌 SupabaseService: Attempting local sign-out as fallback")
+                #endif
+
+                do {
+                    try await client.auth.signOut(scope: .local)
+                    #if DEBUG
+                    print("🔌 SupabaseService: Local sign-out successful")
+                    #endif
+                } catch {
+                    #if DEBUG
+                    print("🔌 SupabaseService: Local sign-out also failed - \(error)")
+                    #endif
+                }
+            }
+        }
     }
 
     /// Get the current session

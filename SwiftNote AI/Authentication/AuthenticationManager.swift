@@ -933,24 +933,28 @@ class AuthenticationManager: ObservableObject {
         isLoading = true
         setErrorMessage(nil)
 
-        do {
-            // Sign out with Supabase
-            try await supabaseService.signOut()
+        // Clear any stored nonce
+        currentNonce = nil
 
-            // Update auth state
-            authState = .signedOut
-            userProfile = nil
+        // Try both global and local sign-out approaches
+        // First attempt a global sign-out (affects all devices)
+        await supabaseService.signOut(scope: .global)
 
-            #if DEBUG
-            print("🔐 AuthenticationManager: Sign out successful")
-            #endif
-        } catch {
-            setErrorMessage("Failed to sign out: \(error.localizedDescription)")
+        // Then also try a local sign-out as a fallback
+        // This is especially important for social logins like Apple Sign In
+        await supabaseService.signOut(scope: .local)
 
-            #if DEBUG
-            print("🔐 AuthenticationManager: Sign out failed - \(error)")
-            #endif
-        }
+        // Always update local auth state regardless of server response
+        authState = .signedOut
+        userProfile = nil
+
+        // Clear any stored credentials
+        clearConfirmationData()
+        clearEmailChangeData()
+
+        #if DEBUG
+        print("🔐 AuthenticationManager: Local sign out completed")
+        #endif
 
         isLoading = false
     }
