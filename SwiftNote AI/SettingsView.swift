@@ -19,6 +19,7 @@ final class SettingsViewModel: ObservableObject {
     @AppStorage("autoBackupEnabled") var autoBackupEnabled = true
     @AppStorage("biometricLockEnabled") var biometricLockEnabled = false
     @AppStorage("biometricEnabled") var biometricEnabled = false
+    @Published var lastSupabaseSync: Date?
 
     @Published var biometricType: BiometricType = .none
 
@@ -31,6 +32,8 @@ final class SettingsViewModel: ObservableObject {
     // Logout alert removed
     @Published var failedRecordings: [FailedRecording] = []
     @Published var exportURL: ExportURLWrapper?
+    @Published var isSyncing = false
+    @Published var syncResult: (success: Bool, message: String)? = nil
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -118,6 +121,48 @@ final class SettingsViewModel: ObservableObject {
         // This method is kept for compatibility with existing code
     }
 
+    /// Sync notes to Supabase
+    /// - Parameter context: The NSManagedObjectContext
+    func syncToSupabase(context: NSManagedObjectContext) {
+        #if DEBUG
+        print("⚙️ SettingsViewModel: Starting Supabase sync")
+        #endif
+
+        // Reset previous result
+        syncResult = nil
+        isSyncing = true
+
+        // Call the sync service
+        SupabaseSyncService.shared.syncNotesMetadataToSupabase(context: context) { success, error in
+            self.isSyncing = false
+
+            if success {
+                self.syncResult = (success: true, message: "Sync completed successfully")
+                let now = Date()
+                self.lastSupabaseSync = now
+
+                // Save to UserDefaults
+                UserDefaults.standard.set(now.timeIntervalSince1970, forKey: "lastSupabaseSyncDate")
+
+                #if DEBUG
+                print("⚙️ SettingsViewModel: Sync completed successfully")
+                #endif
+            } else {
+                let errorMessage = error?.localizedDescription ?? "Unknown error"
+                self.syncResult = (success: false, message: "Sync failed: \(errorMessage)")
+
+                #if DEBUG
+                print("⚙️ SettingsViewModel: Sync failed - \(errorMessage)")
+                #endif
+            }
+
+            // Auto-dismiss the result after 5 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                self.syncResult = nil
+            }
+        }
+    }
+
     func deleteFailedRecording(_ recording: FailedRecording) {
         #if DEBUG
         print("⚙️ SettingsViewModel: Deleting failed recording: \(recording.id)")
@@ -139,6 +184,15 @@ final class SettingsViewModel: ObservableObject {
             FailedRecording(date: Date().addingTimeInterval(-3600), duration: 45, errorMessage: "Network connection lost"),
             FailedRecording(date: Date().addingTimeInterval(-7200), duration: 120, errorMessage: "Insufficient storage")
         ]
+
+        // Load last sync date from UserDefaults
+        if let lastSyncTimeInterval = UserDefaults.standard.object(forKey: "lastSupabaseSyncDate") as? TimeInterval {
+            self.lastSupabaseSync = Date(timeIntervalSince1970: lastSyncTimeInterval)
+
+            #if DEBUG
+            print("⚙️ SettingsViewModel: Loaded last sync date: \(self.lastSupabaseSync!)")
+            #endif
+        }
 
         #if DEBUG
         print("⚙️ SettingsViewModel: Initialized with pre-populated data")
@@ -326,6 +380,8 @@ struct SettingsView: View {
             privacySection
         case "support":
             supportSection
+        case "sync":
+            syncSection
         default:
             EmptyView()
         }
@@ -436,6 +492,57 @@ struct SettingsView: View {
                     )
                 }
             )
+        }
+    }
+
+    private var syncSection: some View {
+        VStack(spacing: 8) {
+            // Sync button
+            Button(action: {
+                #if DEBUG
+                print("⚙️ SettingsView: Sync button tapped")
+                #endif
+                viewModel.syncToSupabase(context: viewContext)
+            }) {
+                HStack {
+                    Text("Sync Notes to Cloud")
+                        .foregroundColor(Theme.Colors.text)
+                    Spacer()
+                    if viewModel.isSyncing {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundColor(Theme.Colors.primary)
+                    }
+                }
+            }
+            .disabled(viewModel.isSyncing)
+
+            // Last sync time
+            if let lastSync = viewModel.lastSupabaseSync {
+                HStack {
+                    Text("Last synced:")
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.secondaryText)
+                    Spacer()
+                    Text(lastSync, style: .relative)
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.secondaryText)
+                }
+            }
+
+            // Sync result message
+            if let result = viewModel.syncResult {
+                HStack {
+                    Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundColor(result.success ? Theme.Colors.success : Theme.Colors.error)
+                    Text(result.message)
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(result.success ? Theme.Colors.success : Theme.Colors.error)
+                }
+                .padding(.top, 4)
+            }
         }
     }
 

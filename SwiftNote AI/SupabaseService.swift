@@ -11,7 +11,8 @@ class SupabaseService {
     static let shared = SupabaseService()
 
     // MARK: - Properties
-    private let client: SupabaseClient
+    // Expose client for direct access when needed
+    let client: SupabaseClient
 
     // MARK: - Initialization
     private init() {
