@@ -1132,44 +1132,29 @@ struct TranscriptTabView: View {
                     }
                     .padding()
                 } else if let transcript = viewModel.transcript {
+                    // Process transcript into conversation blocks
+                    let blocks = processTranscriptIntoBlocks(transcript)
+
                     LazyVStack(alignment: .leading, spacing: 16) {
-                        let paragraphs = transcript.components(separatedBy: "\n\n")
-                        ForEach(Array(zip(paragraphs.indices, paragraphs)), id: \.0) { index, paragraph in
-                            if !paragraph.isEmpty {
-                                // Try to find a timestamp in the format [MM:SS]
-                                if let timeRange = paragraph.range(of: "\\[\\d+:\\d{2}\\]", options: [.regularExpression]) {
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Text(String(paragraph[timeRange]))
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
+                        ForEach(blocks) { block in
+                            VStack(alignment: .leading, spacing: 8) {
+                                // Time range header
+                                Text(block.timeRange)
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(Theme.Colors.primary)
 
-                                        Text(String(paragraph[paragraph.index(after: timeRange.upperBound)...])
-                                            .trimmingCharacters(in: CharacterSet.whitespaces))
-                                        .font(.body)
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(Theme.Colors.secondaryBackground.opacity(0.5))
-                                    .cornerRadius(12)
-                                    .padding(.horizontal, 8)
-                                } else {
-                                    // If no timestamp found, just display the paragraph
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        // Add a paragraph number for reference
-                                        Text("Paragraph \(index + 1)")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-
-                                        Text(paragraph)
-                                            .font(.body)
-                                    }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(Theme.Colors.secondaryBackground.opacity(0.3))
-                                    .cornerRadius(12)
-                                    .padding(.horizontal, 8)
-                                }
+                                // Consolidated text content
+                                Text(block.consolidatedText)
+                                    .font(.system(size: 15))
+                                    .foregroundColor(Theme.Colors.text)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .lineSpacing(4)
                             }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 10)
+                            .background(Color.black.opacity(0.15))
+                            .cornerRadius(12)
+                            .padding(.horizontal, 8)
                         }
                     }
                     .padding(.vertical)
@@ -1181,4 +1166,346 @@ struct TranscriptTabView: View {
         }
         .padding(.vertical)
     }
+
+    // Process transcript into conversation blocks with time ranges
+    private func processTranscriptIntoBlocks(_ transcript: String) -> [TranscriptBlock] {
+        // Split transcript into lines
+        let lines = transcript.components(separatedBy: .newlines)
+
+        // Extract all timestamps and text first
+        var allTimestampedLines: [TranscriptLine] = []
+
+        // Regex for timestamp extraction
+        let timestampPattern = "\\[(\\d{2}:\\d{2})\\]"
+        let regex = try? NSRegularExpression(pattern: timestampPattern)
+
+        // First pass: extract all timestamped lines
+        for line in lines {
+            // Skip empty lines
+            if line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                continue
+            }
+
+            // Extract timestamp using regex
+            let nsString = line as NSString
+            let matches = regex?.matches(in: line, range: NSRange(location: 0, length: nsString.length))
+
+            if let match = matches?.first, let range = Range(match.range(at: 1), in: line) {
+                let timestamp = String(line[range])
+                let fullTimestamp = "[\(timestamp)]"
+
+                // Extract text after timestamp
+                let textStartIndex = line.index(after: line.range(of: "]")?.upperBound ?? line.startIndex)
+                let text = String(line[textStartIndex...]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+                // Add line to collection
+                allTimestampedLines.append(TranscriptLine(
+                    id: UUID(),
+                    timestamp: fullTimestamp,
+                    text: text
+                ))
+            }
+        }
+
+        // If no timestamped lines were found, return empty result
+        if allTimestampedLines.isEmpty {
+            return []
+        }
+
+        // Second pass: group lines into 50-second blocks based on original timestamps
+        var blocks: [TranscriptBlock] = []
+        var currentBlockLines: [TranscriptLine] = []
+        var currentBlockStartTime: String = ""
+        var currentBlockStartSeconds: Int = 0
+
+        for line in allTimestampedLines {
+            // Extract timestamp without brackets
+            let timestamp = line.timestamp.replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "")
+
+            // Convert timestamp to seconds
+            guard let timestampSeconds = timeToSeconds(timestamp) else {
+                continue
+            }
+
+            // If this is the first line or we're starting a new block
+            if currentBlockLines.isEmpty {
+                currentBlockStartTime = timestamp
+                currentBlockStartSeconds = timestampSeconds
+                currentBlockLines.append(line)
+                continue
+            }
+
+            // Check if we should start a new block (if more than 50 seconds have passed)
+            let timeDifference = timestampSeconds - currentBlockStartSeconds
+
+            if timeDifference >= 50 {
+                // Create a block with the accumulated lines
+                if !currentBlockLines.isEmpty {
+                    // Get the last timestamp in the current block
+                    let lastLine = currentBlockLines.last!
+                    let lastTimestamp = lastLine.timestamp.replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "")
+
+                    // Create time range
+                    let timeRange = "\(currentBlockStartTime) - \(lastTimestamp)"
+
+                    // Consolidate text
+                    let consolidatedText = createConsolidatedText(from: currentBlockLines)
+
+                    // Create block
+                    blocks.append(TranscriptBlock(
+                        id: UUID(),
+                        timeRange: timeRange,
+                        consolidatedText: consolidatedText,
+                        lines: currentBlockLines
+                    ))
+
+                    // Start a new block
+                    currentBlockLines = [line]
+                    currentBlockStartTime = timestamp
+                    currentBlockStartSeconds = timestampSeconds
+                }
+            } else {
+                // Add to current block
+                currentBlockLines.append(line)
+            }
+        }
+
+        // Add the final block if not empty
+        if !currentBlockLines.isEmpty {
+            // Get the last timestamp in the current block
+            let lastLine = currentBlockLines.last!
+            let lastTimestamp = lastLine.timestamp.replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "")
+
+            // Create time range
+            let timeRange = "\(currentBlockStartTime) - \(lastTimestamp)"
+
+            // Consolidate text
+            let consolidatedText = createConsolidatedText(from: currentBlockLines)
+
+            // Create block
+            blocks.append(TranscriptBlock(
+                id: UUID(),
+                timeRange: timeRange,
+                consolidatedText: consolidatedText,
+                lines: currentBlockLines
+            ))
+        }
+
+        // Ensure each block has a reasonable amount of text (at least 100 characters)
+        // If not, merge with adjacent blocks
+        if blocks.count > 1 {
+            var mergedBlocks: [TranscriptBlock] = []
+            var currentMergedBlock: TranscriptBlock? = nil
+
+            for block in blocks {
+                if currentMergedBlock == nil {
+                    currentMergedBlock = block
+                    continue
+                }
+
+                // If current merged block has less than 100 characters, merge with next block
+                if currentMergedBlock!.consolidatedText.count < 100 {
+                    // Parse time ranges
+                    let currentTimeRange = parseTimeRange(currentMergedBlock!.timeRange)
+                    let nextTimeRange = parseTimeRange(block.timeRange)
+
+                    if let currentStart = currentTimeRange.start, let nextEnd = nextTimeRange.end {
+                        // Create new merged time range
+                        let newTimeRange = "\(currentStart) - \(nextEnd)"
+
+                        // Combine lines and text
+                        var combinedLines = currentMergedBlock!.lines
+                        combinedLines.append(contentsOf: block.lines)
+
+                        let combinedText = currentMergedBlock!.consolidatedText + " " + block.consolidatedText
+
+                        // Create new merged block
+                        currentMergedBlock = TranscriptBlock(
+                            id: UUID(),
+                            timeRange: newTimeRange,
+                            consolidatedText: combinedText,
+                            lines: combinedLines
+                        )
+                    }
+                } else {
+                    // Add current merged block to result and start a new one
+                    mergedBlocks.append(currentMergedBlock!)
+                    currentMergedBlock = block
+                }
+            }
+
+            // Add the final merged block if not nil
+            if let finalBlock = currentMergedBlock {
+                mergedBlocks.append(finalBlock)
+            }
+
+            return mergedBlocks
+        }
+
+        return blocks
+    }
+
+    // Create consolidated text from multiple transcript lines
+    private func createConsolidatedText(from lines: [TranscriptLine]) -> String {
+        var result = ""
+
+        for line in lines {
+            // Add the text with appropriate spacing
+            if result.isEmpty {
+                result = line.text
+            } else {
+                // Check if we need a space between sentences
+                let needsSpace = !result.hasSuffix(".") && !result.hasSuffix("!") && !result.hasSuffix("?") &&
+                                !result.hasSuffix(" ") && !line.text.hasPrefix(" ")
+
+                if needsSpace {
+                    result += " " + line.text
+                } else {
+                    result += line.text
+                }
+            }
+        }
+
+        return result
+    }
+
+    // Format time range in a consistent way (e.g., "00:00 - 00:50")
+    private func formatTimeRange(startTime: String, endTime: String) -> String {
+        // Parse start time
+        let startComponents = startTime.components(separatedBy: ":")
+        guard startComponents.count == 2,
+              let startMinutes = Int(startComponents[0]),
+              let startSeconds = Int(startComponents[1]) else {
+            return "\(startTime) - \(endTime)"
+        }
+
+        // Parse end time
+        let endComponents = endTime.components(separatedBy: ":")
+        guard endComponents.count == 2,
+              let endMinutes = Int(endComponents[0]),
+              let endSeconds = Int(endComponents[1]) else {
+            return "\(startTime) - \(endTime)"
+        }
+
+        // Calculate total seconds for start and end
+        let startTotalSeconds = startMinutes * 60 + startSeconds
+        let endTotalSeconds = endMinutes * 60 + endSeconds
+
+        // If end time is the same or earlier than start time, add 50 seconds to create a proper range
+        let adjustedEndTotalSeconds = endTotalSeconds <= startTotalSeconds ?
+                                      startTotalSeconds + 50 : endTotalSeconds
+
+        // Convert back to minutes and seconds
+        let adjustedEndMinutes = adjustedEndTotalSeconds / 60
+        let adjustedEndSeconds = adjustedEndTotalSeconds % 60
+
+        // Format times with leading zeros
+        let formattedStartTime = String(format: "%02d:%02d", startMinutes, startSeconds)
+
+        // For end time, round up to nearest 10 seconds for cleaner time ranges
+        var roundedEndSeconds = ((adjustedEndSeconds + 9) / 10) * 10
+        var roundedEndMinutes = adjustedEndMinutes
+
+        // Handle case where seconds roll over to next minute
+        if roundedEndSeconds >= 60 {
+            roundedEndSeconds = 0
+            roundedEndMinutes += 1
+        }
+
+        let formattedEndTime = String(format: "%02d:%02d", roundedEndMinutes, roundedEndSeconds)
+
+        return "\(formattedStartTime) - \(formattedEndTime)"
+    }
+
+    // Parse a time range string into start and end components
+    private func parseTimeRange(_ timeRange: String) -> (start: String?, end: String?) {
+        let components = timeRange.components(separatedBy: " - ")
+        if components.count == 2 {
+            return (components[0], components[1])
+        }
+        return (nil, nil)
+    }
+
+    // Convert time string (MM:SS) to seconds
+    private func timeToSeconds(_ timeString: String) -> Int? {
+        let components = timeString.components(separatedBy: ":")
+        guard components.count == 2,
+              let minutes = Int(components[0]),
+              let seconds = Int(components[1]) else {
+            return nil
+        }
+
+        return minutes * 60 + seconds
+    }
+
+    // Convert seconds to time string (MM:SS)
+    private func secondsToTime(_ seconds: Int) -> String {
+        let minutes = seconds / 60
+        let remainingSeconds = seconds % 60
+        return String(format: "%02d:%02d", minutes, remainingSeconds)
+    }
+
+    // Determine if we should start a new conversation block
+    private func shouldCreateNewBlock(currentTime: String, currentText: String, currentBlockLines: [TranscriptLine]) -> Bool {
+        // If this is the first line or block is empty, don't create a new block
+        guard !currentBlockLines.isEmpty else {
+            return false
+        }
+
+        // Get the first line of the current block to determine block start time
+        guard let firstLine = currentBlockLines.first else {
+            return false
+        }
+
+        // Extract timestamps without brackets
+        let firstTimestampStr = firstLine.timestamp.replacingOccurrences(of: "[", with: "").replacingOccurrences(of: "]", with: "")
+        let currentTimestampStr = currentTime
+
+        // Convert timestamps to seconds for comparison
+        let firstTimeComponents = firstTimestampStr.components(separatedBy: ":")
+        let currentTimeComponents = currentTimestampStr.components(separatedBy: ":")
+
+        guard firstTimeComponents.count == 2, currentTimeComponents.count == 2,
+              let firstMinutes = Int(firstTimeComponents[0]),
+              let firstSeconds = Int(firstTimeComponents[1]),
+              let currentMinutes = Int(currentTimeComponents[0]),
+              let currentSeconds = Int(currentTimeComponents[1]) else {
+            return false
+        }
+
+        let firstTotalSeconds = firstMinutes * 60 + firstSeconds
+        let currentTotalSeconds = currentMinutes * 60 + currentSeconds
+
+        // Calculate how long this block has been running
+        let blockDuration = currentTotalSeconds - firstTotalSeconds
+
+        // Start a new block if:
+        // 1. Block duration is 50 seconds or more
+        if blockDuration >= 50 {
+            return true
+        }
+
+        // 2. We've crossed a major time boundary (e.g., 1:00 to 2:00)
+        // This ensures we don't have blocks that span across major time boundaries
+        if firstMinutes / 1 != currentMinutes / 1 {
+            return true
+        }
+
+        // For all other cases, keep adding to the current block
+        return false
+    }
+}
+
+// MARK: - Transcript Models
+struct TranscriptLine: Identifiable {
+    let id: UUID
+    let timestamp: String
+    let text: String
+}
+
+struct TranscriptBlock: Identifiable {
+    let id: UUID
+    let timeRange: String
+    let consolidatedText: String
+    let lines: [TranscriptLine]
 }
