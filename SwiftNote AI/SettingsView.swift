@@ -121,7 +121,7 @@ final class SettingsViewModel: ObservableObject {
         // This method is kept for compatibility with existing code
     }
 
-    /// Sync notes to Supabase
+    /// Sync folders and notes to Supabase
     /// - Parameter context: The NSManagedObjectContext
     func syncToSupabase(context: NSManagedObjectContext) {
         #if DEBUG
@@ -133,7 +133,7 @@ final class SettingsViewModel: ObservableObject {
         isSyncing = true
 
         // Call the sync service
-        SupabaseSyncService.shared.syncNotesMetadataToSupabase(context: context) { success, error in
+        SupabaseSyncService.shared.syncToSupabase(context: context) { success, error in
             self.isSyncing = false
 
             if success {
@@ -505,7 +505,7 @@ struct SettingsView: View {
                 viewModel.syncToSupabase(context: viewContext)
             }) {
                 HStack {
-                    Text("Sync Notes to Cloud")
+                    Text("Sync to Cloud")
                         .foregroundColor(Theme.Colors.text)
                     Spacer()
                     if viewModel.isSyncing {
@@ -518,6 +518,12 @@ struct SettingsView: View {
                 }
             }
             .disabled(viewModel.isSyncing)
+
+            // Sync description
+            Text("Syncs folders and notes to the cloud")
+                .font(Theme.Typography.caption)
+                .foregroundColor(Theme.Colors.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
             // Last sync time
             if let lastSync = viewModel.lastSupabaseSync {
