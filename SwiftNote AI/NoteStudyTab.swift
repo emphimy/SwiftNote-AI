@@ -2,7 +2,7 @@ import SwiftUI
 import CoreData
 import AVKit
 import Combine
-import WebKit
+@preconcurrency import WebKit
 import Down
 
 // MARK: - Tab Models
@@ -258,18 +258,142 @@ struct ReadTabView: View {
 // MARK: - YouTube Video Player View
 struct YouTubeVideoPlayerView: View {
     let videoId: String
+    @State private var playerHeight: CGFloat = 220
 
     var body: some View {
-        let videoURL = URL(string: "https://www.youtube.com/embed/\(videoId)")!
-
-        WebView(url: videoURL)
-            .frame(height: 220)
+        EnhancedYouTubeWebView(videoId: videoId)
+            .frame(height: playerHeight)
             .cornerRadius(Theme.Layout.cornerRadius)
             .shadow(radius: 4)
     }
 }
 
-// MARK: - Web View
+// MARK: - Enhanced YouTube Web View
+struct EnhancedYouTubeWebView: UIViewRepresentable {
+    let videoId: String
+
+    func makeUIView(context: Context) -> WKWebView {
+        // Create configuration with required settings
+        let configuration = WKWebViewConfiguration()
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+
+        // Create preferences
+        let preferences = WKWebpagePreferences()
+        preferences.allowsContentJavaScript = true
+        configuration.defaultWebpagePreferences = preferences
+
+        // Create web view with configuration
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.scrollView.isScrollEnabled = false
+        webView.navigationDelegate = context.coordinator
+        webView.allowsBackForwardNavigationGestures = false
+        webView.allowsLinkPreview = false
+
+        // Load the HTML with embedded player
+        loadYouTubePlayer(webView: webView, videoId: videoId)
+
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        // Only reload if video ID changes
+        if context.coordinator.currentVideoId != videoId {
+            context.coordinator.currentVideoId = videoId
+            loadYouTubePlayer(webView: webView, videoId: videoId)
+        }
+    }
+
+    private func loadYouTubePlayer(webView: WKWebView, videoId: String) {
+        // Create HTML with iframe that includes all necessary parameters
+        let html = """
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <style>
+                body, html {
+                    margin: 0;
+                    padding: 0;
+                    width: 100%;
+                    height: 100%;
+                    background-color: #000;
+                    overflow: hidden;
+                }
+                .container {
+                    position: relative;
+                    width: 100%;
+                    height: 0;
+                    padding-bottom: 56.25%;
+                    overflow: hidden;
+                }
+                iframe {
+                    position: absolute;
+                    top: 0;
+                    left: 0;
+                    width: 100%;
+                    height: 100%;
+                    border: 0;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <iframe
+                    src="https://www.youtube.com/embed/\(videoId)?playsinline=1&rel=0&showinfo=0&autoplay=0&enablejsapi=1&origin=\(getOrigin())"
+                    frameborder="0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen>
+                </iframe>
+            </div>
+        </body>
+        </html>
+        """
+
+        webView.loadHTMLString(html, baseURL: URL(string: "https://www.youtube.com"))
+    }
+
+    private func getOrigin() -> String {
+        // Use a valid origin that matches your app's domain
+        // For local testing, we'll use a placeholder
+        return "https://swiftnote.app"
+    }
+
+    // MARK: - Coordinator
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, WKNavigationDelegate {
+        var parent: EnhancedYouTubeWebView
+        var currentVideoId: String
+
+        init(_ parent: EnhancedYouTubeWebView) {
+            self.parent = parent
+            self.currentVideoId = parent.videoId
+        }
+
+        // Handle navigation events
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            // Allow the initial load
+            if navigationAction.navigationType == .other {
+                decisionHandler(.allow)
+                return
+            }
+
+            // If it's a link to YouTube, allow it
+            if let url = navigationAction.request.url, url.host?.contains("youtube.com") == true {
+                decisionHandler(.allow)
+                return
+            }
+
+            // Block other navigation
+            decisionHandler(.cancel)
+        }
+    }
+}
+
+// MARK: - Standard Web View (for other uses)
 struct WebView: UIViewRepresentable {
     let url: URL
 
