@@ -2,10 +2,13 @@
 <model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="23605" systemVersion="24B2083" minimumToolsVersion="Xcode 15.0" sourceLanguage="Swift" usedWithCloudKit="YES" userDefinedModelVersionIdentifier="">
     <entity name="Folder" representedClassName="Folder" syncable="YES" codeGenerationType="class">
         <attribute name="color" attributeType="String" defaultValueString="blue"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="id" attributeType="UUID" defaultValueString="00000000-0000-0000-0000-000000000000"/>
         <attribute name="name" attributeType="String" defaultValueString="Untitled Folder"/>
         <attribute name="sortOrder" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="syncStatus" attributeType="String" defaultValueString="synced"/>
         <attribute name="timestamp" attributeType="Date" defaultDateTimeInterval="0"/>
+        <attribute name="updatedAt" attributeType="Date" defaultDateTimeInterval="0" usesScalarValueType="NO"/>
         <relationship name="notes" optional="YES" toMany="YES" deletionRule="Nullify" destinationEntity="Note" inverseName="folder" inverseEntity="Note"/>
         <fetchIndex name="byNameIndex">
             <fetchIndexElement property="name" type="Binary" order="ascending"/>
@@ -14,6 +17,7 @@
     <entity name="Note" representedClassName="Note" syncable="YES" codeGenerationType="class">
         <attribute name="aiGeneratedContent" optional="YES" attributeType="Binary"/>
         <attribute name="citations" optional="YES" attributeType="String"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="duration" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
         <attribute name="id" attributeType="UUID" defaultValueString="00000000-0000-0000-0000-000000000000"/>
         <attribute name="isFavorite" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
@@ -28,6 +32,7 @@
         <attribute name="sourceType" attributeType="String" defaultValueString="text"/>
         <attribute name="sourceURL" optional="YES" attributeType="URI"/>
         <attribute name="supplementaryMaterials" optional="YES" attributeType="Binary"/>
+        <attribute name="syncStatus" attributeType="String" defaultValueString="synced"/>
         <attribute name="tags" optional="YES" attributeType="String"/>
         <attribute name="timestamp" attributeType="Date" defaultDateTimeInterval="0" usesScalarValueType="NO"/>
         <attribute name="title" attributeType="String" defaultValueString="Untitled Note"/>

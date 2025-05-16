@@ -328,7 +328,7 @@ class SupabaseService {
 
         // Fetch notes without binary content fields
         let query = client.from("notes")
-            .select("id, title, source_type, timestamp, last_modified, is_favorite, processing_status, folder_id, user_id, summary, key_points, citations, duration, language_code, source_url, tags, transcript, video_id")
+            .select("id, title, source_type, timestamp, last_modified, is_favorite, processing_status, folder_id, user_id, summary, key_points, citations, duration, language_code, source_url, tags, transcript, video_id, sync_status, deleted_at")
             .eq("user_id", value: userId.uuidString)
 
         let response = try await query.execute()
@@ -404,7 +404,9 @@ class SupabaseService {
                     sections: nil,
                     supplementaryMaterials: nil,
                     mindMap: nil,
-                    videoId: minimalNote.videoId
+                    videoId: minimalNote.videoId,
+                    syncStatus: minimalNote.syncStatus,
+                    deletedAt: minimalNote.deletedAt
                 )
             }
         } catch {
@@ -435,6 +437,8 @@ class SupabaseService {
         var tags: String?
         var transcript: String?
         var videoId: String?
+        var syncStatus: String?
+        var deletedAt: Date?
 
         enum CodingKeys: String, CodingKey {
             case id
@@ -455,6 +459,8 @@ class SupabaseService {
             case tags
             case transcript
             case videoId = "video_id"
+            case syncStatus = "sync_status"
+            case deletedAt = "deleted_at"
         }
     }
 

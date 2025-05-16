@@ -33,6 +33,10 @@ struct SupabaseNote: Codable, Identifiable {
     var mindMap: Data?
     var videoId: String?
 
+    // Sync fields
+    var syncStatus: String?
+    var deletedAt: Date?
+
     enum CodingKeys: String, CodingKey {
         case id
         case title
@@ -57,6 +61,8 @@ struct SupabaseNote: Codable, Identifiable {
         case supplementaryMaterials = "supplementary_materials"
         case mindMap = "mind_map"
         case videoId = "video_id"
+        case syncStatus = "sync_status"
+        case deletedAt = "deleted_at"
     }
 }
 
@@ -69,6 +75,11 @@ struct SupabaseFolder: Codable, Identifiable {
     var sortOrder: Int32
     var userId: UUID
 
+    // Sync fields
+    var updatedAt: Date?
+    var syncStatus: String?
+    var deletedAt: Date?
+
     enum CodingKeys: String, CodingKey {
         case id
         case name
@@ -76,6 +87,9 @@ struct SupabaseFolder: Codable, Identifiable {
         case timestamp
         case sortOrder = "sort_order"
         case userId = "user_id"
+        case updatedAt = "updated_at"
+        case syncStatus = "sync_status"
+        case deletedAt = "deleted_at"
     }
 }
 
