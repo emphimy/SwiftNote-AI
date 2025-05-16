@@ -272,8 +272,42 @@ class YouTubeViewModel: ObservableObject {
             #if DEBUG
             print("🎥 YouTubeViewModel: Error processing video - \(error)")
             #endif
-            loadingState = .error(message: error.localizedDescription)
-            throw error
+
+            // Provide more user-friendly error messages
+            let userFriendlyMessage: String
+
+            if let youtubeError = error as? YouTubeTranscriptError {
+                switch youtubeError {
+                case .emptyData:
+                    userFriendlyMessage = "Unable to get transcript for this video. The video may not have captions available or YouTube may be restricting access to the transcript."
+                case .transcriptNotAvailable:
+                    userFriendlyMessage = "This video doesn't have captions available. Please try a different video."
+                case .invalidVideoId:
+                    userFriendlyMessage = "Invalid YouTube video URL or ID. Please check the URL and try again."
+                case .networkError(let details):
+                    userFriendlyMessage = "Network error: \(details). Please check your internet connection."
+                case .parsingError, .jsonParsingError:
+                    userFriendlyMessage = "Unable to process the video transcript. Please try a different video."
+                case .invalidResponse:
+                    userFriendlyMessage = "Received an invalid response from YouTube. Please try again later."
+                }
+            } else if let youtubeError = error as? YouTubeError {
+                switch youtubeError {
+                case .invalidVideoId:
+                    userFriendlyMessage = "Invalid YouTube video URL or ID. Please check the URL and try again."
+                case .transcriptNotAvailable:
+                    userFriendlyMessage = "This video doesn't have captions available. Please try a different video."
+                case .networkError(let message):
+                    userFriendlyMessage = "Network error: \(message). Please check your internet connection."
+                }
+            } else {
+                userFriendlyMessage = "An error occurred: \(error.localizedDescription)"
+            }
+
+            loadingState = .error(message: userFriendlyMessage)
+            throw NSError(domain: "YouTubeViewModel",
+                         code: 1,
+                         userInfo: [NSLocalizedDescriptionKey: userFriendlyMessage])
         }
     }
 
