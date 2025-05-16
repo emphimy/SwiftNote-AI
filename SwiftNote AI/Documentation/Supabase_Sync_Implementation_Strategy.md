@@ -14,11 +14,11 @@ This document outlines the strategy for implementing synchronization between Cor
 
 ## Implementation Strategy
 
-### Phase 1: Basic One-Way Sync (CoreData → Supabase)
+### Phase 1: Basic One-Way Sync (CoreData → Supabase) - COMPLETED
 
-Start with a minimal implementation to validate the basic connection and data format:
+Started with a minimal implementation to validate the basic connection and data format:
 
-1. **Sync only basic note metadata**:
+1. **Sync only note metadata**:
    - id (UUID)
    - title (String)
    - timestamp (Date)
@@ -27,18 +27,26 @@ Start with a minimal implementation to validate the basic connection and data fo
    - is_favorite (Boolean)
    - processing_status (String)
    - user_id (UUID) - from Supabase Auth session
+   - Additional text-based fields (tags, transcript, etc.)
 
-2. **Exclude problematic fields**:
+2. **Excluded problematic fields**:
    - original_content (binary data)
    - ai_generated_content (binary data)
-   - Any complex relationships
+   - sections, mind_map, supplementary_materials (binary data)
 
-3. **Testing**:
-   - Create test notes in the app
-   - Trigger the sync
-   - Verify in Supabase console that metadata appears correctly
+3. **Implementation Details**:
+   - Created `SupabaseSyncService` class for handling sync logic
+   - Used a simplified `SimpleSupabaseNote` model to avoid encoding issues
+   - Added UI in Settings view to trigger sync and display results
+   - Implemented proper error handling and status reporting
 
-### Phase 2: Expanded Sync (After Phase 1 Validation)
+4. **Key Learnings**:
+   - Direct use of Supabase client methods with Codable objects works best
+   - Proper field mapping with CodingKeys is essential
+   - Simplified models help avoid JSON encoding/decoding issues
+   - Detailed error logging helps identify and fix issues
+
+### Phase 2: Expanded Sync (Next Steps)
 
 Once basic metadata sync is working:
 
@@ -52,6 +60,7 @@ Once basic metadata sync is working:
 
 3. **Implement binary data handling**:
    - Develop and test proper encoding/decoding for binary fields
+   - Consider Base64 encoding for binary data if bytea conversion is problematic
 
 ### Phase 3: Two-Way Sync (Future Implementation)
 
@@ -64,6 +73,11 @@ After one-way sync is stable:
 2. **Conflict resolution**:
    - Implement "Last Write Wins" strategy using updated_at/last_modified fields
    - Handle sync conflicts gracefully
+
+3. **User Experience Improvements**:
+   - Add automatic sync on app launch or note creation
+   - Implement background sync
+   - Add more detailed sync status reporting
 
 ## Data Model Comparison
 
@@ -91,12 +105,36 @@ After one-way sync is stable:
 - **Sync Fields**: sync_status (text), updated_at (timestamp), deleted_at (timestamp)
 - **Foreign Keys**: user_id (UUID)
 
-## Technical Implementation Notes
+## Technical Implementation Details
+
+### Phase 1 Implementation (Completed)
+
+We successfully implemented the basic one-way sync with the following components:
+
+1. **SupabaseSyncService Class**:
+   - Singleton service for handling sync operations
+   - Methods for syncing note metadata to Supabase
+   - Error handling and logging
+
+2. **SimpleSupabaseNote Model**:
+   - Simplified version of SupabaseNote with only metadata fields
+   - Proper CodingKeys for field name mapping
+   - Avoids complex binary data fields
+
+3. **UI Integration**:
+   - Added to Settings view under "Cloud Sync" section
+   - Shows sync status, last sync time, and results
+   - Provides user feedback during sync process
+
+4. **Key Implementation Decisions**:
+   - Used direct Supabase client methods with Codable objects
+   - Implemented proper error handling with detailed logging
+   - Stored last sync time in UserDefaults with proper iOS 16+ compatibility
 
 ### Authentication and User ID
 - The `user_id` field in Supabase tables comes from Supabase Auth, not CoreData
-- Must retrieve the authenticated user's ID from the current Supabase session
-- This ID must be included in all records created in Supabase tables
+- We retrieve the authenticated user's ID from the current Supabase session
+- This ID is included in all records created in Supabase tables
 
 ### Row Level Security (RLS)
 - RLS policies are set up to restrict access based on `auth.uid() = user_id`
@@ -110,47 +148,39 @@ After one-way sync is stable:
 ### Field Naming Conventions
 - CoreData uses camelCase (lastModified)
 - Supabase uses snake_case (last_modified)
-- Use CodingKeys in Codable models to handle this mapping
+- We use CodingKeys in Codable models to handle this mapping
 
-### Supabase Recommended Approach
-- Use Codable models to decode database responses
-- Access data through the `value` property which returns a decoded model
-- Example:
-  ```swift
-  struct NoteModel: Codable {
-      var id: UUID
-      var title: String
-      // other fields
-      
-      // Custom coding keys if needed
-      enum CodingKeys: String, CodingKey {
-          case id
-          case title
-          // other mappings
-      }
-  }
-  ```
+### Challenges Overcome
+1. **JSON Encoding Issues**:
+   - Solved by using a simplified model with only metadata fields
+   - Avoided complex conversions between different formats
 
-## Implementation Recommendations
+2. **Field Mapping**:
+   - Properly mapped fields between CoreData and Supabase
+   - Handled differences in field names and types
 
-1. **Use Existing Models**:
-   - Leverage the existing `SupabaseNote` model from SupabaseModels.swift
-   - Ensure proper CodingKeys for field name mapping
+3. **iOS Compatibility**:
+   - Ensured compatibility with iOS 16+ by using proper date storage techniques
+   - Avoided using features only available in newer iOS versions
 
-2. **Incremental Testing**:
-   - Test with real data but limited scope
-   - Verify each step before proceeding
+## Future Implementation Recommendations
 
-3. **Error Handling**:
-   - Implement robust error handling
-   - Log sync failures for debugging
+1. **Folder Sync Implementation**:
+   - Create a similar SimpleSupabaseFolder model
+   - Sync folders before notes due to foreign key constraints
+   - Update note sync to include folder relationships
 
-4. **Session Management**:
-   - Ensure valid authentication before attempting sync
-   - Handle authentication errors gracefully
+2. **Binary Data Handling**:
+   - Consider Base64 encoding for binary data fields
+   - Test with small binary data first before scaling up
+   - Implement proper error handling for binary data conversion
 
-## Next Steps
+3. **Two-Way Sync**:
+   - Implement proper conflict resolution with "Last Write Wins" strategy
+   - Use updated_at/last_modified fields for determining which version is newer
+   - Handle merging of data carefully to avoid data loss
 
-1. Implement basic one-way sync of note metadata
-2. Verify data appears correctly in Supabase
-3. Only proceed to more complex sync features after validation
+4. **User Experience Improvements**:
+   - Add automatic sync triggers (app launch, note creation/modification)
+   - Implement background sync to avoid blocking the UI
+   - Add more detailed sync status reporting and error recovery
