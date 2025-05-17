@@ -66,17 +66,29 @@ Expanded the sync implementation to include folders and maintain proper relation
    - Added description explaining that both folders and notes are synced
    - Maintained the same feedback mechanisms (progress indicator, success/error messages)
 
-### Phase 3: Expanded Data Sync (Next Steps)
+### Phase 3: Binary Data Sync - COMPLETED
 
-Next steps for expanding the sync capabilities:
+Expanded the sync implementation to include binary data fields:
 
-1. **Add more fields**:
-   - Gradually add more fields to the sync
-   - Test each addition thoroughly
+1. **Base64 Encoding for Binary Data**:
+   - Implemented Base64 encoding for binary data fields (originalContent, aiGeneratedContent, etc.)
+   - Created utility extensions for Data to handle Base64 conversion and size calculations
+   - Successfully stored binary data in Supabase's bytea columns without conversion issues
 
-2. **Implement binary data handling**:
-   - Develop and test proper encoding/decoding for binary fields
-   - Consider Base64 encoding for binary data if bytea conversion is problematic
+2. **User Control and Size Limits**:
+   - Added a toggle in Settings to enable/disable binary data sync
+   - Implemented size validation (10MB limit per field) to prevent performance issues
+   - Added detailed logging of binary data sizes for monitoring
+
+3. **Enhanced Progress Tracking**:
+   - Created a SyncProgress structure to track folder and note sync operations
+   - Added progress bar and status messages in the UI during sync
+   - Implemented actor-isolated counters for thread-safe progress tracking
+
+4. **UI Improvements**:
+   - Added binary data toggle with clear description in Settings
+   - Enhanced sync feedback with progress bar and detailed status messages
+   - Updated success/error messages to indicate if binary data was included
 
 ### Phase 4: Two-Way Sync (Future Implementation)
 
@@ -171,6 +183,35 @@ We expanded the sync implementation to include folders and maintain proper relat
    - Ensured "All Notes" folder is properly synced with a consistent appearance
    - Updated the folder count display to show the correct number of notes
 
+### Phase 3 Implementation (Completed)
+
+We implemented binary data sync with Base64 encoding and enhanced progress tracking:
+
+1. **Data+Base64 Extension**:
+   - Created utility methods for Base64 encoding/decoding of binary data
+   - Added size calculation methods (bytes, KB, MB) for monitoring
+   - Implemented proper error handling for encoding/decoding failures
+
+2. **EnhancedSupabaseNote Model**:
+   - Created a model that extends SimpleSupabaseNote with Base64-encoded binary fields
+   - Implemented custom initializers to handle fields excluded from CodingKeys
+   - Added size metadata fields for monitoring and debugging
+
+3. **Binary Data Sync Methods**:
+   - Implemented `syncNotesToSupabase` method that supports binary data
+   - Added `syncNoteWithBinaryData` and `syncNoteMetadataOnly` methods
+   - Implemented size validation to prevent performance issues with large data
+
+4. **Progress Tracking**:
+   - Created a SyncProgress structure to track sync operations
+   - Implemented actor-isolated counters for thread-safe progress tracking
+   - Added progress publishing for UI updates using Combine
+
+5. **UI Enhancements**:
+   - Added binary data toggle in Settings with AppStorage persistence
+   - Implemented progress bar and status messages during sync
+   - Enhanced feedback with detailed status updates
+
 ### Authentication and User ID
 - The `user_id` field in Supabase tables comes from Supabase Auth, not CoreData
 - We retrieve the authenticated user's ID from the current Supabase session
@@ -210,6 +251,8 @@ The "All Notes" folder requires special handling because it's a special view tha
    - The app's special behavior for the "All Notes" folder is implemented in the UI layer, not the data layer
 
 ### Challenges Overcome
+
+#### Phase 1 & 2 Challenges
 1. **JSON Encoding Issues**:
    - Solved by using a simplified model with only metadata fields
    - Avoided complex conversions between different formats
@@ -227,17 +270,35 @@ The "All Notes" folder requires special handling because it's a special view tha
    - Added special handling for the "All Notes" folder
    - Fixed note count display to show the correct number of notes
 
+#### Phase 3 Challenges
+1. **Binary Data Conversion**:
+   - Solved by using Base64 encoding instead of direct bytea conversion
+   - Implemented proper size validation to prevent performance issues
+
+2. **Schema Mismatch Issues**:
+   - Resolved by excluding size metadata fields from CodingKeys
+   - Implemented custom initializers to handle fields not in the JSON
+
+3. **Swift Concurrency Issues**:
+   - Fixed by using actor-isolated counters for thread-safe progress tracking
+   - Ensured proper MainActor usage for UI updates
+
+4. **Size Calculation Accuracy**:
+   - Corrected size calculation formulas in debug logs
+   - Added proper byte-to-MB conversion for accurate reporting
+
 ## Future Implementation Recommendations
 
-1. **Binary Data Handling**:
-   - Consider Base64 encoding for binary data fields
-   - Test with small binary data first before scaling up
-   - Implement proper error handling for binary data conversion
-
-2. **Two-Way Sync**:
-   - Implement proper conflict resolution with "Last Write Wins" strategy
+1. **Phase 4: Two-Way Sync**:
+   - Implement download from Supabase to CoreData
+   - Add proper conflict resolution with "Last Write Wins" strategy
    - Use updated_at/last_modified fields for determining which version is newer
    - Handle merging of data carefully to avoid data loss
+
+2. **Binary Data Optimization**:
+   - Add compression for large binary data fields
+   - Implement selective sync for specific binary fields
+   - Consider chunked uploads for very large content
 
 3. **User Experience Improvements**:
    - Add automatic sync triggers (app launch, note creation/modification)
@@ -248,3 +309,8 @@ The "All Notes" folder requires special handling because it's a special view tha
    - Implement incremental sync to only sync changed items
    - Add batch processing for large datasets
    - Optimize network usage and performance
+
+5. **Advanced Features**:
+   - Add sync history and version control
+   - Implement selective rollback for specific notes
+   - Add collaborative editing features
