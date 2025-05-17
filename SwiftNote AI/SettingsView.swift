@@ -19,6 +19,7 @@ final class SettingsViewModel: ObservableObject {
     @AppStorage("autoBackupEnabled") var autoBackupEnabled = true
     @AppStorage("biometricLockEnabled") var biometricLockEnabled = false
     @AppStorage("biometricEnabled") var biometricEnabled = false
+    @AppStorage("syncBinaryDataEnabled") var syncBinaryDataEnabled = false
     @Published var lastSupabaseSync: Date?
 
     @Published var biometricType: BiometricType = .none
@@ -125,19 +126,20 @@ final class SettingsViewModel: ObservableObject {
     /// - Parameter context: The NSManagedObjectContext
     func syncToSupabase(context: NSManagedObjectContext) {
         #if DEBUG
-        print("⚙️ SettingsViewModel: Starting Supabase sync")
+        print("⚙️ SettingsViewModel: Starting Supabase sync with binary data: \(syncBinaryDataEnabled)")
         #endif
 
         // Reset previous result
         syncResult = nil
         isSyncing = true
 
-        // Call the sync service
-        SupabaseSyncService.shared.syncToSupabase(context: context) { success, error in
+        // Call the sync service with binary data option
+        SupabaseSyncService.shared.syncToSupabase(context: context, includeBinaryData: syncBinaryDataEnabled) { success, error in
             self.isSyncing = false
 
             if success {
-                self.syncResult = (success: true, message: "Sync completed successfully")
+                let binaryDataMessage = self.syncBinaryDataEnabled ? " with binary data" : ""
+                self.syncResult = (success: true, message: "Sync completed successfully\(binaryDataMessage)")
                 let now = Date()
                 self.lastSupabaseSync = now
 
@@ -194,9 +196,27 @@ final class SettingsViewModel: ObservableObject {
             #endif
         }
 
+        // Set up observer for sync progress
+        setupSyncProgressObserver()
+
         #if DEBUG
         print("⚙️ SettingsViewModel: Initialized with pre-populated data")
         #endif
+    }
+
+    /// Set up observer for sync progress
+    private func setupSyncProgressObserver() {
+        // Use Combine to observe changes to syncProgress
+        SupabaseSyncService.shared.$syncProgress
+            .receive(on: RunLoop.main)
+            .sink { [weak self] progress in
+                // Update UI based on progress
+                if progress.overallProgress >= 1.0 {
+                    // Sync completed
+                    self?.isSyncing = false
+                }
+            }
+            .store(in: &cancellables)
     }
 
     func calculateStorageUsage() {
@@ -525,6 +545,16 @@ struct SettingsView: View {
                 .foregroundColor(Theme.Colors.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            // Include binary data toggle
+            Toggle("Include binary data (notes content)", isOn: $viewModel.syncBinaryDataEnabled)
+                .disabled(viewModel.isSyncing)
+
+            // Binary data description
+            Text("Syncs full note content including text, formatting, and attachments")
+                .font(Theme.Typography.caption)
+                .foregroundColor(Theme.Colors.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             // Last sync time
             if let lastSync = viewModel.lastSupabaseSync {
                 HStack {
@@ -535,6 +565,22 @@ struct SettingsView: View {
                     Text(lastSync, style: .relative)
                         .font(Theme.Typography.caption)
                         .foregroundColor(Theme.Colors.secondaryText)
+                }
+            }
+
+            // Sync progress
+            if viewModel.isSyncing {
+                VStack(spacing: 4) {
+                    // Progress bar
+                    ProgressView(value: SupabaseSyncService.shared.syncProgress.overallProgress)
+                        .progressViewStyle(LinearProgressViewStyle())
+                        .frame(height: 4)
+
+                    // Status text
+                    Text(SupabaseSyncService.shared.syncProgress.currentStatus)
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.secondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
