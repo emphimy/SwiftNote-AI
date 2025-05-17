@@ -19,7 +19,7 @@ final class FolderListViewModel: ObservableObject {
     private let viewContext: NSManagedObjectContext
 
     // MARK: - Color Options
-    let colorOptions = ["FolderBlue", "FolderGreen", "FolderRed", "FolderPurple", "FolderOrange"]
+    let colorOptions = ["FolderBlue", "FolderGreen", "FolderRed", "FolderPurple", "FolderOrange", "FolderYellow", "FolderTeal", "FolderPink", "FolderBrown"]
 
     init(context: NSManagedObjectContext) {
         self.viewContext = context
@@ -99,17 +99,52 @@ final class FolderListViewModel: ObservableObject {
         do {
             let results = try viewContext.fetch(request)
 
-            if let existingFolder = results.first {
+            if !results.isEmpty {
                 #if DEBUG
-                print("📁 FolderListViewModel: All Notes folder already exists")
+                print("📁 FolderListViewModel: Found \(results.count) All Notes folders")
                 #endif
-                allNotesFolder = existingFolder
 
-                // Ensure it has the lowest sort order
-                if existingFolder.sortOrder > 0 {
-                    existingFolder.sortOrder = 0
-                    try viewContext.save()
+                // Use the first one as our reference
+                allNotesFolder = results.first
+
+                // If we have multiple "All Notes" folders, we should consolidate them
+                if results.count > 1 {
+                    #if DEBUG
+                    print("📁 FolderListViewModel: Consolidating multiple All Notes folders")
+                    #endif
+
+                    // Keep the first one and delete the rest
+                    for i in 1..<results.count {
+                        let duplicateFolder = results[i]
+
+                        // Move any notes from the duplicate folder to the main All Notes folder
+                        if let notes = duplicateFolder.notes?.allObjects as? [Note] {
+                            for note in notes {
+                                note.folder = allNotesFolder
+                            }
+                        }
+
+                        // Delete the duplicate folder
+                        viewContext.delete(duplicateFolder)
+                    }
                 }
+
+                // Ensure it has the lowest sort order and correct color
+                if let folder = allNotesFolder {
+                    if folder.sortOrder > 0 {
+                        folder.sortOrder = 0
+                    }
+
+                    // Update color to FolderGray if it's using a different color
+                    if folder.color != "FolderGray" {
+                        folder.color = "FolderGray"
+                        #if DEBUG
+                        print("📁 FolderListViewModel: Updated All Notes folder color to FolderGray")
+                        #endif
+                    }
+                }
+
+                try viewContext.save()
             } else {
                 #if DEBUG
                 print("📁 FolderListViewModel: Creating All Notes folder")
@@ -119,9 +154,11 @@ final class FolderListViewModel: ObservableObject {
                 let folder = Folder(context: viewContext)
                 folder.id = UUID()
                 folder.name = "All Notes"
-                folder.color = "FolderBlue"
+                folder.color = "FolderGray"  // Special color for All Notes folder
                 folder.timestamp = Date()
                 folder.sortOrder = 0
+                folder.updatedAt = Date()
+                folder.syncStatus = "pending"
 
                 try viewContext.save()
                 allNotesFolder = folder
@@ -158,11 +195,60 @@ final class FolderListViewModel: ObservableObject {
         do {
             let results = try context.fetch(request)
 
-            if let existingFolder = results.first {
+            if !results.isEmpty {
                 #if DEBUG
-                print("📁 FolderListViewModel: Found existing All Notes folder")
+                print("📁 FolderListViewModel: Found \(results.count) All Notes folders")
                 #endif
-                return existingFolder
+
+                // Use the first one as our reference
+                let allNotesFolder = results.first
+
+                // If we have multiple "All Notes" folders, we should consolidate them
+                if results.count > 1 {
+                    #if DEBUG
+                    print("📁 FolderListViewModel: Consolidating multiple All Notes folders")
+                    #endif
+
+                    // Keep the first one and delete the rest
+                    for i in 1..<results.count {
+                        let duplicateFolder = results[i]
+
+                        // Move any notes from the duplicate folder to the main All Notes folder
+                        if let notes = duplicateFolder.notes?.allObjects as? [Note] {
+                            for note in notes {
+                                note.folder = allNotesFolder
+                            }
+                        }
+
+                        // Delete the duplicate folder
+                        context.delete(duplicateFolder)
+                    }
+                }
+
+                // Ensure it has the lowest sort order and correct color
+                if let folder = allNotesFolder {
+                    var needsSave = false
+
+                    if folder.sortOrder > 0 {
+                        folder.sortOrder = 0
+                        needsSave = true
+                    }
+
+                    // Update color to FolderGray if it's using a different color
+                    if folder.color != "FolderGray" {
+                        folder.color = "FolderGray"
+                        needsSave = true
+                        #if DEBUG
+                        print("📁 FolderListViewModel: Updated All Notes folder color to FolderGray")
+                        #endif
+                    }
+
+                    if needsSave {
+                        try context.save()
+                    }
+                }
+
+                return allNotesFolder
             } else {
                 #if DEBUG
                 print("📁 FolderListViewModel: Creating All Notes folder")
@@ -172,9 +258,11 @@ final class FolderListViewModel: ObservableObject {
                 let folder = Folder(context: context)
                 folder.id = UUID()
                 folder.name = "All Notes"
-                folder.color = "FolderBlue"
+                folder.color = "FolderGray"  // Special color for All Notes folder
                 folder.timestamp = Date()
                 folder.sortOrder = 0
+                folder.updatedAt = Date()
+                folder.syncStatus = "pending"
 
                 try context.save()
                 return folder
@@ -418,7 +506,7 @@ private struct FolderRow: View {
             HStack(spacing: Theme.Spacing.sm) {
                 Image(systemName: "folder.fill")
                     .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(Color(folder.color ?? "blue"))
+                    .foregroundColor(getFolderColor(folder.color))
                     .frame(width: 24, height: 24)
                     .onAppear {
                         #if DEBUG
@@ -435,7 +523,11 @@ private struct FolderRow: View {
                         .font(Theme.Typography.body)
                         .foregroundColor(Theme.Colors.text)
 
-                    if let notes = folder.notes?.allObjects as? [Note] {
+                    if folder.name == "All Notes" {
+                        // For All Notes folder, fetch all notes count
+                        FolderNoteCountView(folder: folder)
+                    } else if let notes = folder.notes?.allObjects as? [Note] {
+                        // For regular folders, use the relationship count
                         Text("\(notes.count) notes")
                             .font(Theme.Typography.caption)
                             .foregroundColor(Theme.Colors.secondaryText)
@@ -450,7 +542,52 @@ private struct FolderRow: View {
     }
     private func getFolderColor(_ colorName: String?) -> Color {
         guard let colorName = colorName else { return Color("FolderBlue") }
-        return Color(colorName)
+
+        // Try to get the color from the asset catalog
+        let uiColor = UIColor(named: colorName)
+        if uiColor != nil {
+            return Color(colorName)
+        } else {
+            // Fallback to a default color if the color is not found
+            #if DEBUG
+            print("📁 FolderRow: Color \(colorName) not found, using FolderBlue instead")
+            #endif
+            return Color("FolderBlue")
+        }
+    }
+}
+
+// MARK: - Folder Note Count View
+private struct FolderNoteCountView: View {
+    let folder: Folder
+    @State private var noteCount: Int = 0
+    @Environment(\.managedObjectContext) private var viewContext
+
+    var body: some View {
+        Text("\(noteCount) notes")
+            .font(Theme.Typography.caption)
+            .foregroundColor(Theme.Colors.secondaryText)
+            .onAppear {
+                fetchAllNotesCount()
+            }
+    }
+
+    private func fetchAllNotesCount() {
+        let request = NSFetchRequest<Note>(entityName: "Note")
+        request.resultType = .countResultType
+
+        do {
+            let count = try viewContext.count(for: request)
+            self.noteCount = count
+
+            #if DEBUG
+            print("📁 FolderNoteCountView: Fetched total note count: \(count)")
+            #endif
+        } catch {
+            #if DEBUG
+            print("📁 FolderNoteCountView: Error fetching note count - \(error)")
+            #endif
+        }
     }
 }
 
@@ -465,18 +602,42 @@ private struct NewFolderSheet: View {
                 Section(header: Text("Folder Details")) {
                     TextField("Folder Name", text: $viewModel.newFolderName)
 
-                    Picker("Color", selection: $viewModel.selectedColor) {
+                    Text("Color")
+                        .font(Theme.Typography.body)
+                        .foregroundColor(Theme.Colors.text)
+                        .padding(.top, Theme.Spacing.sm)
+
+                    // Color grid
+                    LazyVGrid(columns: [
+                        GridItem(.flexible()),
+                        GridItem(.flexible()),
+                        GridItem(.flexible())
+                    ], spacing: Theme.Spacing.md) {
                         ForEach(viewModel.colorOptions, id: \.self) { color in
-                            HStack {
-                                Circle()
-                                    .fill(Color(color))
-                                    .frame(width: 20, height: 20)
-                                Text(color.replacingOccurrences(of: "Folder", with: ""))
-                                    .foregroundColor(Theme.Colors.text)
+                            Button(action: {
+                                viewModel.selectedColor = color
+                            }) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color(color))
+                                        .frame(width: 44, height: 44)
+                                        .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
+
+                                    if viewModel.selectedColor == color {
+                                        Circle()
+                                            .stroke(Color.white, lineWidth: 2)
+                                            .frame(width: 44, height: 44)
+
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.white)
+                                            .font(.system(size: 14, weight: .bold))
+                                    }
+                                }
                             }
-                            .tag(color)
+                            .buttonStyle(PlainButtonStyle())
                         }
                     }
+                    .padding(.vertical, Theme.Spacing.sm)
                 }
             }
             .navigationTitle("New Folder")

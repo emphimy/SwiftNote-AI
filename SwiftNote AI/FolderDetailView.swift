@@ -80,17 +80,33 @@ final class FolderDetailViewModel: ObservableObject {
         isLoading = true
 
         let request = NSFetchRequest<Note>(entityName: "Note")
-        request.predicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+
+        // Special handling for "All Notes" folder - show all notes
+        if folder.name == "All Notes" {
+            // No predicate - fetch all notes
+            #if DEBUG
+            print("📁 FolderDetailViewModel: Fetching all notes for All Notes folder")
+            #endif
+        } else {
+            // For regular folders, only fetch notes assigned to this folder
+            request.predicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+            #if DEBUG
+            print("📁 FolderDetailViewModel: Fetching notes for specific folder: \(folder.name ?? "Untitled")")
+            #endif
+        }
+
         request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.timestamp, ascending: false)]
 
         do {
             let fetchedNotes = try viewContext.fetch(request)
-            notes = fetchedNotes.compactMap { note in
+            var noteConfigurations: [NoteCardConfiguration] = []
+
+            for note in fetchedNotes {
                 guard let title = note.title,
                       let timestamp = note.timestamp,
                       let content = note.originalContent,
                       let sourceTypeStr = note.sourceType else {
-                    return nil
+                    continue
                 }
 
                 // Create metadata dictionary with necessary content for tabs
@@ -113,11 +129,13 @@ final class FolderDetailViewModel: ObservableObject {
                     metadata["videoId"] = videoId
                 }
 
-                return NoteCardConfiguration(
+                let noteConfig = NoteCardConfiguration(
                     id: note.id ?? UUID(),
                     title: title,
                     date: timestamp,
-                    preview: String(decoding: content, as: UTF8.self),
+                    preview: note.aiGeneratedContent != nil ?
+                        String(decoding: note.aiGeneratedContent!, as: UTF8.self) :
+                        String(decoding: content, as: UTF8.self),
                     sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
                     isFavorite: note.isFavorite,
                     tags: note.tags?.components(separatedBy: ",") ?? [],
@@ -125,7 +143,11 @@ final class FolderDetailViewModel: ObservableObject {
                     metadata: metadata,
                     sourceURL: note.sourceURL
                 )
+
+                noteConfigurations.append(noteConfig)
             }
+
+            notes = noteConfigurations
 
             #if DEBUG
             print("""
@@ -155,10 +177,79 @@ final class FolderDetailViewModel: ObservableObject {
         print("📁 FolderDetailViewModel: Filtering notes with search: \(searchText)")
         #endif
 
-        notes = notes.filter { note in
-            note.title.localizedCaseInsensitiveContains(searchText) ||
-            note.preview.localizedCaseInsensitiveContains(searchText) ||
-            note.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
+        // If we're in the "All Notes" folder, we need to fetch all notes first
+        if folder.name == "All Notes" {
+            let request = NSFetchRequest<Note>(entityName: "Note")
+            request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.timestamp, ascending: false)]
+
+            do {
+                let fetchedNotes = try viewContext.fetch(request)
+                var allNotes: [NoteCardConfiguration] = []
+
+                for note in fetchedNotes {
+                    guard let title = note.title,
+                          let timestamp = note.timestamp,
+                          let content = note.originalContent,
+                          let sourceTypeStr = note.sourceType else {
+                        continue
+                    }
+
+                    // Create metadata dictionary with necessary content for tabs
+                    var metadata: [String: Any] = [
+                        "rawTranscript": String(decoding: content, as: UTF8.self)
+                    ]
+
+                    // Add AI generated content if available
+                    if let aiContent = note.aiGeneratedContent {
+                        metadata["aiGeneratedContent"] = String(decoding: aiContent, as: UTF8.self)
+                    }
+
+                    // Add transcript if available
+                    if let transcript = note.transcript {
+                        metadata["transcript"] = transcript
+                    }
+
+                    // Add videoId if available (for YouTube notes)
+                    if let videoId = note.videoId {
+                        metadata["videoId"] = videoId
+                    }
+
+                    let noteConfig = NoteCardConfiguration(
+                        id: note.id ?? UUID(),
+                        title: title,
+                        date: timestamp,
+                        preview: note.aiGeneratedContent != nil ?
+                            String(decoding: note.aiGeneratedContent!, as: UTF8.self) :
+                            String(decoding: content, as: UTF8.self),
+                        sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
+                        isFavorite: note.isFavorite,
+                        tags: note.tags?.components(separatedBy: ",") ?? [],
+                        folder: note.folder,
+                        metadata: metadata,
+                        sourceURL: note.sourceURL
+                    )
+
+                    allNotes.append(noteConfig)
+                }
+
+                // Filter the notes based on search text
+                notes = allNotes.filter { note in
+                    note.title.localizedCaseInsensitiveContains(searchText) ||
+                    note.preview.localizedCaseInsensitiveContains(searchText) ||
+                    note.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
+                }
+            } catch {
+                #if DEBUG
+                print("📁 FolderDetailViewModel: Error fetching all notes for search - \(error)")
+                #endif
+            }
+        } else {
+            // For regular folders, just filter the existing notes
+            notes = notes.filter { note in
+                note.title.localizedCaseInsensitiveContains(searchText) ||
+                note.preview.localizedCaseInsensitiveContains(searchText) ||
+                note.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
+            }
         }
     }
 
@@ -226,7 +317,7 @@ struct FolderDetailView: View {
                         .fill(Color(folder.color ?? "blue"))
                         .frame(width: 12, height: 12)
 
-                    Text("\(folder.notes?.count ?? 0) notes")
+                    Text("\(viewModel.notes.count) notes")
                         .font(Theme.Typography.caption)
                         .foregroundColor(Theme.Colors.secondaryText)
 

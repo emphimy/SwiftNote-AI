@@ -398,7 +398,14 @@ class SupabaseSyncService {
                 NSSortDescriptor(keyPath: \Folder.updatedAt, ascending: false)
             ]
 
-            return try context.fetch(request)
+            // Get all folders
+            let allFolders = try context.fetch(request)
+
+            #if DEBUG
+            print("🔄 SupabaseSyncService: Fetched \(allFolders.count) folders for sync")
+            #endif
+
+            return allFolders
         }
     }
 

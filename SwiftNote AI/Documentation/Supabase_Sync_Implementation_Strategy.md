@@ -46,23 +46,39 @@ Started with a minimal implementation to validate the basic connection and data 
    - Simplified models help avoid JSON encoding/decoding issues
    - Detailed error logging helps identify and fix issues
 
-### Phase 2: Expanded Sync (Next Steps)
+### Phase 2: Folder and Note Relationship Sync - COMPLETED
 
-Once basic metadata sync is working:
+Expanded the sync implementation to include folders and maintain proper relationships:
 
-1. **Add folder sync**:
-   - Sync folders first (due to foreign key constraints)
-   - Then sync notes with folder relationships
+1. **Folder Sync Implementation**:
+   - Created `SimpleSupabaseFolder` model with proper field mapping
+   - Implemented folder sync before note sync to maintain foreign key relationships
+   - Added special handling for the "All Notes" folder
+   - Ensured proper color handling for folders
 
-2. **Add more fields**:
+2. **Enhanced Note Sync**:
+   - Updated note sync to properly include folder relationships
+   - Maintained folder references when syncing notes
+   - Ensured notes appear in their correct folders in Supabase
+
+3. **UI Improvements**:
+   - Updated sync button text from "Sync Notes to Cloud" to "Sync to Cloud"
+   - Added description explaining that both folders and notes are synced
+   - Maintained the same feedback mechanisms (progress indicator, success/error messages)
+
+### Phase 3: Expanded Data Sync (Next Steps)
+
+Next steps for expanding the sync capabilities:
+
+1. **Add more fields**:
    - Gradually add more fields to the sync
    - Test each addition thoroughly
 
-3. **Implement binary data handling**:
+2. **Implement binary data handling**:
    - Develop and test proper encoding/decoding for binary fields
    - Consider Base64 encoding for binary data if bytea conversion is problematic
 
-### Phase 3: Two-Way Sync (Future Implementation)
+### Phase 4: Two-Way Sync (Future Implementation)
 
 After one-way sync is stable:
 
@@ -131,6 +147,30 @@ We successfully implemented the basic one-way sync with the following components
    - Implemented proper error handling with detailed logging
    - Stored last sync time in UserDefaults with proper iOS 16+ compatibility
 
+### Phase 2 Implementation (Completed)
+
+We expanded the sync implementation to include folders and maintain proper relationships:
+
+1. **SimpleSupabaseFolder Model**:
+   - Created a simplified model for folder data
+   - Included all necessary fields with proper CodingKeys
+   - Ensured compatibility with Supabase's data structure
+
+2. **Folder Sync Methods**:
+   - Implemented `syncFoldersToSupabase` method to sync folders to Supabase
+   - Added `fetchFoldersForSync` to get folders from CoreData
+   - Added `updateFolderSyncStatus` to update sync status in CoreData
+
+3. **Updated Sync Process**:
+   - Modified `syncToSupabase` to sync folders first, then notes
+   - Changed `syncNotesMetadataToSupabase` to return a boolean instead of using a completion handler
+   - Ensured proper error handling throughout the sync process
+
+4. **Special Handling for "All Notes" Folder**:
+   - Added special color handling for the "All Notes" folder
+   - Ensured "All Notes" folder is properly synced with a consistent appearance
+   - Updated the folder count display to show the correct number of notes
+
 ### Authentication and User ID
 - The `user_id` field in Supabase tables comes from Supabase Auth, not CoreData
 - We retrieve the authenticated user's ID from the current Supabase session
@@ -150,6 +190,25 @@ We successfully implemented the basic one-way sync with the following components
 - Supabase uses snake_case (last_modified)
 - We use CodingKeys in Codable models to handle this mapping
 
+### Special Handling for "All Notes" Folder
+
+The "All Notes" folder requires special handling because it's a special view that shows all notes regardless of their folder assignment:
+
+1. **UI Implementation**:
+   - Modified `FolderDetailViewModel` to fetch all notes when the "All Notes" folder is selected
+   - Updated the note count display to show the correct total number of notes
+   - Added a special gray color for the "All Notes" folder to distinguish it from user-created folders
+
+2. **Data Model Considerations**:
+   - Each user has their own "All Notes" folder in Supabase
+   - The "All Notes" folder is created automatically when a user first uses the app
+   - Added code to consolidate multiple "All Notes" folders if they exist
+
+3. **Sync Behavior**:
+   - The "All Notes" folder is synced to Supabase like any other folder
+   - Notes maintain their folder relationships when synced
+   - The app's special behavior for the "All Notes" folder is implemented in the UI layer, not the data layer
+
 ### Challenges Overcome
 1. **JSON Encoding Issues**:
    - Solved by using a simplified model with only metadata fields
@@ -163,24 +222,29 @@ We successfully implemented the basic one-way sync with the following components
    - Ensured compatibility with iOS 16+ by using proper date storage techniques
    - Avoided using features only available in newer iOS versions
 
+4. **Folder Relationship Issues**:
+   - Implemented folder sync before note sync to maintain foreign key relationships
+   - Added special handling for the "All Notes" folder
+   - Fixed note count display to show the correct number of notes
+
 ## Future Implementation Recommendations
 
-1. **Folder Sync Implementation**:
-   - Create a similar SimpleSupabaseFolder model
-   - Sync folders before notes due to foreign key constraints
-   - Update note sync to include folder relationships
-
-2. **Binary Data Handling**:
+1. **Binary Data Handling**:
    - Consider Base64 encoding for binary data fields
    - Test with small binary data first before scaling up
    - Implement proper error handling for binary data conversion
 
-3. **Two-Way Sync**:
+2. **Two-Way Sync**:
    - Implement proper conflict resolution with "Last Write Wins" strategy
    - Use updated_at/last_modified fields for determining which version is newer
    - Handle merging of data carefully to avoid data loss
 
-4. **User Experience Improvements**:
+3. **User Experience Improvements**:
    - Add automatic sync triggers (app launch, note creation/modification)
    - Implement background sync to avoid blocking the UI
    - Add more detailed sync status reporting and error recovery
+
+4. **Sync Optimization**:
+   - Implement incremental sync to only sync changed items
+   - Add batch processing for large datasets
+   - Optimize network usage and performance
