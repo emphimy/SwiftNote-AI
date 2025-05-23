@@ -222,108 +222,39 @@ struct SupabaseNote: Codable, Identifiable {
         let data: [UInt8]
     }
 
-    // Helper method to decode binary data from Supabase (handles both Base64 strings and Buffer objects)
+    // Helper method to decode binary data from Supabase (handles multiple data formats)
     private static func decodeBase64Data(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> Data? {
-        #if DEBUG
-        print("🔍 SupabaseNote: Attempting to decode \(key.stringValue)")
-        #endif
-
         // Try to decode as a Buffer object first (Node.js format from Supabase)
-        do {
-            if let bufferObject = try container.decodeIfPresent(BufferObject.self, forKey: key) {
-                #if DEBUG
-                print("🔍 SupabaseNote: Successfully decoded Buffer object for \(key.stringValue), type: \(bufferObject.type), data length: \(bufferObject.data.count)")
-                #endif
-                if bufferObject.type == "Buffer" {
-                    return Data(bufferObject.data)
-                }
-            }
-        } catch {
-            #if DEBUG
-            print("🔍 SupabaseNote: Failed to decode as Buffer object for \(key.stringValue): \(error)")
-            #endif
+        if let bufferObject = try? container.decodeIfPresent(BufferObject.self, forKey: key),
+           bufferObject.type == "Buffer" {
+            return Data(bufferObject.data)
         }
 
-        // Try to decode as Base64 string format
-        do {
-            if let base64String = try container.decodeIfPresent(String.self, forKey: key) {
-                #if DEBUG
-                print("🔍 SupabaseNote: Attempting to decode as Base64 string for \(key.stringValue), length: \(base64String.count)")
-                print("🔍 SupabaseNote: Base64 string preview: \(String(base64String.prefix(100)))...")
-                #endif
-
-                // Try to decode as Base64
-                if let data = Data(base64Encoded: base64String) {
-                    #if DEBUG
-                    print("🔍 SupabaseNote: Successfully decoded Base64 string for \(key.stringValue), data length: \(data.count)")
-                    #endif
-                    return data
-                }
-
-                // Try to decode as hex-encoded string (PostgreSQL bytea format)
-                if base64String.hasPrefix("\\x") {
-                    #if DEBUG
-                    print("🔍 SupabaseNote: Detected hex-encoded string for \(key.stringValue), attempting hex decode")
-                    #endif
-                    let hexString = String(base64String.dropFirst(2)) // Remove \x prefix
-                    if let hexData = Data(hexString: hexString) {
-                        #if DEBUG
-                        print("🔍 SupabaseNote: Successfully decoded hex string for \(key.stringValue), data length: \(hexData.count)")
-                        #endif
-
-                        // Check if the hex-decoded data is actually Base64 encoded content
-                        if let hexDecodedString = String(data: hexData, encoding: .utf8) {
-                            #if DEBUG
-                            print("🔍 SupabaseNote: Hex-decoded data as UTF-8 string preview: \(String(hexDecodedString.prefix(100)))...")
-                            #endif
-
-                            // Try to decode the hex-decoded string as Base64
-                            if let finalData = Data(base64Encoded: hexDecodedString) {
-                                #if DEBUG
-                                print("🔍 SupabaseNote: Successfully decoded nested Base64 for \(key.stringValue), final data length: \(finalData.count)")
-                                if let finalString = String(data: finalData, encoding: .utf8) {
-                                    print("🔍 SupabaseNote: Final decoded content preview: \(String(finalString.prefix(200)))...")
-                                }
-                                #endif
-                                return finalData
-                            } else {
-                                #if DEBUG
-                                print("🔍 SupabaseNote: Hex-decoded string is not Base64, returning as UTF-8 data")
-                                #endif
-                                return hexData
-                            }
-                        } else {
-                            #if DEBUG
-                            print("🔍 SupabaseNote: Hex-decoded data is not valid UTF-8, returning raw data")
-                            #endif
-                            return hexData
-                        }
-                    } else {
-                        #if DEBUG
-                        print("🔍 SupabaseNote: Failed to decode hex string for \(key.stringValue)")
-                        #endif
-                    }
-                }
-
-                #if DEBUG
-                print("🔍 SupabaseNote: String is not valid Base64 or hex, trying as UTF-8 data for \(key.stringValue)")
-                #endif
-                // If it's not valid Base64 or hex, try treating it as UTF-8 data
-                let data = Data(base64String.utf8)
-                #if DEBUG
-                print("🔍 SupabaseNote: Converted UTF-8 string to data for \(key.stringValue), data length: \(data.count)")
-                #endif
+        // Try to decode as string format (Base64 or hex-encoded)
+        if let dataString = try container.decodeIfPresent(String.self, forKey: key) {
+            // Try to decode as Base64 first
+            if let data = Data(base64Encoded: dataString) {
                 return data
             }
-        } catch {
-            #if DEBUG
-            print("🔍 SupabaseNote: Failed to decode as Base64 string for \(key.stringValue): \(error)")
-            #endif
+
+            // Try to decode as hex-encoded string (PostgreSQL bytea format)
+            if dataString.hasPrefix("\\x") {
+                let hexString = String(dataString.dropFirst(2)) // Remove \x prefix
+                if let hexData = Data(hexString: hexString) {
+                    // Check if the hex-decoded data is actually Base64 encoded content
+                    if let hexDecodedString = String(data: hexData, encoding: .utf8),
+                       let finalData = Data(base64Encoded: hexDecodedString) {
+                        return finalData
+                    } else {
+                        return hexData
+                    }
+                }
+            }
+
+            // Fallback: treat as UTF-8 data
+            return Data(dataString.utf8)
         }
 
-        #if DEBUG
-        print("🔍 SupabaseNote: No data found for \(key.stringValue)")
-        #endif
         return nil
     }
 
