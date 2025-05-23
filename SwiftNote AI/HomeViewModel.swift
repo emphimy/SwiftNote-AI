@@ -148,9 +148,15 @@ final class HomeViewModel: ObservableObject {
 
         let request = NSFetchRequest<Note>(entityName: "Note")
 
+        // Create predicate to exclude deleted notes
+        let notDeletedPredicate = NSPredicate(format: "deletedAt == nil")
+
         // Apply folder filter if a folder is selected
         if let folderId = currentFolderId {
-            request.predicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+            let folderPredicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [folderPredicate, notDeletedPredicate])
+        } else {
+            request.predicate = notDeletedPredicate
         }
 
         request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.timestamp, ascending: false)]
@@ -399,14 +405,17 @@ final class HomeViewModel: ObservableObject {
         // Create predicate for searching in title
         let titlePredicate = NSPredicate(format: "title CONTAINS[cd] %@", searchText)
 
+        // Create predicate to exclude deleted notes
+        let notDeletedPredicate = NSPredicate(format: "deletedAt == nil")
+
         // Note: We'll handle content search separately with manual filtering
 
         // Apply folder filter if a folder is selected
         if let folderId = currentFolderId {
             let folderPredicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
-            request.predicate = NSCompoundPredicate(type: .and, subpredicates: [folderPredicate, titlePredicate])
+            request.predicate = NSCompoundPredicate(type: .and, subpredicates: [folderPredicate, titlePredicate, notDeletedPredicate])
         } else {
-            request.predicate = titlePredicate
+            request.predicate = NSCompoundPredicate(type: .and, subpredicates: [titlePredicate, notDeletedPredicate])
         }
 
         request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.timestamp, ascending: false)]
@@ -418,8 +427,15 @@ final class HomeViewModel: ObservableObject {
             // Now fetch notes that might contain the search text in their content
             // We'll do this as a separate query to avoid complex binary data predicates
             let allNotesRequest = NSFetchRequest<Note>(entityName: "Note")
+
+            // Create predicate to exclude deleted notes for content search
+            let contentNotDeletedPredicate = NSPredicate(format: "deletedAt == nil")
+
             if let folderId = currentFolderId {
-                allNotesRequest.predicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+                let folderPredicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+                allNotesRequest.predicate = NSCompoundPredicate(type: .and, subpredicates: [folderPredicate, contentNotDeletedPredicate])
+            } else {
+                allNotesRequest.predicate = contentNotDeletedPredicate
             }
             let allNotes = try viewContext.fetch(allNotesRequest)
 

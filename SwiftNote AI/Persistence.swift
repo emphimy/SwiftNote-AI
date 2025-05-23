@@ -320,13 +320,29 @@ extension PersistenceController {
     }
 
     // Read
-    func fetchNotes(matching predicate: NSPredicate? = nil) throws -> [Note] {
+    func fetchNotes(matching predicate: NSPredicate? = nil, includeDeleted: Bool = false) throws -> [Note] {
         let context = container.viewContext
         let request = Note.fetchRequest()
-        request.predicate = predicate
+
+        // Create predicate to exclude deleted notes unless specifically requested
+        var finalPredicate: NSPredicate?
+
+        if !includeDeleted {
+            let notDeletedPredicate = NSPredicate(format: "deletedAt == nil")
+
+            if let predicate = predicate {
+                finalPredicate = NSCompoundPredicate(andPredicateWithSubpredicates: [predicate, notDeletedPredicate])
+            } else {
+                finalPredicate = notDeletedPredicate
+            }
+        } else {
+            finalPredicate = predicate
+        }
+
+        request.predicate = finalPredicate
 
         #if DEBUG
-        print("🗄️ CRUD: Fetching notes with predicate: \(String(describing: predicate))")
+        print("🗄️ CRUD: Fetching notes with predicate: \(String(describing: finalPredicate)), includeDeleted: \(includeDeleted)")
         #endif
 
         return try context.fetch(request)
@@ -355,7 +371,7 @@ extension PersistenceController {
         let context = container.viewContext
 
         #if DEBUG
-        print("🗄️ CRUD: Deleting note: \(note.title ?? "")")
+        print("🗄️ CRUD: Soft deleting note: \(note.title ?? "")")
         #endif
 
         // Delete associated files if they exist
@@ -381,6 +397,43 @@ extension PersistenceController {
                 print("🗄️ CRUD: Error deleting associated file - \(error)")
                 #endif
                 // Continue with note deletion even if file deletion fails
+            }
+        }
+
+        // Perform soft delete by setting deletedAt timestamp
+        note.deletedAt = Date()
+        note.lastModified = Date()
+        note.syncStatus = "pending" // Mark for sync
+
+        #if DEBUG
+        print("🗄️ CRUD: Note soft deleted with deletedAt: \(note.deletedAt!)")
+        #endif
+
+        try context.save()
+    }
+
+    /// Permanently delete a note (hard delete)
+    /// This should only be used for cleanup operations
+    func permanentlyDeleteNote(_ note: Note) throws {
+        let context = container.viewContext
+
+        #if DEBUG
+        print("🗄️ CRUD: Permanently deleting note: \(note.title ?? "")")
+        #endif
+
+        // Delete associated files if they exist
+        if let sourceURL = note.sourceURL {
+            do {
+                if FileManager.default.fileExists(atPath: sourceURL.path) {
+                    try FileManager.default.removeItem(at: sourceURL)
+                    #if DEBUG
+                    print("🗄️ CRUD: Successfully deleted associated file at: \(sourceURL.path)")
+                    #endif
+                }
+            } catch {
+                #if DEBUG
+                print("🗄️ CRUD: Error deleting associated file - \(error)")
+                #endif
             }
         }
 

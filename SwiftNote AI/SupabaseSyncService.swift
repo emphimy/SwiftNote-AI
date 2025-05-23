@@ -136,6 +136,12 @@ class SupabaseSyncService {
                     #if DEBUG
                     print("🔄 SupabaseSyncService: Two-way sync overall success: \(overallSuccess)")
                     #endif
+
+                    // Clean up items that were successfully deleted from Supabase
+                    try await cleanupDeletedItems(context: context)
+
+                    // Clean up any invalid default folders
+                    try await cleanupInvalidFolders(context: context)
                 } else {
                     // One-way sync (upload only) - maintain backward compatibility
                     await MainActor.run {
@@ -150,6 +156,12 @@ class SupabaseSyncService {
 
                     let noteSuccess = try await syncNotesToSupabase(context: context, includeBinaryData: includeBinaryData)
                     overallSuccess = folderSuccess || noteSuccess
+
+                    // Clean up items that were successfully deleted from Supabase
+                    try await cleanupDeletedItems(context: context)
+
+                    // Clean up any invalid default folders
+                    try await cleanupInvalidFolders(context: context)
                 }
 
                 // Update last sync time in UserDefaults
@@ -237,50 +249,68 @@ class SupabaseSyncService {
                     syncProgress.currentStatus = "Syncing folder \(index + 1) of \(folders.count)"
                 }
 
-                // Create a simplified folder with metadata fields
-                let metadataFolder = SimpleSupabaseFolder(
-                    id: folder.id ?? UUID(),
-                    name: folder.name ?? "Untitled Folder",
-                    color: folder.color ?? "blue",
-                    timestamp: folder.timestamp ?? Date(),
-                    sortOrder: folder.sortOrder,
-                    userId: userId,
-                    updatedAt: folder.updatedAt,
-                    syncStatus: folder.syncStatus,
-                    deletedAt: folder.deletedAt
-                )
-
-                // Check if folder already exists in Supabase
-                let existingFolders: [SimpleSupabaseFolder] = try await supabaseService.fetch(
-                    from: "folders",
-                    filters: { query in
-                        query.eq("id", value: metadataFolder.id.uuidString)
-                    }
-                )
-
-                if existingFolders.isEmpty {
-                    // Insert new folder
-                    _ = try await supabaseService.client.from("folders")
-                        .insert(metadataFolder)
-                        .execute()
-
+                // Skip folders with invalid/default values that shouldn't be synced
+                if let folderName = folder.name,
+                   folderName == "Untitled Folder" && folder.color == "blue" && folder.notes?.count == 0 {
                     #if DEBUG
-                    print("🔄 SupabaseSyncService: Inserted folder: \(metadataFolder.id)")
+                    print("🔄 SupabaseSyncService: Skipping empty default folder: \(folder.id?.uuidString ?? "unknown")")
                     #endif
+
+                    // Mark as synced to prevent future sync attempts
+                    await updateFolderSyncStatus(folderId: folder.id ?? UUID(), status: "synced", context: context)
+                    continue
+                }
+
+                // Check if this is a deleted folder that needs to be removed from Supabase
+                if folder.deletedAt != nil {
+                    // Delete the folder from Supabase
+                    try await deleteFolderFromSupabase(folder: folder, userId: userId, context: context)
                 } else {
-                    // Update existing folder
-                    _ = try await supabaseService.client.from("folders")
-                        .update(metadataFolder)
-                        .eq("id", value: metadataFolder.id.uuidString)
-                        .execute()
+                    // Create a simplified folder with metadata fields
+                    let metadataFolder = SimpleSupabaseFolder(
+                        id: folder.id ?? UUID(),
+                        name: folder.name ?? "Untitled Folder",
+                        color: folder.color ?? "blue",
+                        timestamp: folder.timestamp ?? Date(),
+                        sortOrder: folder.sortOrder,
+                        userId: userId,
+                        updatedAt: folder.updatedAt,
+                        syncStatus: folder.syncStatus,
+                        deletedAt: folder.deletedAt
+                    )
 
-                    #if DEBUG
-                    print("🔄 SupabaseSyncService: Updated folder: \(metadataFolder.id)")
-                    #endif
+                    // Check if folder already exists in Supabase
+                    let existingFolders: [SimpleSupabaseFolder] = try await supabaseService.fetch(
+                        from: "folders",
+                        filters: { query in
+                            query.eq("id", value: metadataFolder.id.uuidString)
+                        }
+                    )
+
+                    if existingFolders.isEmpty {
+                        // Insert new folder
+                        _ = try await supabaseService.client.from("folders")
+                            .insert(metadataFolder)
+                            .execute()
+
+                        #if DEBUG
+                        print("🔄 SupabaseSyncService: Inserted folder: \(metadataFolder.id)")
+                        #endif
+                    } else {
+                        // Update existing folder
+                        _ = try await supabaseService.client.from("folders")
+                            .update(metadataFolder)
+                            .eq("id", value: metadataFolder.id.uuidString)
+                            .execute()
+
+                        #if DEBUG
+                        print("🔄 SupabaseSyncService: Updated folder: \(metadataFolder.id)")
+                        #endif
+                    }
                 }
 
                 // Update sync status in CoreData
-                await updateFolderSyncStatus(folderId: metadataFolder.id, status: "synced", context: context)
+                await updateFolderSyncStatus(folderId: folder.id ?? UUID(), status: "synced", context: context)
 
                 // Increment success counter in a thread-safe way
                 await successCounter.increment()
@@ -357,12 +387,18 @@ class SupabaseSyncService {
                     syncProgress.currentStatus = "Syncing note \(index + 1) of \(notes.count)"
                 }
 
-                if includeBinaryData {
-                    // Sync with binary data
-                    try await syncNoteWithBinaryData(note: note, userId: userId, context: context)
+                // Check if this is a deleted note that needs to be removed from Supabase
+                if note.deletedAt != nil {
+                    // Delete the note from Supabase
+                    try await deleteNoteFromSupabase(note: note, userId: userId, context: context)
                 } else {
-                    // Sync metadata only
-                    try await syncNoteMetadataOnly(note: note, userId: userId, context: context)
+                    if includeBinaryData {
+                        // Sync with binary data
+                        try await syncNoteWithBinaryData(note: note, userId: userId, context: context)
+                    } else {
+                        // Sync metadata only
+                        try await syncNoteMetadataOnly(note: note, userId: userId, context: context)
+                    }
                 }
 
                 // Update sync status in CoreData
@@ -424,7 +460,8 @@ class SupabaseSyncService {
             tags: note.tags,
             transcript: note.transcript,
             videoId: note.videoId,
-            syncStatus: note.syncStatus
+            syncStatus: note.syncStatus,
+            deletedAt: note.deletedAt
         )
 
         // Check if note already exists in Supabase
@@ -512,23 +549,236 @@ class SupabaseSyncService {
         }
     }
 
+    /// Delete a note from Supabase
+    /// - Parameters:
+    ///   - note: The CoreData Note to delete
+    ///   - userId: The Supabase user ID
+    ///   - context: The NSManagedObjectContext
+    private func deleteNoteFromSupabase(note: Note, userId: UUID, context: NSManagedObjectContext) async throws {
+        guard let noteId = note.id else {
+            #if DEBUG
+            print("🔄 SupabaseSyncService: Cannot delete note - missing ID")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Deleting note from Supabase: \(noteId)")
+        #endif
+
+        // Delete the note from Supabase
+        _ = try await supabaseService.client.from("notes")
+            .delete()
+            .eq("id", value: noteId.uuidString)
+            .eq("user_id", value: userId.uuidString) // Security: ensure user can only delete their own notes
+            .execute()
+
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Successfully deleted note from Supabase: \(noteId)")
+        #endif
+
+        // After successful deletion from Supabase, mark for permanent deletion
+        // We'll delete it from CoreData after the sync loop completes to avoid threading issues
+        try await context.perform {
+            // Delete associated files if they exist
+            if let sourceURL = note.sourceURL {
+                do {
+                    if FileManager.default.fileExists(atPath: sourceURL.path) {
+                        try FileManager.default.removeItem(at: sourceURL)
+                        #if DEBUG
+                        print("🔄 SupabaseSyncService: Deleted associated file for note \(noteId)")
+                        #endif
+                    }
+                } catch {
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Error deleting associated file - \(error)")
+                    #endif
+                }
+            }
+
+            // Mark the note as successfully deleted from Supabase
+            // We'll permanently delete it after the sync loop to avoid threading issues
+            note.syncStatus = "deleted_from_supabase"
+
+            if context.hasChanges {
+                try context.save()
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Marked note as deleted from Supabase: \(noteId)")
+                #endif
+            }
+        }
+    }
+
+    /// Delete a folder from Supabase
+    /// - Parameters:
+    ///   - folder: The CoreData Folder to delete
+    ///   - userId: The Supabase user ID
+    ///   - context: The NSManagedObjectContext
+    private func deleteFolderFromSupabase(folder: Folder, userId: UUID, context: NSManagedObjectContext) async throws {
+        guard let folderId = folder.id else {
+            #if DEBUG
+            print("🔄 SupabaseSyncService: Cannot delete folder - missing ID")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Deleting folder from Supabase: \(folderId)")
+        #endif
+
+        // Delete the folder from Supabase
+        _ = try await supabaseService.client.from("folders")
+            .delete()
+            .eq("id", value: folderId.uuidString)
+            .eq("user_id", value: userId.uuidString) // Security: ensure user can only delete their own folders
+            .execute()
+
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Successfully deleted folder from Supabase: \(folderId)")
+        #endif
+
+        // After successful deletion from Supabase, mark for permanent deletion
+        // We'll delete it from CoreData after the sync loop completes to avoid threading issues
+        try await context.perform {
+            // Mark the folder as successfully deleted from Supabase
+            folder.syncStatus = "deleted_from_supabase"
+
+            if context.hasChanges {
+                try context.save()
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Marked folder as deleted from Supabase: \(folderId)")
+                #endif
+            }
+        }
+    }
+
+    /// Clean up items that were successfully deleted from Supabase
+    /// - Parameter context: The NSManagedObjectContext
+    private func cleanupDeletedItems(context: NSManagedObjectContext) async throws {
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Starting cleanup of deleted items")
+        #endif
+
+        try await context.perform {
+            // Clean up notes marked as deleted from Supabase
+            let noteRequest = NSFetchRequest<Note>(entityName: "Note")
+            noteRequest.predicate = NSPredicate(format: "syncStatus == %@", "deleted_from_supabase")
+
+            do {
+                let deletedNotes = try context.fetch(noteRequest)
+
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Found \(deletedNotes.count) notes to permanently delete")
+                #endif
+
+                for note in deletedNotes {
+                    context.delete(note)
+                }
+            } catch {
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Error fetching deleted notes - \(error)")
+                #endif
+            }
+
+            // Clean up folders marked as deleted from Supabase
+            let folderRequest = NSFetchRequest<Folder>(entityName: "Folder")
+            folderRequest.predicate = NSPredicate(format: "syncStatus == %@", "deleted_from_supabase")
+
+            do {
+                let deletedFolders = try context.fetch(folderRequest)
+
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Found \(deletedFolders.count) folders to permanently delete")
+                #endif
+
+                for folder in deletedFolders {
+                    context.delete(folder)
+                }
+            } catch {
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Error fetching deleted folders - \(error)")
+                #endif
+            }
+
+            // Save changes if any
+            if context.hasChanges {
+                try context.save()
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Successfully cleaned up deleted items")
+                #endif
+            }
+        }
+    }
+
+    /// Clean up invalid default folders that shouldn't exist
+    /// - Parameter context: The NSManagedObjectContext
+    private func cleanupInvalidFolders(context: NSManagedObjectContext) async throws {
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Starting cleanup of invalid folders")
+        #endif
+
+        try await context.perform {
+            // Find folders with default values that are empty (no notes)
+            let request = NSFetchRequest<Folder>(entityName: "Folder")
+            request.predicate = NSPredicate(format: "name == %@ AND color == %@", "Untitled Folder", "blue")
+
+            do {
+                let defaultFolders = try context.fetch(request)
+
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Found \(defaultFolders.count) default folders to check")
+                #endif
+
+                for folder in defaultFolders {
+                    // Only delete if the folder is empty (no notes) and not the "All Notes" folder
+                    if folder.notes?.count == 0 && folder.name != "All Notes" {
+                        #if DEBUG
+                        print("🔄 SupabaseSyncService: Deleting empty default folder: \(folder.id?.uuidString ?? "unknown")")
+                        #endif
+                        context.delete(folder)
+                    }
+                }
+
+                // Save changes if any
+                if context.hasChanges {
+                    try context.save()
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Successfully cleaned up invalid folders")
+                    #endif
+                }
+            } catch {
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Error cleaning up invalid folders - \(error)")
+                #endif
+            }
+        }
+    }
+
     // MARK: - Private Methods
 
     /// Fetch notes from CoreData that need syncing
     /// - Parameter context: The NSManagedObjectContext to fetch notes from
-    /// - Returns: Array of notes that need syncing
+    /// - Returns: Array of notes that need syncing (including deleted notes)
     private func fetchNotesForSync(context: NSManagedObjectContext) async throws -> [Note] {
         return try await context.perform {
             let request = NSFetchRequest<Note>(entityName: "Note")
 
-            // Only fetch notes that need syncing or have never been synced
-            // For initial implementation, we'll sync all notes
-            // In the future, we can filter by syncStatus
+            // Include all notes (including deleted ones) for sync
+            // We need to sync deleted notes to propagate deletions to Supabase
+            // Filter by sync status to only sync notes that need syncing
+            request.predicate = NSPredicate(format: "syncStatus != %@", "synced")
 
             // Sort by lastModified to sync newest changes first
             request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.lastModified, ascending: false)]
 
-            return try context.fetch(request)
+            let notes = try context.fetch(request)
+
+            #if DEBUG
+            let deletedCount = notes.filter { $0.deletedAt != nil }.count
+            print("🔄 SupabaseSyncService: Fetched \(notes.count) notes for sync (\(deletedCount) deleted)")
+            #endif
+
+            return notes
         }
     }
 
@@ -836,6 +1086,7 @@ class SupabaseSyncService {
         let transcript: String?
         let videoId: String?
         let syncStatus: String?
+        let deletedAt: Date?
 
         enum CodingKeys: String, CodingKey {
             case id
@@ -856,6 +1107,50 @@ class SupabaseSyncService {
             case transcript
             case videoId = "video_id"
             case syncStatus = "sync_status"
+            case deletedAt = "deleted_at"
+        }
+
+        // Custom initializer
+        init(
+            id: UUID,
+            title: String,
+            sourceType: String,
+            timestamp: Date,
+            lastModified: Date,
+            isFavorite: Bool,
+            processingStatus: String,
+            userId: UUID,
+            folderId: UUID?,
+            keyPoints: String?,
+            citations: String?,
+            duration: Double?,
+            languageCode: String?,
+            sourceURL: String?,
+            tags: String?,
+            transcript: String?,
+            videoId: String?,
+            syncStatus: String?,
+            deletedAt: Date?
+        ) {
+            self.id = id
+            self.title = title
+            self.sourceType = sourceType
+            self.timestamp = timestamp
+            self.lastModified = lastModified
+            self.isFavorite = isFavorite
+            self.processingStatus = processingStatus
+            self.userId = userId
+            self.folderId = folderId
+            self.keyPoints = keyPoints
+            self.citations = citations
+            self.duration = duration
+            self.languageCode = languageCode
+            self.sourceURL = sourceURL
+            self.tags = tags
+            self.transcript = transcript
+            self.videoId = videoId
+            self.syncStatus = syncStatus
+            self.deletedAt = deletedAt
         }
     }
 
@@ -1233,11 +1528,12 @@ class SupabaseSyncService {
         print("🔄 SupabaseSyncService: Starting note download for user: \(userId) with binary data: \(includeBinaryData)")
         #endif
 
-        // Fetch notes from Supabase for the current user
+        // Fetch notes from Supabase for the current user (excluding deleted notes)
         let remoteNotes: [SimpleSupabaseNote] = try await supabaseService.fetch(
             from: "notes",
             filters: { query in
                 query.eq("user_id", value: userId.uuidString)
+                     .is("deleted_at", value: nil)
             }
         )
 
@@ -1405,6 +1701,14 @@ class SupabaseSyncService {
     ///   - includeBinaryData: Whether to include binary data in the resolution
     /// - Returns: True if conflict was resolved successfully
     private func resolveNoteConflict(remoteNote: SimpleSupabaseNote, context: NSManagedObjectContext, includeBinaryData: Bool) async throws -> Bool {
+        // Skip deleted remote notes - they should not be downloaded
+        if remoteNote.deletedAt != nil {
+            #if DEBUG
+            print("🔄 SupabaseSyncService: Skipping deleted remote note \(remoteNote.id)")
+            #endif
+            return true
+        }
+
         // First, perform CoreData operations synchronously to check for conflicts
         let (localNote, shouldUpdate, isNewNote) = try await context.perform {
             let request = NSFetchRequest<Note>(entityName: "Note")
@@ -1414,6 +1718,14 @@ class SupabaseSyncService {
             let existingNotes = try context.fetch(request)
 
             if let localNote = existingNotes.first {
+                // Check if local note is deleted
+                if localNote.deletedAt != nil {
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Local note \(remoteNote.id) is deleted, skipping remote update")
+                    #endif
+                    return (localNote, false, false) // Don't update deleted local notes
+                }
+
                 // Note exists locally - check for conflicts
                 let localModified = localNote.lastModified ?? localNote.timestamp ?? Date.distantPast
                 let remoteModified = remoteNote.lastModified
@@ -1623,6 +1935,63 @@ class SupabaseSyncService {
             let sizeInMB = supplementaryMaterialsData.sizeInMB()
             print("🔄 SupabaseSyncService: Downloaded supplementaryMaterials (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
             #endif
+        }
+    }
+
+    // MARK: - Cleanup Methods
+
+    /// Clean up old deleted notes (permanently delete notes that have been soft-deleted for more than 30 days)
+    /// - Parameter context: The NSManagedObjectContext
+    func cleanupOldDeletedNotes(context: NSManagedObjectContext) async throws {
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Starting cleanup of old deleted notes")
+        #endif
+
+        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+
+        try await context.perform {
+            let request = NSFetchRequest<Note>(entityName: "Note")
+            request.predicate = NSPredicate(format: "deletedAt != nil AND deletedAt < %@", thirtyDaysAgo as CVarArg)
+
+            do {
+                let oldDeletedNotes = try context.fetch(request)
+
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Found \(oldDeletedNotes.count) old deleted notes to permanently delete")
+                #endif
+
+                for note in oldDeletedNotes {
+                    // Delete associated files if they exist
+                    if let sourceURL = note.sourceURL {
+                        do {
+                            if FileManager.default.fileExists(atPath: sourceURL.path) {
+                                try FileManager.default.removeItem(at: sourceURL)
+                                #if DEBUG
+                                print("🔄 SupabaseSyncService: Deleted associated file for note \(note.id?.uuidString ?? "unknown")")
+                                #endif
+                            }
+                        } catch {
+                            #if DEBUG
+                            print("🔄 SupabaseSyncService: Error deleting associated file - \(error)")
+                            #endif
+                        }
+                    }
+
+                    context.delete(note)
+                }
+
+                if context.hasChanges {
+                    try context.save()
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Successfully cleaned up \(oldDeletedNotes.count) old deleted notes")
+                    #endif
+                }
+            } catch {
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Error during cleanup - \(error)")
+                #endif
+                throw error
+            }
         }
     }
 }
