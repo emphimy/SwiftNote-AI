@@ -20,6 +20,7 @@ final class SettingsViewModel: ObservableObject {
     @AppStorage("biometricLockEnabled") var biometricLockEnabled = false
     @AppStorage("biometricEnabled") var biometricEnabled = false
     @AppStorage("syncBinaryDataEnabled") var syncBinaryDataEnabled = false
+    @AppStorage("twoWaySyncEnabled") var twoWaySyncEnabled = true
     @Published var lastSupabaseSync: Date?
 
     @Published var biometricType: BiometricType = .none
@@ -122,24 +123,25 @@ final class SettingsViewModel: ObservableObject {
         // This method is kept for compatibility with existing code
     }
 
-    /// Sync folders and notes to Supabase
+    /// Sync folders and notes with Supabase (bidirectional)
     /// - Parameter context: The NSManagedObjectContext
     func syncToSupabase(context: NSManagedObjectContext) {
         #if DEBUG
-        print("⚙️ SettingsViewModel: Starting Supabase sync with binary data: \(syncBinaryDataEnabled)")
+        print("⚙️ SettingsViewModel: Starting Supabase sync - Two-way: \(twoWaySyncEnabled), Binary data: \(syncBinaryDataEnabled)")
         #endif
 
         // Reset previous result
         syncResult = nil
         isSyncing = true
 
-        // Call the sync service with binary data option
-        SupabaseSyncService.shared.syncToSupabase(context: context, includeBinaryData: syncBinaryDataEnabled) { success, error in
+        // Call the sync service with binary data and two-way sync options
+        SupabaseSyncService.shared.syncToSupabase(context: context, includeBinaryData: syncBinaryDataEnabled, twoWaySync: twoWaySyncEnabled) { success, error in
             self.isSyncing = false
 
             if success {
+                let syncTypeMessage = self.twoWaySyncEnabled ? "Two-way sync" : "Upload"
                 let binaryDataMessage = self.syncBinaryDataEnabled ? " with binary data" : ""
-                self.syncResult = (success: true, message: "Sync completed successfully\(binaryDataMessage)")
+                self.syncResult = (success: true, message: "\(syncTypeMessage) completed successfully\(binaryDataMessage)")
                 let now = Date()
                 self.lastSupabaseSync = now
 
@@ -150,11 +152,35 @@ final class SettingsViewModel: ObservableObject {
                 print("⚙️ SettingsViewModel: Sync completed successfully")
                 #endif
             } else {
-                let errorMessage = error?.localizedDescription ?? "Unknown error"
+                // Provide more detailed error information
+                var errorMessage = "Unknown error"
+                var errorDetails = ""
+
+                if let error = error {
+                    errorMessage = error.localizedDescription
+                    errorDetails = "\(error)"
+
+                    #if DEBUG
+                    print("⚙️ SettingsViewModel: Sync failed with detailed error: \(errorDetails)")
+                    #endif
+
+                    // Check for specific error types
+                    if errorMessage.contains("authentication") || errorMessage.contains("signed in") {
+                        errorMessage = "Authentication failed. Please sign in again."
+                    } else if errorMessage.contains("network") || errorMessage.contains("connection") {
+                        errorMessage = "Network connection failed. Please check your internet connection."
+                    } else if errorMessage.contains("CoreData") || errorMessage.contains("save") {
+                        errorMessage = "Failed to save data locally. Please try again."
+                    }
+                }
+
                 self.syncResult = (success: false, message: "Sync failed: \(errorMessage)")
 
                 #if DEBUG
                 print("⚙️ SettingsViewModel: Sync failed - \(errorMessage)")
+                if !errorDetails.isEmpty {
+                    print("⚙️ SettingsViewModel: Full error details: \(errorDetails)")
+                }
                 #endif
             }
 
@@ -525,14 +551,14 @@ struct SettingsView: View {
                 viewModel.syncToSupabase(context: viewContext)
             }) {
                 HStack {
-                    Text("Sync to Cloud")
+                    Text(viewModel.twoWaySyncEnabled ? "Two-Way Sync" : "Upload to Cloud")
                         .foregroundColor(Theme.Colors.text)
                     Spacer()
                     if viewModel.isSyncing {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle())
                     } else {
-                        Image(systemName: "arrow.clockwise")
+                        Image(systemName: viewModel.twoWaySyncEnabled ? "arrow.triangle.2.circlepath" : "arrow.up.circle")
                             .foregroundColor(Theme.Colors.primary)
                     }
                 }
@@ -540,7 +566,17 @@ struct SettingsView: View {
             .disabled(viewModel.isSyncing)
 
             // Sync description
-            Text("Syncs folders and notes to the cloud")
+            Text(viewModel.twoWaySyncEnabled ? "Syncs folders and notes bidirectionally with conflict resolution" : "Uploads local folders and notes to the cloud")
+                .font(Theme.Typography.caption)
+                .foregroundColor(Theme.Colors.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Two-way sync toggle
+            Toggle("Enable two-way sync", isOn: $viewModel.twoWaySyncEnabled)
+                .disabled(viewModel.isSyncing)
+
+            // Two-way sync description
+            Text("Downloads remote changes and resolves conflicts using 'Last Write Wins' strategy")
                 .font(Theme.Typography.caption)
                 .foregroundColor(Theme.Colors.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -581,6 +617,30 @@ struct SettingsView: View {
                         .font(Theme.Typography.caption)
                         .foregroundColor(Theme.Colors.secondaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
+
+                    // Detailed progress for two-way sync
+                    if viewModel.twoWaySyncEnabled {
+                        let progress = SupabaseSyncService.shared.syncProgress
+                        HStack {
+                            Text("↑ \(progress.syncedFolders)/\(progress.totalFolders) folders, \(progress.syncedNotes)/\(progress.totalNotes) notes")
+                                .font(Theme.Typography.caption)
+                                .foregroundColor(Theme.Colors.secondaryText)
+                            Spacer()
+                            if progress.isDownloadPhase {
+                                Text("↓ \(progress.downloadedFolders)/\(progress.totalFolders) folders, \(progress.downloadedNotes)/\(progress.totalNotes) notes")
+                                    .font(Theme.Typography.caption)
+                                    .foregroundColor(Theme.Colors.secondaryText)
+                            }
+                        }
+
+                        // Conflict resolution info
+                        if progress.resolvedConflicts > 0 {
+                            Text("⚡ Resolved \(progress.resolvedConflicts) conflicts")
+                                .font(Theme.Typography.caption)
+                                .foregroundColor(Theme.Colors.warning)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
                 }
             }
 

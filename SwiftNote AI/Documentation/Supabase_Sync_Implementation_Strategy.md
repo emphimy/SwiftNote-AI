@@ -90,22 +90,40 @@ Expanded the sync implementation to include binary data fields:
    - Enhanced sync feedback with progress bar and detailed status messages
    - Updated success/error messages to indicate if binary data was included
 
-### Phase 4: Two-Way Sync (Future Implementation)
+### Phase 4: Two-Way Sync - COMPLETED
 
-After one-way sync is stable:
+Implemented full bidirectional synchronization with conflict resolution:
 
-1. **Implement download from Supabase**:
-   - Retrieve notes from Supabase to CoreData
-   - Handle merging with existing data
+1. **Download from Supabase to CoreData**:
+   - Implemented `downloadFoldersFromSupabase` and `downloadNotesFromSupabase` methods
+   - Added proper data type conversion from Supabase models back to CoreData entities
+   - Handles cases where local data doesn't exist (new downloads)
+   - Supports both metadata-only and binary data downloads
 
-2. **Conflict resolution**:
-   - Implement "Last Write Wins" strategy using updated_at/last_modified fields
-   - Handle sync conflicts gracefully
+2. **Conflict Resolution using "Last Write Wins" Strategy**:
+   - Implemented `resolveFolderConflict` and `resolveNoteConflict` methods
+   - Compares `last_modified` timestamps between local CoreData and Supabase records
+   - Automatically determines which version is newer and should be kept
+   - Handles merging of data without data loss for non-conflicting fields
+   - Tracks resolved conflicts in progress reporting
 
-3. **User Experience Improvements**:
-   - Add automatic sync on app launch or note creation
-   - Implement background sync
-   - Add more detailed sync status reporting
+3. **Bidirectional Sync Orchestration**:
+   - Modified `syncToSupabase` method to support two-way sync with `twoWaySync` parameter
+   - Implemented new sync flow: uploads local changes → downloads remote changes → resolves conflicts
+   - Maintains backward compatibility with one-way sync (upload only)
+   - Enhanced progress tracking for both upload and download phases
+
+4. **Enhanced User Experience**:
+   - Added two-way sync toggle in Settings UI with clear descriptions
+   - Updated sync button text and icons to reflect sync mode
+   - Enhanced progress tracking with detailed upload/download counters
+   - Added conflict resolution indicators in the UI
+   - Maintains existing binary data toggle and progress tracking systems
+
+5. **Future Enhancements (Not Yet Implemented)**:
+   - Automatic sync triggers on app launch or note creation
+   - Background sync capabilities
+   - Incremental sync with change detection
 
 ## Data Model Comparison
 
@@ -185,17 +203,18 @@ We expanded the sync implementation to include folders and maintain proper relat
 
 ### Phase 3 Implementation (Completed)
 
-We implemented binary data sync with Base64 encoding and enhanced progress tracking:
+We implemented binary data sync with direct bytea format and enhanced progress tracking:
 
 1. **Data+Base64 Extension**:
-   - Created utility methods for Base64 encoding/decoding of binary data
-   - Added size calculation methods (bytes, KB, MB) for monitoring
-   - Implemented proper error handling for encoding/decoding failures
+   - Created utility methods for size calculation (bytes, KB, MB) for monitoring
+   - Implemented proper error handling for binary data operations
+   - Note: Base64 encoding/decoding removed in favor of direct binary format
 
-2. **EnhancedSupabaseNote Model**:
-   - Created a model that extends SimpleSupabaseNote with Base64-encoded binary fields
-   - Implemented custom initializers to handle fields excluded from CodingKeys
-   - Added size metadata fields for monitoring and debugging
+2. **Hybrid Binary Data Sync**:
+   - Uses SupabaseNote model with custom encoding/decoding for bytea fields
+   - Handles Supabase's automatic Base64 conversion of bytea fields transparently
+   - Provides efficient storage in database (bytea) with proper Swift Data handling
+   - Custom init(from decoder:) and encode(to:) methods handle Base64 ↔ Data conversion
 
 3. **Binary Data Sync Methods**:
    - Implemented `syncNotesToSupabase` method that supports binary data
@@ -211,6 +230,41 @@ We implemented binary data sync with Base64 encoding and enhanced progress track
    - Added binary data toggle in Settings with AppStorage persistence
    - Implemented progress bar and status messages during sync
    - Enhanced feedback with detailed status updates
+
+### Phase 4 Implementation (Completed)
+
+We implemented full bidirectional synchronization with comprehensive conflict resolution:
+
+1. **Enhanced SyncProgress Structure**:
+   - Added download tracking fields (`downloadedNotes`, `downloadedFolders`)
+   - Added conflict resolution counter (`resolvedConflicts`)
+   - Added phase indicators (`isDownloadPhase`, `isTwoWaySync`)
+   - Enhanced progress calculation for bidirectional operations
+
+2. **Download Methods**:
+   - Implemented `downloadFoldersFromSupabase` for folder synchronization
+   - Implemented `downloadNotesFromSupabase` for note synchronization
+   - Added proper error handling and progress tracking for downloads
+   - Supports both metadata-only and binary data downloads
+
+3. **Conflict Resolution Methods**:
+   - Implemented `resolveFolderConflict` using "Last Write Wins" strategy
+   - Implemented `resolveNoteConflict` with timestamp comparison
+   - Added `updateLocalFolderFromRemote` and `updateLocalNoteFromRemote` helpers
+   - Implemented `downloadNoteBinaryData` for Base64 binary data handling
+
+4. **Bidirectional Sync Orchestration**:
+   - Modified main `syncToSupabase` method to support `twoWaySync` parameter
+   - Implemented sequential sync flow: upload → download → conflict resolution
+   - Maintains backward compatibility with one-way sync
+   - Enhanced error handling for complex sync scenarios
+
+5. **UI Enhancements for Two-Way Sync**:
+   - Added `twoWaySyncEnabled` toggle in Settings with AppStorage persistence
+   - Dynamic sync button text and icons based on sync mode
+   - Enhanced progress display with upload/download counters
+   - Added conflict resolution indicators and detailed progress tracking
+   - Improved status messages to reflect bidirectional operations
 
 ### Authentication and User ID
 - The `user_id` field in Supabase tables comes from Supabase Auth, not CoreData

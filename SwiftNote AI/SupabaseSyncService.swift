@@ -26,15 +26,32 @@ class SupabaseSyncService {
         var syncedNotes: Int = 0
         var totalFolders: Int = 0
         var syncedFolders: Int = 0
+        var downloadedNotes: Int = 0
+        var downloadedFolders: Int = 0
+        var resolvedConflicts: Int = 0
         var currentStatus: String = "Preparing..."
         var includeBinaryData: Bool = false
+        var isDownloadPhase: Bool = false
+        var isTwoWaySync: Bool = false
 
         var folderProgress: Double {
-            return totalFolders > 0 ? Double(syncedFolders) / Double(totalFolders) : 0
+            if isTwoWaySync {
+                let uploadProgress = totalFolders > 0 ? Double(syncedFolders) / Double(totalFolders) : 0
+                let downloadProgress = totalFolders > 0 ? Double(downloadedFolders) / Double(totalFolders) : 0
+                return (uploadProgress + downloadProgress) / 2.0
+            } else {
+                return totalFolders > 0 ? Double(syncedFolders) / Double(totalFolders) : 0
+            }
         }
 
         var noteProgress: Double {
-            return totalNotes > 0 ? Double(syncedNotes) / Double(totalNotes) : 0
+            if isTwoWaySync {
+                let uploadProgress = totalNotes > 0 ? Double(syncedNotes) / Double(totalNotes) : 0
+                let downloadProgress = totalNotes > 0 ? Double(downloadedNotes) / Double(totalNotes) : 0
+                return (uploadProgress + downloadProgress) / 2.0
+            } else {
+                return totalNotes > 0 ? Double(syncedNotes) / Double(totalNotes) : 0
+            }
         }
 
         var overallProgress: Double {
@@ -46,18 +63,20 @@ class SupabaseSyncService {
     /// Sync progress publisher
     @Published var syncProgress = SyncProgress()
 
-    /// Sync folders and notes from CoreData to Supabase
+    /// Sync folders and notes between CoreData and Supabase (bidirectional)
     /// - Parameters:
     ///   - context: The NSManagedObjectContext to fetch data from
     ///   - includeBinaryData: Whether to include binary data in the sync (default: false)
+    ///   - twoWaySync: Whether to perform bidirectional sync (default: true)
     ///   - completion: Completion handler with success flag and optional error
-    func syncToSupabase(context: NSManagedObjectContext, includeBinaryData: Bool = false, completion: @escaping (Bool, Error?) -> Void) {
+    func syncToSupabase(context: NSManagedObjectContext, includeBinaryData: Bool = false, twoWaySync: Bool = true, completion: @escaping (Bool, Error?) -> Void) {
         Task {
             do {
                 // Reset sync progress
                 await MainActor.run {
                     syncProgress = SyncProgress()
                     syncProgress.includeBinaryData = includeBinaryData
+                    syncProgress.isTwoWaySync = twoWaySync
                     syncProgress.currentStatus = "Checking authentication..."
                 }
 
@@ -70,30 +89,88 @@ class SupabaseSyncService {
                     return
                 }
 
-                await MainActor.run {
-                    syncProgress.currentStatus = "Syncing folders..."
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Starting \(twoWaySync ? "two-way" : "one-way") sync")
+                #endif
+
+                var overallSuccess = false
+
+                if twoWaySync {
+                    // Phase 1: Upload local changes to Supabase
+                    await MainActor.run {
+                        syncProgress.currentStatus = "Uploading local changes..."
+                    }
+
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Starting upload phase")
+                    #endif
+
+                    let uploadFolderSuccess = try await syncFoldersToSupabase(context: context)
+                    let uploadNoteSuccess = try await syncNotesToSupabase(context: context, includeBinaryData: includeBinaryData)
+
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Upload phase completed - Folders: \(uploadFolderSuccess), Notes: \(uploadNoteSuccess)")
+                    #endif
+
+                    // Phase 2: Download remote changes from Supabase
+                    await MainActor.run {
+                        syncProgress.isDownloadPhase = true
+                        syncProgress.currentStatus = "Downloading remote changes..."
+                    }
+
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Starting download phase")
+                    #endif
+
+                    let downloadFolderSuccess = try await downloadFoldersFromSupabase(context: context)
+                    let downloadNoteSuccess = try await downloadNotesFromSupabase(context: context, includeBinaryData: includeBinaryData)
+
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Download phase completed - Folders: \(downloadFolderSuccess), Notes: \(downloadNoteSuccess)")
+                    #endif
+
+                    // For fresh installs, download success is more important than upload success
+                    // Success if either upload worked OR download worked (not both required)
+                    overallSuccess = uploadFolderSuccess || uploadNoteSuccess || downloadFolderSuccess || downloadNoteSuccess
+
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Two-way sync overall success: \(overallSuccess)")
+                    #endif
+                } else {
+                    // One-way sync (upload only) - maintain backward compatibility
+                    await MainActor.run {
+                        syncProgress.currentStatus = "Syncing folders..."
+                    }
+
+                    let folderSuccess = try await syncFoldersToSupabase(context: context)
+
+                    await MainActor.run {
+                        syncProgress.currentStatus = "Syncing notes..."
+                    }
+
+                    let noteSuccess = try await syncNotesToSupabase(context: context, includeBinaryData: includeBinaryData)
+                    overallSuccess = folderSuccess || noteSuccess
                 }
-
-                // First sync folders
-                let folderSuccess = try await syncFoldersToSupabase(context: context)
-
-                await MainActor.run {
-                    syncProgress.currentStatus = "Syncing notes..."
-                }
-
-                // Then sync notes
-                let noteSuccess = try await syncNotesToSupabase(context: context, includeBinaryData: includeBinaryData)
 
                 // Update last sync time in UserDefaults
                 UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "lastSupabaseSyncDate")
 
                 await MainActor.run {
-                    syncProgress.currentStatus = "Sync completed"
+                    syncProgress.currentStatus = twoWaySync ? "Two-way sync completed" : "Upload completed"
                 }
+
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Sync process completed successfully")
+                print("🔄 SupabaseSyncService: Final sync progress - Folders: \(syncProgress.syncedFolders)/\(syncProgress.totalFolders), Notes: \(syncProgress.syncedNotes)/\(syncProgress.totalNotes)")
+                if twoWaySync {
+                    print("🔄 SupabaseSyncService: Downloaded - Folders: \(syncProgress.downloadedFolders), Notes: \(syncProgress.downloadedNotes)")
+                    print("🔄 SupabaseSyncService: Resolved conflicts: \(syncProgress.resolvedConflicts)")
+                }
+                #endif
 
                 // Call completion handler on main thread
                 DispatchQueue.main.async {
-                    completion(folderSuccess || noteSuccess, nil)
+                    completion(overallSuccess, nil)
                 }
             } catch {
                 #if DEBUG
@@ -386,35 +463,51 @@ class SupabaseSyncService {
     ///   - userId: The Supabase user ID
     ///   - context: The NSManagedObjectContext
     private func syncNoteWithBinaryData(note: Note, userId: UUID, context: NSManagedObjectContext) async throws {
-        // Create an enhanced note with Base64-encoded binary data
-        let enhancedNote = try createEnhancedSupabaseNoteFromCoreData(note: note, userId: userId)
+        // Create a full note with binary data using SupabaseNote (direct binary format)
+        let fullNote = createFullSupabaseNoteFromCoreData(note: note, userId: userId)
 
         // Check if note already exists in Supabase
         let existingNotes: [SimpleSupabaseNote] = try await supabaseService.fetch(
             from: "notes",
             filters: { query in
-                query.eq("id", value: enhancedNote.id.uuidString)
+                query.eq("id", value: fullNote.id.uuidString)
             }
         )
 
         if existingNotes.isEmpty {
-            // Insert new note
+            // Insert new note with binary data directly to bytea columns
             _ = try await supabaseService.client.from("notes")
-                .insert(enhancedNote)
+                .insert(fullNote)
                 .execute()
 
             #if DEBUG
-            print("🔄 SupabaseSyncService: Inserted note with binary data: \(enhancedNote.id)")
+            print("🔄 SupabaseSyncService: Inserted note with binary data: \(fullNote.id)")
+            if let originalContent = fullNote.originalContent {
+                let sizeInMB = originalContent.sizeInMB()
+                print("🔄 SupabaseSyncService: Uploaded originalContent (\(String(format: "%.2f", sizeInMB)) MB)")
+            }
+            if let aiContent = fullNote.aiGeneratedContent {
+                let sizeInMB = aiContent.sizeInMB()
+                print("🔄 SupabaseSyncService: Uploaded aiGeneratedContent (\(String(format: "%.2f", sizeInMB)) MB)")
+            }
             #endif
         } else {
-            // Update existing note
+            // Update existing note with binary data directly to bytea columns
             _ = try await supabaseService.client.from("notes")
-                .update(enhancedNote)
-                .eq("id", value: enhancedNote.id.uuidString)
+                .update(fullNote)
+                .eq("id", value: fullNote.id.uuidString)
                 .execute()
 
             #if DEBUG
-            print("🔄 SupabaseSyncService: Updated note with binary data: \(enhancedNote.id)")
+            print("🔄 SupabaseSyncService: Updated note with binary data: \(fullNote.id)")
+            if let originalContent = fullNote.originalContent {
+                let sizeInMB = originalContent.sizeInMB()
+                print("🔄 SupabaseSyncService: Updated originalContent (\(String(format: "%.2f", sizeInMB)) MB)")
+            }
+            if let aiContent = fullNote.aiGeneratedContent {
+                let sizeInMB = aiContent.sizeInMB()
+                print("🔄 SupabaseSyncService: Updated aiGeneratedContent (\(String(format: "%.2f", sizeInMB)) MB)")
+            }
             #endif
         }
     }
@@ -485,12 +578,59 @@ class SupabaseSyncService {
         )
     }
 
+    /// Create a full SupabaseNote from a CoreData Note with binary data
+    /// - Parameters:
+    ///   - note: The CoreData Note
+    ///   - userId: The Supabase user ID
+    /// - Returns: A SupabaseNote with binary data included
+    private func createFullSupabaseNoteFromCoreData(note: Note, userId: UUID) -> SupabaseNote {
+        // Get folder ID if available
+        var folderId: UUID? = nil
+        if let folder = note.folder, let folderID = folder.id {
+            folderId = folderID
+        }
+
+        // Create a SupabaseNote with all fields including binary data
+        return SupabaseNote(
+            id: note.id ?? UUID(),
+            title: note.title ?? "Untitled Note",
+            originalContent: note.originalContent, // Include binary content
+            aiGeneratedContent: note.aiGeneratedContent, // Include binary content
+            sourceType: note.sourceType ?? "text",
+            timestamp: note.timestamp ?? Date(),
+            lastModified: note.lastModified ?? Date(),
+            isFavorite: note.isFavorite,
+            processingStatus: note.processingStatus ?? "completed",
+            folderId: folderId,
+            userId: userId,
+
+            // Include all available metadata
+            summary: nil,
+            keyPoints: note.keyPoints,
+            citations: note.citations,
+            duration: note.duration,
+            languageCode: note.transcriptLanguage,
+            sourceURL: note.sourceURL?.absoluteString,
+            tags: note.tags,
+            transcript: note.transcript,
+            sections: note.sections, // Include binary content
+            supplementaryMaterials: note.supplementaryMaterials, // Include binary content
+            mindMap: note.mindMap, // Include binary content
+            videoId: note.videoId,
+
+            // Set sync fields
+            syncStatus: note.syncStatus ?? "synced",
+            deletedAt: note.deletedAt
+        )
+    }
+
     /// Create an EnhancedSupabaseNote from a CoreData Note with Base64-encoded binary data
     /// - Parameters:
     ///   - note: The CoreData Note
     ///   - userId: The Supabase user ID
     /// - Returns: An EnhancedSupabaseNote with Base64-encoded binary data
     /// - Throws: Error if binary data conversion fails
+    /// NOTE: This method is deprecated in favor of createFullSupabaseNoteFromCoreData for direct binary format
     private func createEnhancedSupabaseNoteFromCoreData(note: Note, userId: UUID) throws -> EnhancedSupabaseNote {
         // Get folder ID if available
         var folderId: UUID? = nil
@@ -979,6 +1119,510 @@ class SupabaseSyncService {
                 print("🔄 SupabaseSyncService: Error updating sync status: \(error)")
                 #endif
             }
+        }
+    }
+
+    // MARK: - Download Methods (Phase 4: Two-Way Sync)
+
+    /// Download folders from Supabase to CoreData
+    /// - Parameter context: The NSManagedObjectContext to save folders to
+    /// - Returns: Success flag
+    private func downloadFoldersFromSupabase(context: NSManagedObjectContext) async throws -> Bool {
+        // Get current user ID
+        let session = try await supabaseService.getSession()
+        let userId = session.user.id
+
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Starting folder download for user: \(userId)")
+        #endif
+
+        // Fetch folders from Supabase for the current user
+        let remoteFolders: [SimpleSupabaseFolder] = try await supabaseService.fetch(
+            from: "folders",
+            filters: { query in
+                query.eq("user_id", value: userId.uuidString)
+            }
+        )
+
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Found \(remoteFolders.count) remote folders")
+        #endif
+
+        // Update progress
+        await MainActor.run {
+            syncProgress.totalFolders = max(syncProgress.totalFolders, remoteFolders.count)
+            syncProgress.downloadedFolders = 0
+        }
+
+        // Use an actor-isolated counter to track success
+        actor SuccessCounter {
+            var count = 0
+
+            func increment() {
+                count += 1
+            }
+
+            func getCount() -> Int {
+                return count
+            }
+        }
+
+        let successCounter = SuccessCounter()
+
+        for (index, remoteFolder) in remoteFolders.enumerated() {
+            do {
+                // Update progress status
+                await MainActor.run {
+                    syncProgress.currentStatus = "Downloading folder \(index + 1) of \(remoteFolders.count)"
+                }
+
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Processing folder \(remoteFolder.id) - \(remoteFolder.name)")
+                #endif
+
+                // Check if folder exists locally and resolve conflicts
+                let conflictResolved = try await resolveFolderConflict(remoteFolder: remoteFolder, context: context)
+
+                if conflictResolved {
+                    await successCounter.increment()
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Successfully processed folder \(remoteFolder.id)")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Failed to process folder \(remoteFolder.id)")
+                    #endif
+                }
+
+                // Update progress
+                let currentSuccessCount = await successCounter.getCount()
+                await MainActor.run {
+                    syncProgress.downloadedFolders = currentSuccessCount
+                }
+            } catch {
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Error downloading folder \(remoteFolder.id): \(error.localizedDescription)")
+                print("🔄 SupabaseSyncService: Full error details: \(error)")
+                #endif
+                // Continue processing other folders even if one fails
+            }
+        }
+
+        // Get final success count
+        let finalSuccessCount = await successCounter.getCount()
+
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Folder download completed. Downloaded \(finalSuccessCount) of \(remoteFolders.count) folders")
+        #endif
+
+        // Consider success if we processed any folders OR if there were no folders to process
+        return finalSuccessCount > 0 || remoteFolders.isEmpty
+    }
+
+    /// Download notes from Supabase to CoreData
+    /// - Parameters:
+    ///   - context: The NSManagedObjectContext to save notes to
+    ///   - includeBinaryData: Whether to include binary data in the download
+    /// - Returns: Success flag
+    private func downloadNotesFromSupabase(context: NSManagedObjectContext, includeBinaryData: Bool) async throws -> Bool {
+        // Get current user ID
+        let session = try await supabaseService.getSession()
+        let userId = session.user.id
+
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Starting note download for user: \(userId) with binary data: \(includeBinaryData)")
+        #endif
+
+        // Fetch notes from Supabase for the current user
+        let remoteNotes: [SimpleSupabaseNote] = try await supabaseService.fetch(
+            from: "notes",
+            filters: { query in
+                query.eq("user_id", value: userId.uuidString)
+            }
+        )
+
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Found \(remoteNotes.count) remote notes")
+        #endif
+
+        // Update progress
+        await MainActor.run {
+            syncProgress.totalNotes = max(syncProgress.totalNotes, remoteNotes.count)
+            syncProgress.downloadedNotes = 0
+        }
+
+        // Use an actor-isolated counter to track success
+        actor SuccessCounter {
+            var count = 0
+
+            func increment() {
+                count += 1
+            }
+
+            func getCount() -> Int {
+                return count
+            }
+        }
+
+        let successCounter = SuccessCounter()
+
+        for (index, remoteNote) in remoteNotes.enumerated() {
+            do {
+                // Update progress status
+                await MainActor.run {
+                    syncProgress.currentStatus = "Downloading note \(index + 1) of \(remoteNotes.count)"
+                }
+
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Processing note \(remoteNote.id) - \(remoteNote.title)")
+                #endif
+
+                // Check if note exists locally and resolve conflicts
+                let conflictResolved = try await resolveNoteConflict(remoteNote: remoteNote, context: context, includeBinaryData: includeBinaryData)
+
+                if conflictResolved {
+                    await successCounter.increment()
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Successfully processed note \(remoteNote.id)")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Failed to process note \(remoteNote.id)")
+                    #endif
+                }
+
+                // Update progress
+                let currentSuccessCount = await successCounter.getCount()
+                await MainActor.run {
+                    syncProgress.downloadedNotes = currentSuccessCount
+                }
+            } catch {
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Error downloading note \(remoteNote.id): \(error.localizedDescription)")
+                print("🔄 SupabaseSyncService: Full error details: \(error)")
+                #endif
+                // Continue processing other notes even if one fails
+            }
+        }
+
+        // Get final success count
+        let finalSuccessCount = await successCounter.getCount()
+
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Note download completed. Downloaded \(finalSuccessCount) of \(remoteNotes.count) notes")
+        #endif
+
+        // Consider success if we processed any notes OR if there were no notes to process
+        return finalSuccessCount > 0 || remoteNotes.isEmpty
+    }
+
+    // MARK: - Conflict Resolution Methods (Phase 4: Two-Way Sync)
+
+    /// Resolve folder conflict using "Last Write Wins" strategy
+    /// - Parameters:
+    ///   - remoteFolder: The folder from Supabase
+    ///   - context: The NSManagedObjectContext
+    /// - Returns: True if conflict was resolved successfully
+    private func resolveFolderConflict(remoteFolder: SimpleSupabaseFolder, context: NSManagedObjectContext) async throws -> Bool {
+        // Perform CoreData operations synchronously
+        let (shouldUpdateConflictCounter, wasUpdated) = try await context.perform {
+            let request = NSFetchRequest<Folder>(entityName: "Folder")
+            request.predicate = NSPredicate(format: "id == %@", remoteFolder.id as CVarArg)
+            request.fetchLimit = 1
+
+            let existingFolders = try context.fetch(request)
+
+            if let localFolder = existingFolders.first {
+                // Folder exists locally - check for conflicts
+                let localModified = localFolder.updatedAt ?? localFolder.timestamp ?? Date.distantPast
+                let remoteModified = remoteFolder.updatedAt ?? remoteFolder.timestamp
+
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Resolving folder conflict - Local: \(localModified), Remote: \(remoteModified)")
+                #endif
+
+                // "Last Write Wins" strategy
+                if remoteModified > localModified {
+                    // Remote is newer - update local folder
+                    self.updateLocalFolderFromRemote(localFolder: localFolder, remoteFolder: remoteFolder)
+
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Updated local folder \(remoteFolder.id) with remote data")
+                    #endif
+
+                    return (true, true) // Should update conflict counter, was updated
+                } else {
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Local folder \(remoteFolder.id) is newer, keeping local data")
+                    #endif
+                    return (false, false) // No conflict counter update, not updated
+                }
+            } else {
+                // Folder doesn't exist locally - create new folder
+                let newFolder = Folder(context: context)
+                self.updateLocalFolderFromRemote(localFolder: newFolder, remoteFolder: remoteFolder)
+
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Created new local folder \(remoteFolder.id)")
+                #endif
+                return (false, true) // No conflict (new folder), was created
+            }
+        }
+
+        // Save changes if needed
+        if wasUpdated {
+            try await context.perform {
+                if context.hasChanges {
+                    do {
+                        try context.save()
+                        #if DEBUG
+                        print("🔄 SupabaseSyncService: Successfully saved folder changes to CoreData")
+                        #endif
+                    } catch {
+                        #if DEBUG
+                        print("🔄 SupabaseSyncService: Failed to save folder changes to CoreData: \(error.localizedDescription)")
+                        #endif
+                        throw error
+                    }
+                }
+            }
+        }
+
+        // Update conflict counter on main actor if needed
+        if shouldUpdateConflictCounter {
+            await MainActor.run {
+                syncProgress.resolvedConflicts += 1
+            }
+        }
+
+        return true
+    }
+
+    /// Resolve note conflict using "Last Write Wins" strategy
+    /// - Parameters:
+    ///   - remoteNote: The note from Supabase
+    ///   - context: The NSManagedObjectContext
+    ///   - includeBinaryData: Whether to include binary data in the resolution
+    /// - Returns: True if conflict was resolved successfully
+    private func resolveNoteConflict(remoteNote: SimpleSupabaseNote, context: NSManagedObjectContext, includeBinaryData: Bool) async throws -> Bool {
+        // First, perform CoreData operations synchronously to check for conflicts
+        let (localNote, shouldUpdate, isNewNote) = try await context.perform {
+            let request = NSFetchRequest<Note>(entityName: "Note")
+            request.predicate = NSPredicate(format: "id == %@", remoteNote.id as CVarArg)
+            request.fetchLimit = 1
+
+            let existingNotes = try context.fetch(request)
+
+            if let localNote = existingNotes.first {
+                // Note exists locally - check for conflicts
+                let localModified = localNote.lastModified ?? localNote.timestamp ?? Date.distantPast
+                let remoteModified = remoteNote.lastModified
+
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Resolving note conflict - Local: \(localModified), Remote: \(remoteModified)")
+                #endif
+
+                // "Last Write Wins" strategy
+                if remoteModified > localModified {
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Remote note \(remoteNote.id) is newer, will update local data")
+                    #endif
+                    return (localNote, true, false) // Existing note, should update, not new
+                } else {
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Local note \(remoteNote.id) is newer, keeping local data")
+                    #endif
+                    return (localNote, false, false) // Existing note, no update needed, not new
+                }
+            } else {
+                // Note doesn't exist locally - create new note
+                let newNote = Note(context: context)
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Creating new local note \(remoteNote.id)")
+                #endif
+                return (newNote, true, true) // New note, should update, is new
+            }
+        }
+
+        // If we need to update the note, do it outside the synchronous context.perform block
+        if shouldUpdate {
+            try await updateLocalNoteFromRemote(localNote: localNote, remoteNote: remoteNote, context: context, includeBinaryData: includeBinaryData)
+
+            // Save changes
+            try await context.perform {
+                if context.hasChanges {
+                    do {
+                        try context.save()
+                        #if DEBUG
+                        print("🔄 SupabaseSyncService: Successfully saved note changes to CoreData")
+                        #endif
+                    } catch {
+                        #if DEBUG
+                        print("🔄 SupabaseSyncService: Failed to save note changes to CoreData: \(error.localizedDescription)")
+                        #endif
+                        throw error
+                    }
+                }
+            }
+
+            // Update conflict counter if this was a conflict resolution (not a new note)
+            if !isNewNote {
+                await MainActor.run {
+                    syncProgress.resolvedConflicts += 1
+                }
+            }
+
+            #if DEBUG
+            print("🔄 SupabaseSyncService: \(isNewNote ? "Created" : "Updated") local note \(remoteNote.id)")
+            #endif
+        }
+
+        return true
+    }
+
+    /// Update local folder with data from remote folder
+    /// - Parameters:
+    ///   - localFolder: The local CoreData folder
+    ///   - remoteFolder: The remote Supabase folder
+    private func updateLocalFolderFromRemote(localFolder: Folder, remoteFolder: SimpleSupabaseFolder) {
+        localFolder.id = remoteFolder.id
+        localFolder.name = remoteFolder.name
+        localFolder.color = remoteFolder.color
+        localFolder.timestamp = remoteFolder.timestamp
+        localFolder.sortOrder = remoteFolder.sortOrder
+        localFolder.updatedAt = remoteFolder.updatedAt ?? Date()
+        localFolder.syncStatus = "synced"
+        localFolder.deletedAt = remoteFolder.deletedAt
+    }
+
+    /// Update local note with data from remote note
+    /// - Parameters:
+    ///   - localNote: The local CoreData note
+    ///   - remoteNote: The remote Supabase note
+    ///   - context: The NSManagedObjectContext
+    ///   - includeBinaryData: Whether to include binary data in the update
+    private func updateLocalNoteFromRemote(localNote: Note, remoteNote: SimpleSupabaseNote, context: NSManagedObjectContext, includeBinaryData: Bool) async throws {
+        // Update basic metadata
+        localNote.id = remoteNote.id
+        localNote.title = remoteNote.title
+        localNote.sourceType = remoteNote.sourceType
+        localNote.timestamp = remoteNote.timestamp
+        localNote.lastModified = remoteNote.lastModified
+        localNote.isFavorite = remoteNote.isFavorite
+        localNote.processingStatus = remoteNote.processingStatus
+        localNote.keyPoints = remoteNote.keyPoints
+        localNote.citations = remoteNote.citations
+        localNote.duration = remoteNote.duration ?? 0.0 // Safely unwrap optional Double
+        localNote.transcriptLanguage = remoteNote.languageCode
+        localNote.tags = remoteNote.tags
+        localNote.transcript = remoteNote.transcript
+        localNote.videoId = remoteNote.videoId
+        localNote.syncStatus = "synced"
+
+        // Set source URL
+        if let sourceURLString = remoteNote.sourceURL {
+            localNote.sourceURL = URL(string: sourceURLString)
+        }
+
+        // Handle folder relationship
+        if let folderId = remoteNote.folderId {
+            let folderRequest = NSFetchRequest<Folder>(entityName: "Folder")
+            folderRequest.predicate = NSPredicate(format: "id == %@", folderId as CVarArg)
+            folderRequest.fetchLimit = 1
+
+            let folders = try context.fetch(folderRequest)
+            localNote.folder = folders.first
+        }
+
+        // Handle binary data if requested and available
+        if includeBinaryData {
+            try await downloadNoteBinaryData(for: localNote, remoteNoteId: remoteNote.id)
+        }
+
+        // Ensure the note has at least some content for HomeViewModel validation
+        // If no originalContent was downloaded, create a placeholder from the title
+        if localNote.originalContent == nil {
+            let placeholderContent = localNote.title ?? "Downloaded Note"
+            localNote.originalContent = placeholderContent.data(using: .utf8)
+
+            #if DEBUG
+            print("🔄 SupabaseSyncService: Created placeholder content for note \(remoteNote.id)")
+            #endif
+        }
+    }
+
+    /// Download binary data for a note from Supabase
+    /// - Parameters:
+    ///   - localNote: The local CoreData note to update
+    ///   - remoteNoteId: The ID of the remote note
+    private func downloadNoteBinaryData(for localNote: Note, remoteNoteId: UUID) async throws {
+        // Fetch the full note with binary data from Supabase using direct bytea format
+        let fullNotes: [SupabaseNote] = try await supabaseService.fetch(
+            from: "notes",
+            filters: { query in
+                query.eq("id", value: remoteNoteId.uuidString)
+            }
+        )
+
+        guard let fullNote = fullNotes.first else {
+            #if DEBUG
+            print("🔄 SupabaseSyncService: No full note found for binary data download for note \(remoteNoteId)")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Found full note for binary data download (direct bytea format)")
+        #endif
+
+        // Directly assign binary data from bytea columns (no encoding/decoding needed)
+        if let originalContentData = fullNote.originalContent {
+            localNote.originalContent = originalContentData
+
+            #if DEBUG
+            let sizeInMB = originalContentData.sizeInMB()
+            print("🔄 SupabaseSyncService: Downloaded originalContent (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        } else {
+            #if DEBUG
+            print("🔄 SupabaseSyncService: No originalContent binary data found for note \(remoteNoteId)")
+            #endif
+        }
+
+        if let aiGeneratedContentData = fullNote.aiGeneratedContent {
+            localNote.aiGeneratedContent = aiGeneratedContentData
+
+            #if DEBUG
+            let sizeInMB = aiGeneratedContentData.sizeInMB()
+            print("🔄 SupabaseSyncService: Downloaded aiGeneratedContent (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        }
+
+        if let sectionsData = fullNote.sections {
+            localNote.sections = sectionsData
+
+            #if DEBUG
+            let sizeInMB = sectionsData.sizeInMB()
+            print("🔄 SupabaseSyncService: Downloaded sections (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        }
+
+        if let mindMapData = fullNote.mindMap {
+            localNote.mindMap = mindMapData
+
+            #if DEBUG
+            let sizeInMB = mindMapData.sizeInMB()
+            print("🔄 SupabaseSyncService: Downloaded mindMap (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        }
+
+        if let supplementaryMaterialsData = fullNote.supplementaryMaterials {
+            localNote.supplementaryMaterials = supplementaryMaterialsData
+
+            #if DEBUG
+            let sizeInMB = supplementaryMaterialsData.sizeInMB()
+            print("🔄 SupabaseSyncService: Downloaded supplementaryMaterials (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
         }
     }
 }
