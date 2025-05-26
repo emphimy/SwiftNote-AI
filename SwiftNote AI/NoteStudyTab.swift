@@ -1158,9 +1158,29 @@ struct TranscriptTabView: View {
                         }
                     }
                     .padding(.vertical)
+                } else {
+                    // Show empty state when no transcript is available
+                    VStack(spacing: Theme.Spacing.md) {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 40))
+                            .foregroundColor(Theme.Colors.secondaryText)
+
+                        Text("No Transcript Available")
+                            .font(Theme.Typography.h3)
+                            .foregroundColor(Theme.Colors.text)
+
+                        Text("This note doesn't have a transcript.")
+                            .font(Theme.Typography.body)
+                            .foregroundColor(Theme.Colors.secondaryText)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding()
                 }
             }
             .task {
+                #if DEBUG
+                print("📝 TranscriptTabView: Loading transcript on appear")
+                #endif
                 await viewModel.loadTranscript()
             }
         }
@@ -1207,9 +1227,12 @@ struct TranscriptTabView: View {
             }
         }
 
-        // If no timestamped lines were found, return empty result
+        // If no timestamped lines were found, treat as plain text transcript
         if allTimestampedLines.isEmpty {
-            return []
+            #if DEBUG
+            print("📝 TranscriptTabView: No timestamps found, treating as plain text transcript")
+            #endif
+            return processPlainTextTranscript(transcript)
         }
 
         // Second pass: group lines into 50-second blocks based on original timestamps
@@ -1340,6 +1363,108 @@ struct TranscriptTabView: View {
             }
 
             return mergedBlocks
+        }
+
+        return blocks
+    }
+
+    // Process plain text transcript (without timestamps) into readable blocks
+    private func processPlainTextTranscript(_ transcript: String) -> [TranscriptBlock] {
+        #if DEBUG
+        print("📝 TranscriptTabView: Processing plain text transcript with \(transcript.count) characters")
+        #endif
+
+        // Clean up the transcript
+        let cleanedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // If transcript is empty, return empty array
+        if cleanedTranscript.isEmpty {
+            return []
+        }
+
+        // Split into paragraphs (double newlines) or sentences if no paragraphs
+        var paragraphs: [String] = []
+
+        // First try to split by double newlines (paragraph breaks)
+        let paragraphCandidates = cleanedTranscript.components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        if paragraphCandidates.count > 1 {
+            paragraphs = paragraphCandidates
+        } else {
+            // If no paragraph breaks, split by sentences
+            let sentences = cleanedTranscript.components(separatedBy: ". ")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            if sentences.count > 1 {
+                // Group sentences into paragraphs (3-4 sentences each)
+                let sentencesPerParagraph = 3
+                var currentParagraph = ""
+                var sentenceCount = 0
+
+                for sentence in sentences {
+                    if currentParagraph.isEmpty {
+                        currentParagraph = sentence
+                    } else {
+                        currentParagraph += ". " + sentence
+                    }
+
+                    sentenceCount += 1
+
+                    if sentenceCount >= sentencesPerParagraph {
+                        paragraphs.append(currentParagraph + ".")
+                        currentParagraph = ""
+                        sentenceCount = 0
+                    }
+                }
+
+                // Add remaining sentences
+                if !currentParagraph.isEmpty {
+                    paragraphs.append(currentParagraph + ".")
+                }
+            } else {
+                // If no sentence breaks, split by character count
+                let maxCharsPerBlock = 300
+                var startIndex = cleanedTranscript.startIndex
+
+                while startIndex < cleanedTranscript.endIndex {
+                    let endDistance = min(maxCharsPerBlock, cleanedTranscript.distance(from: startIndex, to: cleanedTranscript.endIndex))
+                    var endIndex = cleanedTranscript.index(startIndex, offsetBy: endDistance)
+
+                    // Try to find a space to break at
+                    if endIndex < cleanedTranscript.endIndex {
+                        let spaceRange = cleanedTranscript[..<endIndex].lastIndex(of: " ")
+                        if let spaceIndex = spaceRange {
+                            endIndex = cleanedTranscript.index(after: spaceIndex)
+                        }
+                    }
+
+                    let paragraph = String(cleanedTranscript[startIndex..<endIndex])
+                    paragraphs.append(paragraph)
+                    startIndex = endIndex
+                }
+            }
+        }
+
+        #if DEBUG
+        print("📝 TranscriptTabView: Created \(paragraphs.count) paragraphs from plain text")
+        #endif
+
+        // Convert paragraphs to TranscriptBlocks
+        var blocks: [TranscriptBlock] = []
+
+        for (index, paragraph) in paragraphs.enumerated() {
+            let blockNumber = index + 1
+            let timeRange = "Section \(blockNumber)"
+
+            blocks.append(TranscriptBlock(
+                id: UUID(),
+                timeRange: timeRange,
+                consolidatedText: paragraph,
+                lines: [] // No individual lines for plain text
+            ))
         }
 
         return blocks

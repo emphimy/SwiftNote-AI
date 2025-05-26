@@ -213,6 +213,7 @@ class YouTubeViewModel: ObservableObject {
                 note.timestamp = Date()
                 note.lastModified = Date()
                 note.originalContent = transcript.data(using: .utf8)  // Store the raw transcript
+                note.transcript = transcript  // Store transcript in the dedicated field
                 note.aiGeneratedContent = noteContent.data(using: .utf8)  // Store the AI-generated note
                 note.sourceType = "video"
                 note.isFavorite = false

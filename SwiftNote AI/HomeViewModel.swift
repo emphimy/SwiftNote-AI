@@ -198,7 +198,7 @@ final class HomeViewModel: ObservableObject {
                     isFavorite: note.isFavorite,
                     folder: note.folder,
                     metadata: [
-                        "rawTranscript": String(decoding: note.originalContent!, as: UTF8.self),
+                        "rawTranscript": note.transcript, // Use the dedicated transcript field
                         "aiGeneratedContent": note.aiGeneratedContent != nil ?
                             String(decoding: note.aiGeneratedContent!, as: UTF8.self) : nil,
                         "videoId": note.videoId,
@@ -486,7 +486,13 @@ final class HomeViewModel: ObservableObject {
                     sourceType: NoteSourceType(rawValue: sourceTypeStr) ?? .text,
                     isFavorite: note.isFavorite,
                     folder: note.folder,
-                    metadata: ["language": note.transcriptLanguage].compactMapValues { $0 },
+                    metadata: [
+                        "rawTranscript": note.transcript, // Use the dedicated transcript field
+                        "aiGeneratedContent": note.aiGeneratedContent != nil ?
+                            String(decoding: note.aiGeneratedContent!, as: UTF8.self) : nil,
+                        "videoId": note.videoId,
+                        "language": note.transcriptLanguage
+                    ].compactMapValues { $0 },
                     sourceURL: note.sourceURL
                 )
             }

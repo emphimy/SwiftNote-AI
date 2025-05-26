@@ -110,18 +110,16 @@ final class FolderDetailViewModel: ObservableObject {
                 }
 
                 // Create metadata dictionary with necessary content for tabs
-                var metadata: [String: Any] = [
-                    "rawTranscript": String(decoding: content, as: UTF8.self)
-                ]
+                var metadata: [String: Any] = [:]
 
                 // Add AI generated content if available
                 if let aiContent = note.aiGeneratedContent {
                     metadata["aiGeneratedContent"] = String(decoding: aiContent, as: UTF8.self)
                 }
 
-                // Add transcript if available
+                // Add transcript if available (use the dedicated transcript field)
                 if let transcript = note.transcript {
-                    metadata["transcript"] = transcript
+                    metadata["rawTranscript"] = transcript // Use the correct key expected by TranscriptViewModel
                 }
 
                 // Add videoId if available (for YouTube notes)
@@ -195,18 +193,16 @@ final class FolderDetailViewModel: ObservableObject {
                     }
 
                     // Create metadata dictionary with necessary content for tabs
-                    var metadata: [String: Any] = [
-                        "rawTranscript": String(decoding: content, as: UTF8.self)
-                    ]
+                    var metadata: [String: Any] = [:]
 
                     // Add AI generated content if available
                     if let aiContent = note.aiGeneratedContent {
                         metadata["aiGeneratedContent"] = String(decoding: aiContent, as: UTF8.self)
                     }
 
-                    // Add transcript if available
+                    // Add transcript if available (use the dedicated transcript field)
                     if let transcript = note.transcript {
-                        metadata["transcript"] = transcript
+                        metadata["rawTranscript"] = transcript // Use the correct key expected by TranscriptViewModel
                     }
 
                     // Add videoId if available (for YouTube notes)
