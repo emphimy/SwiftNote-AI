@@ -11,6 +11,12 @@ class SupabaseSyncService {
     // MARK: - Properties
     private let supabaseService = SupabaseService.shared
 
+    /// Sync operation lock to prevent concurrent sync operations
+    private var isSyncInProgress = false
+
+    /// Lock queue for thread-safe access to sync state
+    private let syncLockQueue = DispatchQueue(label: "com.swiftnote.sync.lock", qos: .userInitiated)
+
     // MARK: - Initialization
     private init() {
         #if DEBUG
@@ -63,6 +69,45 @@ class SupabaseSyncService {
     /// Sync progress publisher
     @Published var syncProgress = SyncProgress()
 
+    // MARK: - Sync Lock Management
+
+    /// Check if a sync operation is currently in progress
+    /// - Returns: True if sync is in progress, false otherwise
+    func isSyncLocked() -> Bool {
+        return syncLockQueue.sync {
+            return isSyncInProgress
+        }
+    }
+
+    /// Attempt to acquire the sync lock
+    /// - Returns: True if lock was acquired, false if sync is already in progress
+    private func acquireSyncLock() -> Bool {
+        return syncLockQueue.sync {
+            if isSyncInProgress {
+                #if DEBUG
+                print("🔒 SupabaseSyncService: Sync lock acquisition failed - sync already in progress")
+                #endif
+                return false
+            } else {
+                isSyncInProgress = true
+                #if DEBUG
+                print("🔒 SupabaseSyncService: Sync lock acquired successfully")
+                #endif
+                return true
+            }
+        }
+    }
+
+    /// Release the sync lock
+    private func releaseSyncLock() {
+        syncLockQueue.sync {
+            isSyncInProgress = false
+            #if DEBUG
+            print("🔒 SupabaseSyncService: Sync lock released")
+            #endif
+        }
+    }
+
     /// Sync folders and notes between CoreData and Supabase (bidirectional)
     /// - Parameters:
     ///   - context: The NSManagedObjectContext to fetch data from
@@ -70,7 +115,24 @@ class SupabaseSyncService {
     ///   - twoWaySync: Whether to perform bidirectional sync (default: true)
     ///   - completion: Completion handler with success flag and optional error
     func syncToSupabase(context: NSManagedObjectContext, includeBinaryData: Bool = false, twoWaySync: Bool = true, completion: @escaping (Bool, Error?) -> Void) {
+        // Check if sync lock can be acquired
+        guard acquireSyncLock() else {
+            let error = NSError(domain: "SupabaseSyncService", code: 409, userInfo: [
+                NSLocalizedDescriptionKey: "Sync operation already in progress. Please wait for the current sync to complete."
+            ])
+            #if DEBUG
+            print("🔒 SupabaseSyncService: Sync request rejected - another sync operation is already in progress")
+            #endif
+            completion(false, error)
+            return
+        }
+
         Task {
+            // Ensure lock is released when task completes
+            defer {
+                releaseSyncLock()
+            }
+
             do {
                 // Reset sync progress
                 await MainActor.run {

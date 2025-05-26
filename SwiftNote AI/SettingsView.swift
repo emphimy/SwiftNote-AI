@@ -167,7 +167,10 @@ final class SettingsViewModel: ObservableObject {
                     #endif
 
                     // Check for specific error types
-                    if errorMessage.contains("authentication") || errorMessage.contains("signed in") {
+                    if let nsError = error as NSError?, nsError.code == 409 {
+                        // Sync lock error (HTTP 409 Conflict)
+                        errorMessage = "Another sync is already in progress. Please wait for it to complete."
+                    } else if errorMessage.contains("authentication") || errorMessage.contains("signed in") {
                         errorMessage = "Authentication failed. Please sign in again."
                     } else if errorMessage.contains("network") || errorMessage.contains("connection") {
                         errorMessage = "Network connection failed. Please check your internet connection."
@@ -640,13 +643,27 @@ struct SettingsView: View {
                 #if DEBUG
                 print("⚙️ SettingsView: Sync button tapped")
                 #endif
-                viewModel.syncToSupabase(context: viewContext)
+
+                // Check if sync is already locked before attempting
+                if SupabaseSyncService.shared.isSyncLocked() {
+                    #if DEBUG
+                    print("⚙️ SettingsView: Sync button tapped but sync is locked")
+                    #endif
+                    viewModel.syncResult = (success: false, message: "Another sync is already in progress. Please wait for it to complete.")
+
+                    // Auto-dismiss the result after 3 seconds
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        viewModel.syncResult = nil
+                    }
+                } else {
+                    viewModel.syncToSupabase(context: viewContext)
+                }
             }) {
                 HStack {
                     Text(viewModel.twoWaySyncEnabled ? "Two-Way Sync" : "Upload to Cloud")
                         .foregroundColor(Theme.Colors.text)
                     Spacer()
-                    if viewModel.isSyncing {
+                    if viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked() {
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle())
                     } else {
@@ -655,7 +672,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            .disabled(viewModel.isSyncing)
+            .disabled(viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked())
 
             // Sync description
             Text(viewModel.twoWaySyncEnabled ? "Syncs folders and notes bidirectionally with conflict resolution" : "Uploads local folders and notes to the cloud")
@@ -665,7 +682,7 @@ struct SettingsView: View {
 
             // Two-way sync toggle
             Toggle("Enable two-way sync", isOn: $viewModel.twoWaySyncEnabled)
-                .disabled(viewModel.isSyncing)
+                .disabled(viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked())
 
             // Two-way sync description
             Text("Downloads remote changes and resolves conflicts using 'Last Write Wins' strategy")
@@ -675,7 +692,7 @@ struct SettingsView: View {
 
             // Include binary data toggle
             Toggle("Include binary data (notes content)", isOn: $viewModel.syncBinaryDataEnabled)
-                .disabled(viewModel.isSyncing)
+                .disabled(viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked())
 
             // Binary data description
             Text("Syncs full note content including text, formatting, and attachments")
@@ -768,7 +785,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            .disabled(viewModel.isSyncing || viewModel.isFixingAudioNotes)
+            .disabled(viewModel.isSyncing || viewModel.isFixingAudioNotes || SupabaseSyncService.shared.isSyncLocked())
 
             // Fix audio notes description
             Text("Marks existing audio notes for sync if they were created before the sync fix")
@@ -796,7 +813,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            .disabled(viewModel.isSyncing || viewModel.isFixingRemoteSync || viewModel.isFixingAudioNotes)
+            .disabled(viewModel.isSyncing || viewModel.isFixingRemoteSync || viewModel.isFixingAudioNotes || SupabaseSyncService.shared.isSyncLocked())
 
             // Fix remote sync status description
             Text("Fixes notes/folders in Supabase that incorrectly show 'pending' status")

@@ -4,8 +4,8 @@
 
 This document tracks all identified issues, fixes, and improvements for the SwiftNote AI Supabase sync system. It serves as a comprehensive roadmap for sync system development and maintenance.
 
-**Last Updated**: December 2024  
-**Status**: Active Development  
+**Last Updated**: December 2024
+**Status**: Active Development
 **Priority Focus**: Data Integrity & Performance
 
 ---
@@ -14,10 +14,10 @@ This document tracks all identified issues, fixes, and improvements for the Swif
 
 | Category | Total Issues | Fixed | In Progress | Planned |
 |----------|-------------|-------|-------------|---------|
-| **Critical** | 8 | 2 | 0 | 6 |
+| **Critical** | 8 | 3 | 0 | 5 |
 | **High** | 12 | 0 | 0 | 12 |
 | **Medium** | 8 | 0 | 0 | 8 |
-| **Total** | **28** | **2** | **0** | **26** |
+| **Total** | **28** | **3** | **0** | **25** |
 
 ---
 
@@ -36,15 +36,31 @@ This document tracks all identified issues, fixes, and improvements for the Swif
 #### ✅ **FIXED**: Remote Sync Status Corruption
 - **Issue**: Notes/folders uploaded to Supabase with incorrect `sync_status = "pending"` instead of "synced"
 - **Root Cause**: Sync service copying local syncStatus to remote instead of setting "synced"
-- **Fix Applied**: 
+- **Fix Applied**:
   - Fixed 4 upload methods to set `syncStatus: "synced"` in remote database
   - Added utility function `fixRemoteSyncStatus()` to repair existing corrupted records
   - Added UI button in Settings to trigger repair
-- **Files Modified**: 
+- **Files Modified**:
   - `SupabaseSyncService.swift` (lines 826, 872, 1023, 463, 278)
   - `SettingsView.swift` (added repair functionality)
 - **Date Fixed**: December 2024
 - **Verification**: ✅ Tested - remote records now correctly show "synced" status
+
+#### ✅ **FIXED**: Sync Operation Locking (Issue #6)
+- **Issue**: No mechanism to prevent concurrent sync operations causing race conditions
+- **Root Cause**: Missing concurrency control in SupabaseSyncService allowing multiple sync operations to run simultaneously
+- **Fix Applied**:
+  - Added sync operation mutex using DispatchQueue-based locking mechanism
+  - Implemented `isSyncLocked()`, `acquireSyncLock()`, and `releaseSyncLock()` methods
+  - Updated `syncToSupabase()` method to check and acquire lock before starting sync
+  - Added proper error handling with HTTP 409 (Conflict) error for rejected sync attempts
+  - Updated UI to check sync lock status and provide user feedback
+  - Added defer block to ensure lock is always released even if sync fails
+- **Files Modified**:
+  - `SupabaseSyncService.swift` (added locking mechanism and error handling)
+  - `SettingsView.swift` (updated UI to handle sync lock state and errors)
+- **Date Fixed**: December 2024
+- **Verification**: ✅ Tested - concurrent sync attempts are properly rejected with clear error messages
 
 ---
 
@@ -106,15 +122,7 @@ This document tracks all identified issues, fixes, and improvements for the Swif
 
 ### 🚨 **Concurrency & Race Conditions**
 
-#### **Issue #6**: No Sync Operation Locking
-- **Priority**: 🔴 Critical
-- **Status**: 🔄 Planned
-- **Description**: No mechanism to prevent concurrent sync operations
-- **Impact**: Race conditions and data corruption potential
-- **Risk**: Multiple sync processes could interfere with each other
-- **Proposed Solution**: Implement sync operation mutex/locking
-- **Estimated Effort**: 1-2 days
-- **Dependencies**: None
+
 
 ### 🚨 **Authentication & Security**
 
@@ -337,7 +345,7 @@ This document tracks all identified issues, fixes, and improvements for the Swif
 ## 📅 Development Roadmap
 
 ### **Phase 1: Critical Stability (Weeks 1-3)**
-- [ ] Issue #6: Sync Operation Locking
+- [x] Issue #6: Sync Operation Locking ✅ **COMPLETED**
 - [ ] Issue #7: Token Validation
 - [ ] Issue #1: Transaction Boundaries
 - [ ] Issue #4: Pagination/Chunking
@@ -413,6 +421,6 @@ SELECT COUNT(*) FROM notes WHERE folder_id NOT IN (SELECT id FROM folders);
 
 ---
 
-**Document Maintained By**: Development Team  
-**Next Review Date**: Weekly during active development  
+**Document Maintained By**: Development Team
+**Next Review Date**: Weekly during active development
 **Contact**: [Development Team Contact Information]
