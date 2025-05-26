@@ -18,7 +18,7 @@ struct GoogleSignInButton: View {
                     .frame(width: 20, height: 20)
 
                 // Button text
-                Text("Sign in with Google")
+                Text("Continue with Google")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(Color(.darkGray))
             }
