@@ -20,6 +20,18 @@ class SupabaseSyncService {
     /// Transaction manager for atomic sync operations
     private let transactionManager = SyncTransactionManager()
 
+    /// Background queue for sync operations to prevent UI blocking
+    private let syncQueue = DispatchQueue(label: "com.swiftnote.sync.background", qos: .userInitiated)
+
+    /// Progress update queue for batching UI updates
+    private let progressQueue = DispatchQueue(label: "com.swiftnote.sync.progress", qos: .utility)
+
+    /// Progress update coordinator for efficient UI updates
+    private let progressCoordinator = ProgressUpdateCoordinator()
+
+    /// Network failure recovery manager
+    private let networkRecoveryManager = NetworkRecoveryManager()
+
     // MARK: - Initialization
     private init() {
         #if DEBUG
@@ -130,208 +142,250 @@ class SupabaseSyncService {
             return
         }
 
-        Task {
-            // Ensure lock is released when task completes
+        // Dispatch sync operation to background queue to prevent UI blocking
+        syncQueue.async { [weak self] in
+            guard let self = self else {
+                self?.releaseSyncLock()
+                completion(false, NSError(domain: "SupabaseSyncService", code: 500, userInfo: [
+                    NSLocalizedDescriptionKey: "Sync service was deallocated"
+                ]))
+                return
+            }
+
+            // Create background task to ensure sync completes even if app goes to background
+            let backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "SupabaseSync") {
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Background task expired, sync may be incomplete")
+                #endif
+            }
+
             defer {
-                releaseSyncLock()
+                self.releaseSyncLock()
+                if backgroundTaskID != .invalid {
+                    UIApplication.shared.endBackgroundTask(backgroundTaskID)
+                }
+            }
+
+            Task {
+                await self.performBackgroundSync(
+                    context: context,
+                    includeBinaryData: includeBinaryData,
+                    twoWaySync: twoWaySync,
+                    completion: completion
+                )
+            }
+        }
+    }
+
+    /// Perform the actual sync operation on background thread
+    /// - Parameters:
+    ///   - context: The NSManagedObjectContext to fetch data from
+    ///   - includeBinaryData: Whether to include binary data in the sync
+    ///   - twoWaySync: Whether to perform bidirectional sync
+    ///   - completion: Completion handler with success flag and optional error
+    private func performBackgroundSync(context: NSManagedObjectContext, includeBinaryData: Bool, twoWaySync: Bool, completion: @escaping (Bool, Error?) -> Void) async {
+        do {
+            // Reset sync progress on main thread
+            await MainActor.run {
+                syncProgress = SyncProgress()
+                syncProgress.includeBinaryData = includeBinaryData
+                syncProgress.isTwoWaySync = twoWaySync
+                syncProgress.currentStatus = "Checking authentication..."
+            }
+
+            // Validate token and refresh if necessary
+            await MainActor.run {
+                syncProgress.currentStatus = "Validating authentication..."
             }
 
             do {
-                // Reset sync progress
-                await MainActor.run {
-                    syncProgress = SyncProgress()
-                    syncProgress.includeBinaryData = includeBinaryData
-                    syncProgress.isTwoWaySync = twoWaySync
-                    syncProgress.currentStatus = "Checking authentication..."
-                }
-
-                // Validate token and refresh if necessary
-                await MainActor.run {
-                    syncProgress.currentStatus = "Validating authentication..."
-                }
-
-                do {
-                    _ = try await supabaseService.validateAndRefreshTokenIfNeeded()
-                    #if DEBUG
-                    print("🔄 SupabaseSyncService: Token validation successful")
-                    #endif
-                } catch {
-                    #if DEBUG
-                    print("🔄 SupabaseSyncService: Token validation failed: \(error)")
-                    #endif
-
-                    await MainActor.run {
-                        syncProgress.currentStatus = "Authentication failed"
-                    }
-
-                    completion(false, error)
-                    return
-                }
-
-                // Begin atomic transaction for sync operations
-                await MainActor.run {
-                    syncProgress.currentStatus = "Starting sync transaction..."
-                }
-
-                let transactionContext = try transactionManager.beginTransaction()
-
+                _ = try await networkRecoveryManager.executeWithRetry(
+                    operation: {
+                        try await self.supabaseService.validateAndRefreshTokenIfNeeded()
+                    },
+                    operationName: "Token Validation"
+                )
                 #if DEBUG
-                print("🔄 SupabaseSyncService: Sync transaction started")
+                print("🔄 SupabaseSyncService: Token validation successful")
                 #endif
-
-                #if DEBUG
-                print("🔄 SupabaseSyncService: Starting \(twoWaySync ? "two-way" : "one-way") sync")
-                #endif
-
-                // Wrap sync operations in transaction with proper error handling
-                var overallSuccess = false
-
-                do {
-                    if twoWaySync {
-                        // Phase 1: Upload local changes to Supabase
-                        await MainActor.run {
-                            syncProgress.currentStatus = "Uploading local changes..."
-                        }
-
-                        transactionManager.addCheckpoint("upload_phase_start")
-
-                        #if DEBUG
-                        print("🔄 SupabaseSyncService: Starting upload phase")
-                        #endif
-
-                        let uploadFolderSuccess = try await syncFoldersToSupabase(context: transactionContext)
-                        transactionManager.addCheckpoint("folders_uploaded")
-
-                        let uploadNoteSuccess = try await syncNotesToSupabase(context: transactionContext, includeBinaryData: includeBinaryData)
-                        transactionManager.addCheckpoint("notes_uploaded")
-
-                        #if DEBUG
-                        print("🔄 SupabaseSyncService: Upload phase completed - Folders: \(uploadFolderSuccess), Notes: \(uploadNoteSuccess)")
-                        #endif
-
-                        // Phase 2: Download remote changes from Supabase
-                        await MainActor.run {
-                            syncProgress.isDownloadPhase = true
-                            syncProgress.currentStatus = "Downloading remote changes..."
-                        }
-
-                        transactionManager.addCheckpoint("download_phase_start")
-
-                        #if DEBUG
-                        print("🔄 SupabaseSyncService: Starting download phase")
-                        #endif
-
-                        let downloadFolderSuccess = try await downloadFoldersFromSupabase(context: transactionContext)
-                        transactionManager.addCheckpoint("folders_downloaded")
-
-                        let downloadNoteSuccess = try await downloadNotesFromSupabase(context: transactionContext, includeBinaryData: includeBinaryData)
-                        transactionManager.addCheckpoint("notes_downloaded")
-
-                        #if DEBUG
-                        print("🔄 SupabaseSyncService: Download phase completed - Folders: \(downloadFolderSuccess), Notes: \(downloadNoteSuccess)")
-                        #endif
-
-                        // For fresh installs, download success is more important than upload success
-                        // Success if either upload worked OR download worked (not both required)
-                        overallSuccess = uploadFolderSuccess || uploadNoteSuccess || downloadFolderSuccess || downloadNoteSuccess
-
-                        #if DEBUG
-                        print("🔄 SupabaseSyncService: Two-way sync overall success: \(overallSuccess)")
-                        #endif
-
-                        // Clean up items that were successfully deleted from Supabase
-                        try await cleanupDeletedItems(context: transactionContext)
-                        transactionManager.addCheckpoint("cleanup_deleted_items")
-
-                        // Clean up any invalid default folders
-                        try await cleanupInvalidFolders(context: transactionContext)
-                        transactionManager.addCheckpoint("cleanup_invalid_folders")
-                    } else {
-                        // One-way sync (upload only) - maintain backward compatibility
-                        await MainActor.run {
-                            syncProgress.currentStatus = "Syncing folders..."
-                        }
-
-                        transactionManager.addCheckpoint("one_way_sync_start")
-
-                        let folderSuccess = try await syncFoldersToSupabase(context: transactionContext)
-                        transactionManager.addCheckpoint("one_way_folders_synced")
-
-                        await MainActor.run {
-                            syncProgress.currentStatus = "Syncing notes..."
-                        }
-
-                        let noteSuccess = try await syncNotesToSupabase(context: transactionContext, includeBinaryData: includeBinaryData)
-                        transactionManager.addCheckpoint("one_way_notes_synced")
-
-                        overallSuccess = folderSuccess || noteSuccess
-
-                        // Clean up items that were successfully deleted from Supabase
-                        try await cleanupDeletedItems(context: transactionContext)
-                        transactionManager.addCheckpoint("one_way_cleanup_deleted")
-
-                        // Clean up any invalid default folders
-                        try await cleanupInvalidFolders(context: transactionContext)
-                        transactionManager.addCheckpoint("one_way_cleanup_invalid")
-                    }
-
-                    // Mark transaction as having changes if any operations succeeded
-                    if overallSuccess {
-                        transactionManager.markChanges()
-                    }
-
-                    // Commit the transaction
-                    try transactionManager.commitTransaction()
-                    transactionManager.addCheckpoint("transaction_committed")
-
-                    #if DEBUG
-                    print("🔄 SupabaseSyncService: Transaction committed successfully")
-                    #endif
-
-                } catch {
-                    // Rollback transaction on any error
-                    transactionManager.rollbackTransaction()
-
-                    #if DEBUG
-                    print("🔄 SupabaseSyncService: Transaction rolled back due to error: \(error)")
-                    #endif
-
-                    throw error
-                }
-
-                // Update last sync time in UserDefaults
-                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "lastSupabaseSyncDate")
-
-                await MainActor.run {
-                    syncProgress.currentStatus = twoWaySync ? "Two-way sync completed" : "Upload completed"
-                }
-
-                #if DEBUG
-                print("🔄 SupabaseSyncService: Sync process completed successfully")
-                print("🔄 SupabaseSyncService: Final sync progress - Folders: \(syncProgress.syncedFolders)/\(syncProgress.totalFolders), Notes: \(syncProgress.syncedNotes)/\(syncProgress.totalNotes)")
-                if twoWaySync {
-                    print("🔄 SupabaseSyncService: Downloaded - Folders: \(syncProgress.downloadedFolders), Notes: \(syncProgress.downloadedNotes)")
-                    print("🔄 SupabaseSyncService: Resolved conflicts: \(syncProgress.resolvedConflicts)")
-                }
-                #endif
-
-                // Call completion handler on main thread
-                DispatchQueue.main.async {
-                    completion(overallSuccess, nil)
-                }
             } catch {
                 #if DEBUG
-                print("🔄 SupabaseSyncService: Sync failed with error: \(error)")
+                print("🔄 SupabaseSyncService: Token validation failed after retries: \(error)")
                 #endif
 
                 await MainActor.run {
-                    syncProgress.currentStatus = "Sync failed: \(error.localizedDescription)"
+                    syncProgress.currentStatus = "Authentication failed"
                 }
 
-                // Call completion handler on main thread
                 DispatchQueue.main.async {
                     completion(false, error)
                 }
+                return
+            }
+
+            // Begin atomic transaction for sync operations
+            await MainActor.run {
+                syncProgress.currentStatus = "Starting sync transaction..."
+            }
+
+            let transactionContext = try transactionManager.beginTransaction()
+
+            #if DEBUG
+            print("🔄 SupabaseSyncService: Sync transaction started")
+            #endif
+
+            #if DEBUG
+            print("🔄 SupabaseSyncService: Starting \(twoWaySync ? "two-way" : "one-way") sync")
+            #endif
+
+            // Wrap sync operations in transaction with proper error handling
+            var overallSuccess = false
+
+            do {
+                if twoWaySync {
+                    // Phase 1: Upload local changes to Supabase
+                    await MainActor.run {
+                        syncProgress.currentStatus = "Uploading local changes..."
+                    }
+
+                    transactionManager.addCheckpoint("upload_phase_start")
+
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Starting upload phase")
+                    #endif
+
+                    let uploadFolderSuccess = try await syncFoldersToSupabase(context: transactionContext)
+                    transactionManager.addCheckpoint("folders_uploaded")
+
+                    let uploadNoteSuccess = try await syncNotesToSupabase(context: transactionContext, includeBinaryData: includeBinaryData)
+                    transactionManager.addCheckpoint("notes_uploaded")
+
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Upload phase completed - Folders: \(uploadFolderSuccess), Notes: \(uploadNoteSuccess)")
+                    #endif
+
+                    // Phase 2: Download remote changes from Supabase
+                    await MainActor.run {
+                        syncProgress.isDownloadPhase = true
+                        syncProgress.currentStatus = "Downloading remote changes..."
+                    }
+
+                    transactionManager.addCheckpoint("download_phase_start")
+
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Starting download phase")
+                    #endif
+
+                    let downloadFolderSuccess = try await downloadFoldersFromSupabase(context: transactionContext)
+                    transactionManager.addCheckpoint("folders_downloaded")
+
+                    let downloadNoteSuccess = try await downloadNotesFromSupabase(context: transactionContext, includeBinaryData: includeBinaryData)
+                    transactionManager.addCheckpoint("notes_downloaded")
+
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Download phase completed - Folders: \(downloadFolderSuccess), Notes: \(downloadNoteSuccess)")
+                    #endif
+
+                    // For fresh installs, download success is more important than upload success
+                    // Success if either upload worked OR download worked (not both required)
+                    overallSuccess = uploadFolderSuccess || uploadNoteSuccess || downloadFolderSuccess || downloadNoteSuccess
+
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Two-way sync overall success: \(overallSuccess)")
+                    #endif
+
+                    // Clean up items that were successfully deleted from Supabase
+                    try await cleanupDeletedItems(context: transactionContext)
+                    transactionManager.addCheckpoint("cleanup_deleted_items")
+
+                    // Clean up any invalid default folders
+                    try await cleanupInvalidFolders(context: transactionContext)
+                    transactionManager.addCheckpoint("cleanup_invalid_folders")
+                } else {
+                    // One-way sync (upload only) - maintain backward compatibility
+                    await MainActor.run {
+                        syncProgress.currentStatus = "Syncing folders..."
+                    }
+
+                    transactionManager.addCheckpoint("one_way_sync_start")
+
+                    let folderSuccess = try await syncFoldersToSupabase(context: transactionContext)
+                    transactionManager.addCheckpoint("one_way_folders_synced")
+
+                    await MainActor.run {
+                        syncProgress.currentStatus = "Syncing notes..."
+                    }
+
+                    let noteSuccess = try await syncNotesToSupabase(context: transactionContext, includeBinaryData: includeBinaryData)
+                    transactionManager.addCheckpoint("one_way_notes_synced")
+
+                    overallSuccess = folderSuccess || noteSuccess
+
+                    // Clean up items that were successfully deleted from Supabase
+                    try await cleanupDeletedItems(context: transactionContext)
+                    transactionManager.addCheckpoint("one_way_cleanup_deleted")
+
+                    // Clean up any invalid default folders
+                    try await cleanupInvalidFolders(context: transactionContext)
+                    transactionManager.addCheckpoint("one_way_cleanup_invalid")
+                }
+
+                // Mark transaction as having changes if any operations succeeded
+                if overallSuccess {
+                    transactionManager.markChanges()
+                }
+
+                // Commit the transaction
+                try transactionManager.commitTransaction()
+                transactionManager.addCheckpoint("transaction_committed")
+
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Transaction committed successfully")
+                #endif
+
+            } catch {
+                // Rollback transaction on any error
+                transactionManager.rollbackTransaction()
+
+                #if DEBUG
+                print("🔄 SupabaseSyncService: Transaction rolled back due to error: \(error)")
+                #endif
+
+                throw error
+            }
+
+            // Update last sync time in UserDefaults
+            UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "lastSupabaseSyncDate")
+
+            await MainActor.run {
+                syncProgress.currentStatus = twoWaySync ? "Two-way sync completed" : "Upload completed"
+            }
+
+            #if DEBUG
+            print("🔄 SupabaseSyncService: Sync process completed successfully")
+            print("🔄 SupabaseSyncService: Final sync progress - Folders: \(syncProgress.syncedFolders)/\(syncProgress.totalFolders), Notes: \(syncProgress.syncedNotes)/\(syncProgress.totalNotes)")
+            if twoWaySync {
+                print("🔄 SupabaseSyncService: Downloaded - Folders: \(syncProgress.downloadedFolders), Notes: \(syncProgress.downloadedNotes)")
+                print("🔄 SupabaseSyncService: Resolved conflicts: \(syncProgress.resolvedConflicts)")
+            }
+            #endif
+
+            // Call completion handler on main thread
+            DispatchQueue.main.async {
+                completion(overallSuccess, nil)
+            }
+        } catch {
+            #if DEBUG
+            print("🔄 SupabaseSyncService: Sync failed with error: \(error)")
+            #endif
+
+            await MainActor.run {
+                syncProgress.currentStatus = "Sync failed: \(error.localizedDescription)"
+            }
+
+            // Call completion handler on main thread
+            DispatchQueue.main.async {
+                completion(false, error)
             }
         }
     }
@@ -379,9 +433,9 @@ class SupabaseSyncService {
 
         for (index, folder) in folders.enumerated() {
             do {
-                // Update progress status
-                await MainActor.run {
-                    syncProgress.currentStatus = "Syncing folder \(index + 1) of \(folders.count)"
+                // Update progress status with throttling
+                progressCoordinator.scheduleUpdate { [weak self] in
+                    self?.syncProgress.currentStatus = "Syncing folder \(index + 1) of \(folders.count)"
                 }
 
                 // Skip folders with invalid/default values that shouldn't be synced
@@ -414,29 +468,44 @@ class SupabaseSyncService {
                         deletedAt: folder.deletedAt
                     )
 
-                    // Check if folder already exists in Supabase
-                    let existingFolders: [SimpleSupabaseFolder] = try await supabaseService.fetch(
-                        from: "folders",
-                        filters: { query in
-                            query.eq("id", value: metadataFolder.id.uuidString)
-                        }
+                    // Check if folder already exists in Supabase with network recovery
+                    let existingFolders: [SimpleSupabaseFolder] = try await networkRecoveryManager.executeWithRetry(
+                        operation: {
+                            try await self.supabaseService.fetch(
+                                from: "folders",
+                                filters: { query in
+                                    query.eq("id", value: metadataFolder.id.uuidString)
+                                }
+                            )
+                        },
+                        operationName: "Folder Existence Check (\(metadataFolder.name))"
                     )
 
                     if existingFolders.isEmpty {
-                        // Insert new folder
-                        _ = try await supabaseService.client.from("folders")
-                            .insert(metadataFolder)
-                            .execute()
+                        // Insert new folder with network recovery
+                        _ = try await networkRecoveryManager.executeWithRetry(
+                            operation: {
+                                try await self.supabaseService.client.from("folders")
+                                    .insert(metadataFolder)
+                                    .execute()
+                            },
+                            operationName: "Folder Insert (\(metadataFolder.name))"
+                        )
 
                         #if DEBUG
                         print("🔄 SupabaseSyncService: Inserted folder: \(metadataFolder.id)")
                         #endif
                     } else {
-                        // Update existing folder
-                        _ = try await supabaseService.client.from("folders")
-                            .update(metadataFolder)
-                            .eq("id", value: metadataFolder.id.uuidString)
-                            .execute()
+                        // Update existing folder with network recovery
+                        _ = try await networkRecoveryManager.executeWithRetry(
+                            operation: {
+                                try await self.supabaseService.client.from("folders")
+                                    .update(metadataFolder)
+                                    .eq("id", value: metadataFolder.id.uuidString)
+                                    .execute()
+                            },
+                            operationName: "Folder Update (\(metadataFolder.name))"
+                        )
 
                         #if DEBUG
                         print("🔄 SupabaseSyncService: Updated folder: \(metadataFolder.id)")
@@ -450,10 +519,10 @@ class SupabaseSyncService {
                 // Increment success counter in a thread-safe way
                 await successCounter.increment()
 
-                // Update progress
+                // Update progress with throttling
                 let currentSuccessCount = await successCounter.getCount()
-                await MainActor.run {
-                    syncProgress.syncedFolders = currentSuccessCount
+                progressCoordinator.scheduleUpdate { [weak self] in
+                    self?.syncProgress.syncedFolders = currentSuccessCount
                 }
             } catch {
                 #if DEBUG
@@ -517,9 +586,9 @@ class SupabaseSyncService {
 
         for (index, note) in notes.enumerated() {
             do {
-                // Update progress status
-                await MainActor.run {
-                    syncProgress.currentStatus = "Syncing note \(index + 1) of \(notes.count)"
+                // Update progress status with throttling
+                progressCoordinator.scheduleUpdate { [weak self] in
+                    self?.syncProgress.currentStatus = "Syncing note \(index + 1) of \(notes.count)"
                 }
 
                 // Check if this is a deleted note that needs to be removed from Supabase
@@ -542,10 +611,10 @@ class SupabaseSyncService {
                 // Increment success counter in a thread-safe way
                 await successCounter.increment()
 
-                // Update progress
+                // Update progress with throttling
                 let currentSuccessCount = await successCounter.getCount()
-                await MainActor.run {
-                    syncProgress.syncedNotes = currentSuccessCount
+                progressCoordinator.scheduleUpdate { [weak self] in
+                    self?.syncProgress.syncedNotes = currentSuccessCount
                 }
             } catch {
                 #if DEBUG
@@ -599,29 +668,44 @@ class SupabaseSyncService {
             deletedAt: note.deletedAt
         )
 
-        // Check if note already exists in Supabase
-        let existingNotes: [SimpleSupabaseNote] = try await supabaseService.fetch(
-            from: "notes",
-            filters: { query in
-                query.eq("id", value: metadataNote.id.uuidString)
-            }
+        // Check if note already exists in Supabase with network recovery
+        let existingNotes: [SimpleSupabaseNote] = try await networkRecoveryManager.executeWithRetry(
+            operation: {
+                try await self.supabaseService.fetch(
+                    from: "notes",
+                    filters: { query in
+                        query.eq("id", value: metadataNote.id.uuidString)
+                    }
+                )
+            },
+            operationName: "Note Existence Check (\(metadataNote.title))"
         )
 
         if existingNotes.isEmpty {
-            // Insert new note
-            _ = try await supabaseService.client.from("notes")
-                .insert(metadataNote)
-                .execute()
+            // Insert new note with network recovery
+            _ = try await networkRecoveryManager.executeWithRetry(
+                operation: {
+                    try await self.supabaseService.client.from("notes")
+                        .insert(metadataNote)
+                        .execute()
+                },
+                operationName: "Note Insert (\(metadataNote.title))"
+            )
 
             #if DEBUG
             print("🔄 SupabaseSyncService: Inserted note metadata: \(metadataNote.id)")
             #endif
         } else {
-            // Update existing note
-            _ = try await supabaseService.client.from("notes")
-                .update(metadataNote)
-                .eq("id", value: metadataNote.id.uuidString)
-                .execute()
+            // Update existing note with network recovery
+            _ = try await networkRecoveryManager.executeWithRetry(
+                operation: {
+                    try await self.supabaseService.client.from("notes")
+                        .update(metadataNote)
+                        .eq("id", value: metadataNote.id.uuidString)
+                        .execute()
+                },
+                operationName: "Note Update (\(metadataNote.title))"
+            )
 
             #if DEBUG
             print("🔄 SupabaseSyncService: Updated note metadata: \(metadataNote.id)")
@@ -638,19 +722,29 @@ class SupabaseSyncService {
         // Create a full note with binary data using SupabaseNote (direct binary format)
         let fullNote = createFullSupabaseNoteFromCoreData(note: note, userId: userId)
 
-        // Check if note already exists in Supabase
-        let existingNotes: [SimpleSupabaseNote] = try await supabaseService.fetch(
-            from: "notes",
-            filters: { query in
-                query.eq("id", value: fullNote.id.uuidString)
-            }
+        // Check if note already exists in Supabase with network recovery
+        let existingNotes: [SimpleSupabaseNote] = try await networkRecoveryManager.executeWithRetry(
+            operation: {
+                try await self.supabaseService.fetch(
+                    from: "notes",
+                    filters: { query in
+                        query.eq("id", value: fullNote.id.uuidString)
+                    }
+                )
+            },
+            operationName: "Binary Note Existence Check (\(fullNote.title))"
         )
 
         if existingNotes.isEmpty {
-            // Insert new note with binary data directly to bytea columns
-            _ = try await supabaseService.client.from("notes")
-                .insert(fullNote)
-                .execute()
+            // Insert new note with binary data directly to bytea columns with network recovery
+            _ = try await networkRecoveryManager.executeWithRetry(
+                operation: {
+                    try await self.supabaseService.client.from("notes")
+                        .insert(fullNote)
+                        .execute()
+                },
+                operationName: "Binary Note Insert (\(fullNote.title))"
+            )
 
             #if DEBUG
             print("🔄 SupabaseSyncService: Inserted note with binary data: \(fullNote.id)")
@@ -664,11 +758,16 @@ class SupabaseSyncService {
             }
             #endif
         } else {
-            // Update existing note with binary data directly to bytea columns
-            _ = try await supabaseService.client.from("notes")
-                .update(fullNote)
-                .eq("id", value: fullNote.id.uuidString)
-                .execute()
+            // Update existing note with binary data directly to bytea columns with network recovery
+            _ = try await networkRecoveryManager.executeWithRetry(
+                operation: {
+                    try await self.supabaseService.client.from("notes")
+                        .update(fullNote)
+                        .eq("id", value: fullNote.id.uuidString)
+                        .execute()
+                },
+                operationName: "Binary Note Update (\(fullNote.title))"
+            )
 
             #if DEBUG
             print("🔄 SupabaseSyncService: Updated note with binary data: \(fullNote.id)")
@@ -701,12 +800,17 @@ class SupabaseSyncService {
         print("🔄 SupabaseSyncService: Deleting note from Supabase: \(noteId)")
         #endif
 
-        // Delete the note from Supabase
-        _ = try await supabaseService.client.from("notes")
-            .delete()
-            .eq("id", value: noteId.uuidString)
-            .eq("user_id", value: userId.uuidString) // Security: ensure user can only delete their own notes
-            .execute()
+        // Delete the note from Supabase with network recovery
+        _ = try await networkRecoveryManager.executeWithRetry(
+            operation: {
+                try await self.supabaseService.client.from("notes")
+                    .delete()
+                    .eq("id", value: noteId.uuidString)
+                    .eq("user_id", value: userId.uuidString) // Security: ensure user can only delete their own notes
+                    .execute()
+            },
+            operationName: "Note Delete (\(noteId))"
+        )
 
         #if DEBUG
         print("🔄 SupabaseSyncService: Successfully deleted note from Supabase: \(noteId)")
@@ -761,12 +865,17 @@ class SupabaseSyncService {
         print("🔄 SupabaseSyncService: Deleting folder from Supabase: \(folderId)")
         #endif
 
-        // Delete the folder from Supabase
-        _ = try await supabaseService.client.from("folders")
-            .delete()
-            .eq("id", value: folderId.uuidString)
-            .eq("user_id", value: userId.uuidString) // Security: ensure user can only delete their own folders
-            .execute()
+        // Delete the folder from Supabase with network recovery
+        _ = try await networkRecoveryManager.executeWithRetry(
+            operation: {
+                try await self.supabaseService.client.from("folders")
+                    .delete()
+                    .eq("id", value: folderId.uuidString)
+                    .eq("user_id", value: userId.uuidString) // Security: ensure user can only delete their own folders
+                    .execute()
+            },
+            operationName: "Folder Delete (\(folderId))"
+        )
 
         #if DEBUG
         print("🔄 SupabaseSyncService: Successfully deleted folder from Supabase: \(folderId)")
@@ -1583,13 +1692,18 @@ class SupabaseSyncService {
         var notesFixed = 0
         var foldersFixed = 0
 
-        // Fix notes with sync_status = "pending" in Supabase
+        // Fix notes with sync_status = "pending" in Supabase with network recovery
         do {
-            let response = try await supabaseService.client.from("notes")
-                .update(["sync_status": "synced"])
-                .eq("user_id", value: userId.uuidString)
-                .eq("sync_status", value: "pending")
-                .execute()
+            let response = try await networkRecoveryManager.executeWithRetry(
+                operation: {
+                    try await self.supabaseService.client.from("notes")
+                        .update(["sync_status": "synced"])
+                        .eq("user_id", value: userId.uuidString)
+                        .eq("sync_status", value: "pending")
+                        .execute()
+                },
+                operationName: "Fix Notes Sync Status"
+            )
 
             // Parse the response to count affected rows
             if let jsonArray = try? JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] {
@@ -1605,13 +1719,18 @@ class SupabaseSyncService {
             #endif
         }
 
-        // Fix folders with sync_status = "pending" in Supabase
+        // Fix folders with sync_status = "pending" in Supabase with network recovery
         do {
-            let response = try await supabaseService.client.from("folders")
-                .update(["sync_status": "synced"])
-                .eq("user_id", value: userId.uuidString)
-                .eq("sync_status", value: "pending")
-                .execute()
+            let response = try await networkRecoveryManager.executeWithRetry(
+                operation: {
+                    try await self.supabaseService.client.from("folders")
+                        .update(["sync_status": "synced"])
+                        .eq("user_id", value: userId.uuidString)
+                        .eq("sync_status", value: "pending")
+                        .execute()
+                },
+                operationName: "Fix Folders Sync Status"
+            )
 
             // Parse the response to count affected rows
             if let jsonArray = try? JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] {
@@ -1690,12 +1809,17 @@ class SupabaseSyncService {
         print("🔄 SupabaseSyncService: Starting folder download for user: \(userId)")
         #endif
 
-        // Fetch folders from Supabase for the current user
-        let remoteFolders: [SimpleSupabaseFolder] = try await supabaseService.fetch(
-            from: "folders",
-            filters: { query in
-                query.eq("user_id", value: userId.uuidString)
-            }
+        // Fetch folders from Supabase for the current user with network recovery
+        let remoteFolders: [SimpleSupabaseFolder] = try await networkRecoveryManager.executeWithRetry(
+            operation: {
+                try await self.supabaseService.fetch(
+                    from: "folders",
+                    filters: { query in
+                        query.eq("user_id", value: userId.uuidString)
+                    }
+                )
+            },
+            operationName: "Folder Download"
         )
 
         #if DEBUG
@@ -1787,13 +1911,18 @@ class SupabaseSyncService {
         print("🔄 SupabaseSyncService: Starting note download for user: \(userId) with binary data: \(includeBinaryData)")
         #endif
 
-        // Fetch notes from Supabase for the current user (excluding deleted notes)
-        let remoteNotes: [SimpleSupabaseNote] = try await supabaseService.fetch(
-            from: "notes",
-            filters: { query in
-                query.eq("user_id", value: userId.uuidString)
-                     .is("deleted_at", value: nil)
-            }
+        // Fetch notes from Supabase for the current user (excluding deleted notes) with network recovery
+        let remoteNotes: [SimpleSupabaseNote] = try await networkRecoveryManager.executeWithRetry(
+            operation: {
+                try await self.supabaseService.fetch(
+                    from: "notes",
+                    filters: { query in
+                        query.eq("user_id", value: userId.uuidString)
+                             .is("deleted_at", value: nil)
+                    }
+                )
+            },
+            operationName: "Notes Download"
         )
 
         #if DEBUG
@@ -2152,12 +2281,17 @@ class SupabaseSyncService {
     ///   - localNote: The local CoreData note to update
     ///   - remoteNoteId: The ID of the remote note
     private func downloadNoteBinaryDataSync(for localNote: Note, remoteNoteId: UUID) async throws {
-        // Fetch the full note with binary data from Supabase using direct bytea format
-        let fullNotes: [SupabaseNote] = try await supabaseService.fetch(
-            from: "notes",
-            filters: { query in
-                query.eq("id", value: remoteNoteId.uuidString)
-            }
+        // Fetch the full note with binary data from Supabase using direct bytea format with network recovery
+        let fullNotes: [SupabaseNote] = try await networkRecoveryManager.executeWithRetry(
+            operation: {
+                try await self.supabaseService.fetch(
+                    from: "notes",
+                    filters: { query in
+                        query.eq("id", value: remoteNoteId.uuidString)
+                    }
+                )
+            },
+            operationName: "Binary Data Download (\(remoteNoteId))"
         )
 
         guard let fullNote = fullNotes.first else {
@@ -2227,12 +2361,17 @@ class SupabaseSyncService {
     ///   - localNote: The local CoreData note to update
     ///   - remoteNoteId: The ID of the remote note
     private func downloadNoteBinaryData(for localNote: Note, remoteNoteId: UUID) async throws {
-        // Fetch the full note with binary data from Supabase using direct bytea format
-        let fullNotes: [SupabaseNote] = try await supabaseService.fetch(
-            from: "notes",
-            filters: { query in
-                query.eq("id", value: remoteNoteId.uuidString)
-            }
+        // Fetch the full note with binary data from Supabase using direct bytea format with network recovery
+        let fullNotes: [SupabaseNote] = try await networkRecoveryManager.executeWithRetry(
+            operation: {
+                try await self.supabaseService.fetch(
+                    from: "notes",
+                    filters: { query in
+                        query.eq("id", value: remoteNoteId.uuidString)
+                    }
+                )
+            },
+            operationName: "Binary Data Download (\(remoteNoteId))"
         )
 
         guard let fullNote = fullNotes.first else {
@@ -2598,5 +2737,270 @@ class SyncTransactionManager {
                 #endif
             }
         }
+    }
+}
+
+// MARK: - Progress Update Coordinator
+
+/// Coordinates efficient progress updates to prevent UI blocking
+class ProgressUpdateCoordinator {
+
+    /// Minimum interval between progress updates (in seconds)
+    private let updateInterval: TimeInterval = 0.1 // 100ms
+
+    /// Last update time
+    private var lastUpdateTime: Date = Date.distantPast
+
+    /// Pending progress update
+    private var pendingUpdate: (() -> Void)?
+
+    /// Update queue for coordinating progress updates
+    private let updateQueue = DispatchQueue(label: "com.swiftnote.sync.progress.coordinator", qos: .utility)
+
+    /// Schedule a progress update with throttling
+    /// - Parameter update: The update closure to execute
+    func scheduleUpdate(_ update: @escaping () -> Void) {
+        updateQueue.async { [weak self] in
+            guard let self = self else { return }
+
+            let now = Date()
+            let timeSinceLastUpdate = now.timeIntervalSince(self.lastUpdateTime)
+
+            // Store the pending update
+            self.pendingUpdate = update
+
+            if timeSinceLastUpdate >= self.updateInterval {
+                // Execute immediately if enough time has passed
+                self.executeUpdate()
+            } else {
+                // Schedule for later execution
+                let delay = self.updateInterval - timeSinceLastUpdate
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    self.updateQueue.async {
+                        self.executeUpdate()
+                    }
+                }
+            }
+        }
+    }
+
+    /// Execute the pending update
+    private func executeUpdate() {
+        guard let update = pendingUpdate else { return }
+
+        lastUpdateTime = Date()
+        pendingUpdate = nil
+
+        DispatchQueue.main.async {
+            update()
+        }
+    }
+
+    /// Force execute any pending update immediately
+    func flushPendingUpdate() {
+        updateQueue.async { [weak self] in
+            self?.executeUpdate()
+        }
+    }
+}
+
+// MARK: - Network Recovery Manager
+
+/// Manages network failure recovery and retry logic for sync operations
+class NetworkRecoveryManager {
+
+    /// Configuration for retry behavior
+    struct RetryConfiguration {
+        let maxRetries: Int
+        let baseDelay: TimeInterval
+        let maxDelay: TimeInterval
+        let backoffMultiplier: Double
+
+        static let `default` = RetryConfiguration(
+            maxRetries: 3,
+            baseDelay: 1.0,
+            maxDelay: 30.0,
+            backoffMultiplier: 2.0
+        )
+
+        static let aggressive = RetryConfiguration(
+            maxRetries: 5,
+            baseDelay: 0.5,
+            maxDelay: 60.0,
+            backoffMultiplier: 2.5
+        )
+    }
+
+    /// Types of errors that can be recovered from
+    enum RecoverableError {
+        case networkTimeout
+        case networkUnavailable
+        case serverError(code: Int)
+        case rateLimited
+        case temporaryFailure
+
+        var shouldRetry: Bool {
+            switch self {
+            case .networkTimeout, .networkUnavailable, .temporaryFailure:
+                return true
+            case .serverError(let code):
+                return code >= 500 && code < 600 // Server errors
+            case .rateLimited:
+                return true
+            }
+        }
+
+        var retryConfiguration: RetryConfiguration {
+            switch self {
+            case .networkTimeout, .networkUnavailable:
+                return .aggressive
+            case .serverError, .temporaryFailure:
+                return .default
+            case .rateLimited:
+                return RetryConfiguration(
+                    maxRetries: 2,
+                    baseDelay: 5.0,
+                    maxDelay: 120.0,
+                    backoffMultiplier: 3.0
+                )
+            }
+        }
+    }
+
+    /// Classify an error to determine if it's recoverable
+    /// - Parameter error: The error to classify
+    /// - Returns: RecoverableError if the error can be retried, nil otherwise
+    func classifyError(_ error: Error) -> RecoverableError? {
+        // Handle NSError cases
+        if let nsError = error as NSError? {
+            switch nsError.domain {
+            case NSURLErrorDomain:
+                return classifyURLError(nsError)
+            case "SupabaseService":
+                return classifySupabaseError(nsError)
+            default:
+                break
+            }
+        }
+
+        // Handle Supabase-specific errors
+        let errorDescription = error.localizedDescription.lowercased()
+        if errorDescription.contains("network") || errorDescription.contains("connection") {
+            return .networkUnavailable
+        }
+        if errorDescription.contains("timeout") {
+            return .networkTimeout
+        }
+        if errorDescription.contains("rate limit") || errorDescription.contains("too many requests") {
+            return .rateLimited
+        }
+        if errorDescription.contains("server error") || errorDescription.contains("internal error") {
+            return .serverError(code: 500)
+        }
+
+        return nil
+    }
+
+    /// Classify URL errors
+    /// - Parameter error: NSError with NSURLErrorDomain
+    /// - Returns: RecoverableError if applicable
+    private func classifyURLError(_ error: NSError) -> RecoverableError? {
+        switch error.code {
+        case NSURLErrorTimedOut:
+            return .networkTimeout
+        case NSURLErrorNotConnectedToInternet, NSURLErrorNetworkConnectionLost:
+            return .networkUnavailable
+        case NSURLErrorCannotFindHost, NSURLErrorCannotConnectToHost:
+            return .networkUnavailable
+        case NSURLErrorDNSLookupFailed:
+            return .networkUnavailable
+        case NSURLErrorHTTPTooManyRedirects:
+            return .temporaryFailure
+        case NSURLErrorResourceUnavailable:
+            return .temporaryFailure
+        default:
+            return nil
+        }
+    }
+
+    /// Classify Supabase service errors
+    /// - Parameter error: NSError with SupabaseService domain
+    /// - Returns: RecoverableError if applicable
+    private func classifySupabaseError(_ error: NSError) -> RecoverableError? {
+        switch error.code {
+        case 429: // Too Many Requests
+            return .rateLimited
+        case 500...599: // Server errors
+            return .serverError(code: error.code)
+        case 408: // Request Timeout
+            return .networkTimeout
+        case 503: // Service Unavailable
+            return .temporaryFailure
+        default:
+            return nil
+        }
+    }
+
+    /// Execute an operation with retry logic
+    /// - Parameters:
+    ///   - operation: The async operation to execute
+    ///   - operationName: Name for logging purposes
+    /// - Returns: Result of the operation
+    func executeWithRetry<T>(
+        operation: @escaping () async throws -> T,
+        operationName: String
+    ) async throws -> T {
+        var lastError: Error?
+        var attempt = 0
+
+        while attempt <= RetryConfiguration.default.maxRetries {
+            do {
+                let result = try await operation()
+
+                if attempt > 0 {
+                    #if DEBUG
+                    print("🔄 NetworkRecoveryManager: \(operationName) succeeded on attempt \(attempt + 1)")
+                    #endif
+                }
+
+                return result
+            } catch {
+                lastError = error
+                attempt += 1
+
+                #if DEBUG
+                print("🔄 NetworkRecoveryManager: \(operationName) failed on attempt \(attempt): \(error.localizedDescription)")
+                #endif
+
+                // Check if this error is recoverable
+                guard let recoverableError = classifyError(error),
+                      recoverableError.shouldRetry,
+                      attempt <= recoverableError.retryConfiguration.maxRetries else {
+                    #if DEBUG
+                    print("🔄 NetworkRecoveryManager: \(operationName) failed permanently: \(error.localizedDescription)")
+                    #endif
+                    throw error
+                }
+
+                // Calculate delay with exponential backoff
+                let config = recoverableError.retryConfiguration
+                let delay = min(
+                    config.baseDelay * pow(config.backoffMultiplier, Double(attempt - 1)),
+                    config.maxDelay
+                )
+
+                #if DEBUG
+                print("🔄 NetworkRecoveryManager: Retrying \(operationName) in \(String(format: "%.1f", delay))s (attempt \(attempt + 1)/\(config.maxRetries + 1))")
+                #endif
+
+                // Wait before retrying
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+        }
+
+        // If we get here, all retries failed
+        throw lastError ?? NSError(domain: "NetworkRecoveryManager", code: 500, userInfo: [
+            NSLocalizedDescriptionKey: "All retry attempts failed for \(operationName)"
+        ])
     }
 }
