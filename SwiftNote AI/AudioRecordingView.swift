@@ -284,6 +284,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
             note.setValue(Date(), forKey: "lastModified")
             note.setValue("recording", forKey: "sourceType")
             note.setValue("completed", forKey: "processingStatus")
+            note.setValue("pending", forKey: "syncStatus") // Mark for sync
 
             // Store the transcription and generated note content
             note.setValue(transcript, forKey: "transcript")
@@ -390,6 +391,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
             note.setValue(Date(), forKey: "lastModified")
             note.setValue("recording", forKey: "sourceType")
             note.setValue("completed", forKey: "processingStatus")
+            note.setValue("pending", forKey: "syncStatus") // Mark for sync
 
             // Set a simple content for non-transcribed recordings
             let simpleContent = "Audio recording"

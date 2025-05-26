@@ -275,7 +275,7 @@ class SupabaseSyncService {
                         sortOrder: folder.sortOrder,
                         userId: userId,
                         updatedAt: folder.updatedAt,
-                        syncStatus: folder.syncStatus,
+                        syncStatus: "synced", // Mark as synced in remote database
                         deletedAt: folder.deletedAt
                     )
 
@@ -460,7 +460,7 @@ class SupabaseSyncService {
             tags: note.tags,
             transcript: note.transcript,
             videoId: note.videoId,
-            syncStatus: note.syncStatus,
+            syncStatus: "synced", // Mark as synced in remote database
             deletedAt: note.deletedAt
         )
 
@@ -822,8 +822,8 @@ class SupabaseSyncService {
             mindMap: nil, // Exclude binary content
             videoId: note.videoId,
 
-            // Set sync fields
-            syncStatus: note.syncStatus ?? "synced",
+            // Set sync fields - mark as synced in remote database
+            syncStatus: "synced",
             deletedAt: note.deletedAt
         )
     }
@@ -868,8 +868,8 @@ class SupabaseSyncService {
             mindMap: note.mindMap, // Include binary content
             videoId: note.videoId,
 
-            // Set sync fields
-            syncStatus: note.syncStatus ?? "synced",
+            // Set sync fields - mark as synced in remote database
+            syncStatus: "synced",
             deletedAt: note.deletedAt
         )
     }
@@ -1020,7 +1020,7 @@ class SupabaseSyncService {
             tags: note.tags,
             transcript: note.transcript,
             videoId: note.videoId,
-            syncStatus: note.syncStatus,
+            syncStatus: "synced", // Mark as synced in remote database
 
             // Include Base64-encoded binary data
             originalContentBase64: originalContentBase64,
@@ -1414,6 +1414,114 @@ class SupabaseSyncService {
                 print("🔄 SupabaseSyncService: Error updating sync status: \(error)")
                 #endif
             }
+        }
+    }
+
+    /// Fix existing notes and folders in Supabase that have incorrect sync_status = "pending"
+    /// This utility method updates remote records to have sync_status = "synced"
+    /// - Returns: Tuple with (notes fixed, folders fixed)
+    func fixRemoteSyncStatus() async throws -> (notesFix: Int, foldersFix: Int) {
+        // Get current user ID
+        let session = try await supabaseService.getSession()
+        let userId = session.user.id
+
+        #if DEBUG
+        print("🔧 SupabaseSyncService: Starting remote sync status fix for user: \(userId)")
+        #endif
+
+        var notesFixed = 0
+        var foldersFixed = 0
+
+        // Fix notes with sync_status = "pending" in Supabase
+        do {
+            let response = try await supabaseService.client.from("notes")
+                .update(["sync_status": "synced"])
+                .eq("user_id", value: userId.uuidString)
+                .eq("sync_status", value: "pending")
+                .execute()
+
+            // Parse the response to count affected rows
+            if let jsonArray = try? JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] {
+                notesFixed = jsonArray.count
+            }
+
+            #if DEBUG
+            print("🔧 SupabaseSyncService: Fixed \(notesFixed) notes in Supabase")
+            #endif
+        } catch {
+            #if DEBUG
+            print("🔧 SupabaseSyncService: Error fixing notes in Supabase: \(error)")
+            #endif
+        }
+
+        // Fix folders with sync_status = "pending" in Supabase
+        do {
+            let response = try await supabaseService.client.from("folders")
+                .update(["sync_status": "synced"])
+                .eq("user_id", value: userId.uuidString)
+                .eq("sync_status", value: "pending")
+                .execute()
+
+            // Parse the response to count affected rows
+            if let jsonArray = try? JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] {
+                foldersFixed = jsonArray.count
+            }
+
+            #if DEBUG
+            print("🔧 SupabaseSyncService: Fixed \(foldersFixed) folders in Supabase")
+            #endif
+        } catch {
+            #if DEBUG
+            print("🔧 SupabaseSyncService: Error fixing folders in Supabase: \(error)")
+            #endif
+        }
+
+        #if DEBUG
+        print("🔧 SupabaseSyncService: Remote sync status fix completed - Notes: \(notesFixed), Folders: \(foldersFixed)")
+        #endif
+
+        return (notesFix: notesFixed, foldersFix: foldersFixed)
+    }
+
+    /// Fix existing audio notes that may have incorrect syncStatus
+    /// This utility method marks audio notes with "synced" status as "pending" for sync
+    /// - Parameter context: The NSManagedObjectContext to update notes in
+    /// - Returns: Number of notes that were fixed
+    func fixAudioNoteSyncStatus(context: NSManagedObjectContext) async throws -> Int {
+        return try await context.perform {
+            let request = NSFetchRequest<Note>(entityName: "Note")
+
+            // Find audio notes (recording or audio sourceType) that are marked as "synced"
+            // but may have been created before the syncStatus fix
+            request.predicate = NSPredicate(format: "(sourceType == %@ OR sourceType == %@) AND syncStatus == %@",
+                                          "recording", "audio", "synced")
+
+            let audioNotes = try context.fetch(request)
+
+            #if DEBUG
+            print("🔧 SupabaseSyncService: Found \(audioNotes.count) audio notes with 'synced' status to potentially fix")
+            #endif
+
+            var fixedCount = 0
+
+            for note in audioNotes {
+                // Mark the note for sync
+                note.syncStatus = "pending"
+                fixedCount += 1
+
+                #if DEBUG
+                print("🔧 SupabaseSyncService: Fixed sync status for audio note: \(note.title ?? "Untitled")")
+                #endif
+            }
+
+            if context.hasChanges {
+                try context.save()
+                #if DEBUG
+                print("🔧 SupabaseSyncService: Successfully fixed \(fixedCount) audio notes")
+                #endif
+            }
+
+            return fixedCount
         }
     }
 

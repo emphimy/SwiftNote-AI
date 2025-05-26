@@ -36,6 +36,8 @@ final class SettingsViewModel: ObservableObject {
     @Published var exportURL: ExportURLWrapper?
     @Published var isSyncing = false
     @Published var syncResult: (success: Bool, message: String)? = nil
+    @Published var isFixingAudioNotes = false
+    @Published var isFixingRemoteSync = false
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -187,6 +189,96 @@ final class SettingsViewModel: ObservableObject {
             // Auto-dismiss the result after 5 seconds
             DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                 self.syncResult = nil
+            }
+        }
+    }
+
+    /// Fix existing audio notes that may have incorrect syncStatus
+    /// - Parameter context: The NSManagedObjectContext
+    func fixAudioNotes(context: NSManagedObjectContext) {
+        #if DEBUG
+        print("⚙️ SettingsViewModel: Starting audio notes fix")
+        #endif
+
+        isFixingAudioNotes = true
+
+        Task {
+            do {
+                let fixedCount = try await SupabaseSyncService.shared.fixAudioNoteSyncStatus(context: context)
+
+                await MainActor.run {
+                    self.isFixingAudioNotes = false
+                    if fixedCount > 0 {
+                        self.syncResult = (success: true, message: "Fixed \(fixedCount) audio notes for sync")
+                    } else {
+                        self.syncResult = (success: true, message: "No audio notes needed fixing")
+                    }
+
+                    #if DEBUG
+                    print("⚙️ SettingsViewModel: Audio notes fix completed - Fixed \(fixedCount) notes")
+                    #endif
+                }
+            } catch {
+                await MainActor.run {
+                    self.isFixingAudioNotes = false
+                    self.syncResult = (success: false, message: "Failed to fix audio notes: \(error.localizedDescription)")
+
+                    #if DEBUG
+                    print("⚙️ SettingsViewModel: Audio notes fix failed - \(error)")
+                    #endif
+                }
+            }
+
+            // Auto-dismiss the result after 5 seconds
+            await MainActor.run {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    self.syncResult = nil
+                }
+            }
+        }
+    }
+
+    /// Fix remote sync status in Supabase database
+    func fixRemoteSyncStatus() {
+        #if DEBUG
+        print("⚙️ SettingsViewModel: Starting remote sync status fix")
+        #endif
+
+        isFixingRemoteSync = true
+
+        Task {
+            do {
+                let result = try await SupabaseSyncService.shared.fixRemoteSyncStatus()
+
+                await MainActor.run {
+                    self.isFixingRemoteSync = false
+                    let totalFixed = result.notesFix + result.foldersFix
+                    if totalFixed > 0 {
+                        self.syncResult = (success: true, message: "Fixed \(result.notesFix) notes and \(result.foldersFix) folders in Supabase")
+                    } else {
+                        self.syncResult = (success: true, message: "No remote records needed fixing")
+                    }
+
+                    #if DEBUG
+                    print("⚙️ SettingsViewModel: Remote sync status fix completed - Notes: \(result.notesFix), Folders: \(result.foldersFix)")
+                    #endif
+                }
+            } catch {
+                await MainActor.run {
+                    self.isFixingRemoteSync = false
+                    self.syncResult = (success: false, message: "Failed to fix remote sync status: \(error.localizedDescription)")
+
+                    #if DEBUG
+                    print("⚙️ SettingsViewModel: Remote sync status fix failed - \(error)")
+                    #endif
+                }
+            }
+
+            // Auto-dismiss the result after 5 seconds
+            await MainActor.run {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    self.syncResult = nil
+                }
             }
         }
     }
@@ -655,6 +747,62 @@ struct SettingsView: View {
                 }
                 .padding(.top, 4)
             }
+
+            // Fix audio notes button
+            Button(action: {
+                #if DEBUG
+                print("⚙️ SettingsView: Fix audio notes button tapped")
+                #endif
+                viewModel.fixAudioNotes(context: viewContext)
+            }) {
+                HStack {
+                    Text("Fix Audio Notes Sync")
+                        .foregroundColor(Theme.Colors.text)
+                    Spacer()
+                    if viewModel.isFixingAudioNotes {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                    } else {
+                        Image(systemName: "wrench.and.screwdriver")
+                            .foregroundColor(Theme.Colors.warning)
+                    }
+                }
+            }
+            .disabled(viewModel.isSyncing || viewModel.isFixingAudioNotes)
+
+            // Fix audio notes description
+            Text("Marks existing audio notes for sync if they were created before the sync fix")
+                .font(Theme.Typography.caption)
+                .foregroundColor(Theme.Colors.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Fix remote sync status button
+            Button(action: {
+                #if DEBUG
+                print("⚙️ SettingsView: Fix remote sync status button tapped")
+                #endif
+                viewModel.fixRemoteSyncStatus()
+            }) {
+                HStack {
+                    Text("Fix Remote Sync Status")
+                        .foregroundColor(Theme.Colors.text)
+                    Spacer()
+                    if viewModel.isFixingRemoteSync {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle())
+                    } else {
+                        Image(systemName: "cloud.fill")
+                            .foregroundColor(Theme.Colors.warning)
+                    }
+                }
+            }
+            .disabled(viewModel.isSyncing || viewModel.isFixingRemoteSync || viewModel.isFixingAudioNotes)
+
+            // Fix remote sync status description
+            Text("Fixes notes/folders in Supabase that incorrectly show 'pending' status")
+                .font(Theme.Typography.caption)
+                .foregroundColor(Theme.Colors.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
