@@ -717,7 +717,7 @@ class SupabaseSyncService {
         print("🔄 SupabaseSyncService: Starting cleanup of invalid folders")
         #endif
 
-        try await context.perform {
+        await context.perform {
             // Find folders with default values that are empty (no notes)
             let request = NSFetchRequest<Folder>(entityName: "Folder")
             request.predicate = NSPredicate(format: "name == %@ AND color == %@", "Untitled Folder", "blue")
@@ -1709,10 +1709,13 @@ class SupabaseSyncService {
             return true
         }
 
-        // First, perform CoreData operations synchronously to check for conflicts
-        let (localNote, shouldUpdate, isNewNote) = try await context.perform {
+        // Store the note ID for safe access across context operations
+        let noteId = remoteNote.id
+
+        // Perform all CoreData operations within a single context.perform block to avoid race conditions
+        let (shouldUpdate, isNewNote) = try await context.perform {
             let request = NSFetchRequest<Note>(entityName: "Note")
-            request.predicate = NSPredicate(format: "id == %@", remoteNote.id as CVarArg)
+            request.predicate = NSPredicate(format: "id == %@", noteId as CVarArg)
             request.fetchLimit = 1
 
             let existingNotes = try context.fetch(request)
@@ -1721,9 +1724,9 @@ class SupabaseSyncService {
                 // Check if local note is deleted
                 if localNote.deletedAt != nil {
                     #if DEBUG
-                    print("🔄 SupabaseSyncService: Local note \(remoteNote.id) is deleted, skipping remote update")
+                    print("🔄 SupabaseSyncService: Local note \(noteId) is deleted, skipping remote update")
                     #endif
-                    return (localNote, false, false) // Don't update deleted local notes
+                    return (false, false) // Don't update deleted local notes
                 }
 
                 // Note exists locally - check for conflicts
@@ -1737,27 +1740,47 @@ class SupabaseSyncService {
                 // "Last Write Wins" strategy
                 if remoteModified > localModified {
                     #if DEBUG
-                    print("🔄 SupabaseSyncService: Remote note \(remoteNote.id) is newer, will update local data")
+                    print("🔄 SupabaseSyncService: Remote note \(noteId) is newer, will update local data")
                     #endif
-                    return (localNote, true, false) // Existing note, should update, not new
+                    return (true, false) // Existing note, should update, not new
                 } else {
                     #if DEBUG
-                    print("🔄 SupabaseSyncService: Local note \(remoteNote.id) is newer, keeping local data")
+                    print("🔄 SupabaseSyncService: Local note \(noteId) is newer, keeping local data")
                     #endif
-                    return (localNote, false, false) // Existing note, no update needed, not new
+                    return (false, false) // Existing note, no update needed, not new
                 }
             } else {
-                // Note doesn't exist locally - create new note
+                // Note doesn't exist locally - create new note with proper ID
                 let newNote = Note(context: context)
+                newNote.id = noteId  // Set the ID immediately to satisfy validation
                 #if DEBUG
-                print("🔄 SupabaseSyncService: Creating new local note \(remoteNote.id)")
+                print("🔄 SupabaseSyncService: Creating new local note \(noteId)")
                 #endif
-                return (newNote, true, true) // New note, should update, is new
+                return (true, true) // New note, should update, is new
             }
         }
 
-        // If we need to update the note, do it outside the synchronous context.perform block
+        // If we need to update the note, perform the update and save
         if shouldUpdate {
+            // Find or create the note and update it
+            let localNote = try await context.perform {
+                let request = NSFetchRequest<Note>(entityName: "Note")
+                request.predicate = NSPredicate(format: "id == %@", noteId as CVarArg)
+                request.fetchLimit = 1
+
+                let existingNotes = try context.fetch(request)
+
+                if let existing = existingNotes.first {
+                    return existing
+                } else {
+                    // Create new note if it doesn't exist
+                    let newNote = Note(context: context)
+                    newNote.id = noteId  // Set the ID immediately to satisfy validation
+                    return newNote
+                }
+            }
+
+            // Update the note with remote data (outside context.perform to allow async operations)
             try await updateLocalNoteFromRemote(localNote: localNote, remoteNote: remoteNote, context: context, includeBinaryData: includeBinaryData)
 
             // Save changes
@@ -1785,7 +1808,7 @@ class SupabaseSyncService {
             }
 
             #if DEBUG
-            print("🔄 SupabaseSyncService: \(isNewNote ? "Created" : "Updated") local note \(remoteNote.id)")
+            print("🔄 SupabaseSyncService: \(isNewNote ? "Created" : "Updated") local note \(noteId)")
             #endif
         }
 
@@ -1806,6 +1829,8 @@ class SupabaseSyncService {
         localFolder.syncStatus = "synced"
         localFolder.deletedAt = remoteFolder.deletedAt
     }
+
+
 
     /// Update local note with data from remote note
     /// - Parameters:
@@ -1859,6 +1884,81 @@ class SupabaseSyncService {
 
             #if DEBUG
             print("🔄 SupabaseSyncService: Created placeholder content for note \(remoteNote.id)")
+            #endif
+        }
+    }
+
+    /// Download binary data for a note from Supabase (for use within context.perform blocks)
+    /// - Parameters:
+    ///   - localNote: The local CoreData note to update
+    ///   - remoteNoteId: The ID of the remote note
+    private func downloadNoteBinaryDataSync(for localNote: Note, remoteNoteId: UUID) async throws {
+        // Fetch the full note with binary data from Supabase using direct bytea format
+        let fullNotes: [SupabaseNote] = try await supabaseService.fetch(
+            from: "notes",
+            filters: { query in
+                query.eq("id", value: remoteNoteId.uuidString)
+            }
+        )
+
+        guard let fullNote = fullNotes.first else {
+            #if DEBUG
+            print("🔄 SupabaseSyncService: No full note found for binary data download for note \(remoteNoteId)")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("🔄 SupabaseSyncService: Found full note for binary data download (direct bytea format)")
+        #endif
+
+        // Directly assign binary data from bytea columns (no encoding/decoding needed)
+        if let originalContentData = fullNote.originalContent {
+            localNote.originalContent = originalContentData
+
+            #if DEBUG
+            let sizeInMB = originalContentData.sizeInMB()
+            print("🔄 SupabaseSyncService: Downloaded originalContent (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        } else {
+            #if DEBUG
+            print("🔄 SupabaseSyncService: No originalContent binary data found for note \(remoteNoteId)")
+            #endif
+        }
+
+        if let aiGeneratedContentData = fullNote.aiGeneratedContent {
+            localNote.aiGeneratedContent = aiGeneratedContentData
+
+            #if DEBUG
+            let sizeInMB = aiGeneratedContentData.sizeInMB()
+            print("🔄 SupabaseSyncService: Downloaded aiGeneratedContent (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        }
+
+        if let sectionsData = fullNote.sections {
+            localNote.sections = sectionsData
+
+            #if DEBUG
+            let sizeInMB = sectionsData.sizeInMB()
+            print("🔄 SupabaseSyncService: Downloaded sections (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        }
+
+        if let mindMapData = fullNote.mindMap {
+            localNote.mindMap = mindMapData
+
+            #if DEBUG
+            let sizeInMB = mindMapData.sizeInMB()
+            print("🔄 SupabaseSyncService: Downloaded mindMap (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        }
+
+        if let supplementaryMaterialsData = fullNote.supplementaryMaterials {
+            localNote.supplementaryMaterials = supplementaryMaterialsData
+
+            #if DEBUG
+            let sizeInMB = supplementaryMaterialsData.sizeInMB()
+            print("🔄 SupabaseSyncService: Downloaded supplementaryMaterials (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
             #endif
         }
     }
