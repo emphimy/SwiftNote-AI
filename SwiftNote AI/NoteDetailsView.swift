@@ -93,10 +93,17 @@ final class NoteDetailsViewModel: ObservableObject {
 
             // Update note properties
             noteObject.setValue(note.title, forKey: "title")
+
+            // Update lastModified timestamp for "Last Write Wins" conflict resolution
+            noteObject.setValue(Date(), forKey: "lastModified")
+
+            // Mark note for sync by setting syncStatus to "pending"
+            noteObject.setValue("pending", forKey: "syncStatus")
+
             try _viewContext.save()
 
             #if DEBUG
-            print("📝 NoteDetailsViewModel: Successfully saved changes")
+            print("📝 NoteDetailsViewModel: Successfully saved changes and marked for sync")
             #endif
         } catch {
             #if DEBUG
@@ -145,6 +152,12 @@ final class NoteDetailsViewModel: ObservableObject {
 
             // Update folder
             noteObject.folder = folder
+
+            // Update lastModified timestamp for "Last Write Wins" conflict resolution
+            noteObject.lastModified = Date()
+
+            // Mark note for sync by setting syncStatus to "pending"
+            noteObject.syncStatus = "pending"
 
             // Save changes
             try _viewContext.save()

@@ -309,6 +309,7 @@ extension PersistenceController {
         note.sourceType = sourceType
         note.timestamp = Date()
         note.lastModified = Date()
+        note.syncStatus = "pending" // Mark new note for sync
 
         try context.save()
 
@@ -362,6 +363,7 @@ extension PersistenceController {
             note.originalContent = content.data(using: .utf8)
         }
         note.lastModified = Date()
+        note.syncStatus = "pending" // Mark for sync
 
         try context.save()
     }

@@ -227,6 +227,7 @@ final class ScanTextViewModel: ObservableObject {
                 note.setValue(Date(), forKey: "lastModified")
                 note.setValue("text", forKey: "sourceType")
                 note.setValue("completed", forKey: "processingStatus")
+                note.setValue("pending", forKey: "syncStatus") // Mark for sync
 
                 // Save original content
                 let originalContent = self.combinedText

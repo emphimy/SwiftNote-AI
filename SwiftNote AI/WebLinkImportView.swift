@@ -153,6 +153,7 @@ final class WebLinkImportViewModel: ObservableObject {
                 note.setValue(Date(), forKey: "timestamp")
                 note.setValue(Date(), forKey: "lastModified")
                 note.setValue("web", forKey: "sourceType")
+                note.setValue("pending", forKey: "syncStatus") // Mark for sync
                 if let url = URL(string: self.urlInput) {
                     note.setValue(url, forKey: "sourceURL")
                 }

@@ -217,6 +217,7 @@ class YouTubeViewModel: ObservableObject {
                 note.sourceType = "video"
                 note.isFavorite = false
                 note.processingStatus = "completed"
+                note.syncStatus = "pending" // Mark for sync
 
                 // Store language information
                 note.transcriptLanguage = selectedLanguage.code

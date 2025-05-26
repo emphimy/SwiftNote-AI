@@ -302,6 +302,7 @@ final class AudioUploadViewModel: ObservableObject {
             note.setValue(Date(), forKey: "lastModified")
             note.setValue("audio", forKey: "sourceType")
             note.setValue("completed", forKey: "processingStatus")
+            note.setValue("pending", forKey: "syncStatus") // Mark for sync
 
             // Set audio-specific attributes
             if let stats = self.stats {

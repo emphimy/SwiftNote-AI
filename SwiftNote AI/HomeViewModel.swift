@@ -316,6 +316,7 @@ final class HomeViewModel: ObservableObject {
             } else {
                 // Just update the lastModified timestamp
                 existingNote.lastModified = Date()
+                existingNote.syncStatus = "pending" // Mark for sync
                 try viewContext.save()
             }
 
@@ -375,6 +376,8 @@ final class HomeViewModel: ObservableObject {
             }
 
             existingNote.folder = folder
+            existingNote.lastModified = Date() // Update for "Last Write Wins" conflict resolution
+            existingNote.syncStatus = "pending" // Mark for sync
             try self.viewContext.save()
 
             Task { @MainActor in
@@ -519,6 +522,8 @@ final class HomeViewModel: ObservableObject {
 
             let currentValue = noteObject.value(forKey: "isFavorite") as? Bool ?? false
             noteObject.setValue(!currentValue, forKey: "isFavorite")
+            noteObject.setValue(Date(), forKey: "lastModified") // Update for "Last Write Wins" conflict resolution
+            noteObject.setValue("pending", forKey: "syncStatus") // Mark for sync
 
             try viewContext.save()
 
