@@ -142,11 +142,25 @@ class SupabaseSyncService {
                     syncProgress.currentStatus = "Checking authentication..."
                 }
 
-                // Check if user is signed in
-                guard await supabaseService.isSignedIn() else {
-                    let error = NSError(domain: "SupabaseSyncService", code: 401, userInfo: [
-                        NSLocalizedDescriptionKey: "User is not signed in"
-                    ])
+                // Validate token and refresh if necessary
+                await MainActor.run {
+                    syncProgress.currentStatus = "Validating authentication..."
+                }
+
+                do {
+                    _ = try await supabaseService.validateAndRefreshTokenIfNeeded()
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Token validation successful")
+                    #endif
+                } catch {
+                    #if DEBUG
+                    print("🔄 SupabaseSyncService: Token validation failed: \(error)")
+                    #endif
+
+                    await MainActor.run {
+                        syncProgress.currentStatus = "Authentication failed"
+                    }
+
                     completion(false, error)
                     return
                 }

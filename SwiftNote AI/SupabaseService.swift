@@ -188,6 +188,136 @@ class SupabaseService {
         }
     }
 
+    // MARK: - Token Validation Methods
+
+    /// Validate the current session token and refresh if necessary
+    /// - Returns: Valid session
+    /// - Throws: AuthError if token cannot be validated or refreshed
+    func validateAndRefreshTokenIfNeeded() async throws -> Session {
+        #if DEBUG
+        print("🔐 SupabaseService: Validating and refreshing token if needed")
+        #endif
+
+        do {
+            // Try to get the current session
+            let session = try await getSession()
+
+            // Check if token is close to expiry (within 5 minutes)
+            if isTokenNearExpiry(session: session) {
+                #if DEBUG
+                print("🔐 SupabaseService: Token is near expiry, attempting refresh")
+                #endif
+
+                // Attempt to refresh the token
+                return try await refreshSession()
+            } else {
+                #if DEBUG
+                print("🔐 SupabaseService: Token is valid and not near expiry")
+                #endif
+                return session
+            }
+        } catch let error as AuthError {
+            // Handle specific auth errors
+            if case .api(_, let errorCode, _, _) = error {
+                switch errorCode.rawValue {
+                case "refresh_token_not_found":
+                    #if DEBUG
+                    print("🔐 SupabaseService: No refresh token found - user needs to sign in")
+                    #endif
+                    throw NSError(domain: "SupabaseService", code: 401, userInfo: [
+                        NSLocalizedDescriptionKey: "Authentication required. Please sign in again."
+                    ])
+                case "invalid_token", "token_expired":
+                    #if DEBUG
+                    print("🔐 SupabaseService: Token is invalid or expired")
+                    #endif
+                    throw NSError(domain: "SupabaseService", code: 401, userInfo: [
+                        NSLocalizedDescriptionKey: "Session expired. Please sign in again."
+                    ])
+                default:
+                    #if DEBUG
+                    print("🔐 SupabaseService: Auth error during token validation: \(error)")
+                    #endif
+                    throw error
+                }
+            } else {
+                throw error
+            }
+        } catch {
+            #if DEBUG
+            print("🔐 SupabaseService: Unexpected error during token validation: \(error)")
+            #endif
+            throw error
+        }
+    }
+
+    /// Check if the session token is near expiry
+    /// - Parameter session: The session to check
+    /// - Returns: True if token expires within 5 minutes
+    private func isTokenNearExpiry(session: Session) -> Bool {
+        let expiryDate = Date(timeIntervalSince1970: TimeInterval(session.expiresAt))
+        let fiveMinutesFromNow = Date().addingTimeInterval(5 * 60) // 5 minutes
+
+        let isNearExpiry = expiryDate <= fiveMinutesFromNow
+
+        #if DEBUG
+        if isNearExpiry {
+            print("🔐 SupabaseService: Token expires at \(expiryDate), which is within 5 minutes")
+        } else {
+            print("🔐 SupabaseService: Token expires at \(expiryDate), which is more than 5 minutes away")
+        }
+        #endif
+
+        return isNearExpiry
+    }
+
+    /// Refresh the current session
+    /// - Returns: New session with refreshed token
+    /// - Throws: AuthError if refresh fails
+    private func refreshSession() async throws -> Session {
+        #if DEBUG
+        print("🔐 SupabaseService: Attempting to refresh session")
+        #endif
+
+        do {
+            let session = try await client.auth.refreshSession()
+
+            #if DEBUG
+            print("🔐 SupabaseService: Session refreshed successfully")
+            print("🔐 SupabaseService: New token expires at \(Date(timeIntervalSince1970: TimeInterval(session.expiresAt)))")
+            #endif
+
+            return session
+        } catch let error as AuthError {
+            #if DEBUG
+            print("🔐 SupabaseService: Failed to refresh session: \(error)")
+            #endif
+
+            // Convert refresh errors to user-friendly messages
+            if case .api(_, let errorCode, _, _) = error {
+                switch errorCode.rawValue {
+                case "refresh_token_not_found", "invalid_refresh_token":
+                    throw NSError(domain: "SupabaseService", code: 401, userInfo: [
+                        NSLocalizedDescriptionKey: "Session expired. Please sign in again."
+                    ])
+                default:
+                    throw NSError(domain: "SupabaseService", code: 401, userInfo: [
+                        NSLocalizedDescriptionKey: "Failed to refresh session. Please sign in again."
+                    ])
+                }
+            } else {
+                throw error
+            }
+        } catch {
+            #if DEBUG
+            print("🔐 SupabaseService: Unexpected error during session refresh: \(error)")
+            #endif
+            throw NSError(domain: "SupabaseService", code: 401, userInfo: [
+                NSLocalizedDescriptionKey: "Failed to refresh session. Please sign in again."
+            ])
+        }
+    }
+
     /// Verify email with confirmation token
     /// - Parameters:
     ///   - email: User's email

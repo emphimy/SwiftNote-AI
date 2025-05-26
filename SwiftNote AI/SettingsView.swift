@@ -166,12 +166,19 @@ final class SettingsViewModel: ObservableObject {
                     print("⚙️ SettingsViewModel: Sync failed with detailed error: \(errorDetails)")
                     #endif
 
-                    // Check for specific error types
+                    // Check for specific error types (priority order matters)
                     if let nsError = error as NSError?, nsError.code == 409 {
-                        // Sync lock error (HTTP 409 Conflict)
+                        // Sync lock error (HTTP 409 Conflict) - highest priority
                         errorMessage = "Another sync is already in progress. Please wait for it to complete."
-                    } else if errorMessage.contains("authentication") || errorMessage.contains("signed in") {
-                        errorMessage = "Authentication failed. Please sign in again."
+                    } else if let nsError = error as NSError?, nsError.code == 401 {
+                        // Token validation/authentication errors (HTTP 401 Unauthorized)
+                        if errorMessage.contains("Session expired") || errorMessage.contains("refresh") {
+                            errorMessage = "Your session has expired. Please sign in again."
+                        } else if errorMessage.contains("Authentication required") {
+                            errorMessage = "Authentication required. Please sign in to sync your data."
+                        } else {
+                            errorMessage = "Authentication failed. Please sign in again."
+                        }
                     } else if errorMessage.contains("network") || errorMessage.contains("connection") {
                         errorMessage = "Network connection failed. Please check your internet connection."
                     } else if errorMessage.contains("CoreData") || errorMessage.contains("save") {
