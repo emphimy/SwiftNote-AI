@@ -949,9 +949,250 @@ class NoteSyncManager {
         }
     }
 
-    /// Placeholder for deleteNoteFromSupabase - will be implemented in Phase 4
+    // MARK: - Cleanup Methods
+
+    /// Delete a note from Supabase
+    /// - Parameters:
+    ///   - note: The CoreData Note to delete
+    ///   - userId: The Supabase user ID
+    ///   - context: The NSManagedObjectContext
     private func deleteNoteFromSupabase(note: Note, userId: UUID, context: NSManagedObjectContext) async throws {
-        // TODO: Implement in Phase 4
-        fatalError("deleteNoteFromSupabase not yet implemented")
+        guard let noteId = note.id else {
+            #if DEBUG
+            print("🔄 NoteSyncManager: Cannot delete note - missing ID")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("🔄 NoteSyncManager: Deleting note from Supabase: \(noteId)")
+        #endif
+
+        // Delete the note from Supabase with network recovery
+        _ = try await networkRecoveryManager.executeWithRetry(
+            operation: {
+                try await self.supabaseService.client.from("notes")
+                    .delete()
+                    .eq("id", value: noteId.uuidString)
+                    .eq("user_id", value: userId.uuidString) // Security: ensure user can only delete their own notes
+                    .execute()
+            },
+            operationName: "Note Delete (\(noteId))"
+        )
+
+        #if DEBUG
+        print("🔄 NoteSyncManager: Successfully deleted note from Supabase: \(noteId)")
+        #endif
+
+        // After successful deletion from Supabase, mark for permanent deletion
+        // We'll delete it from CoreData after the sync loop completes to avoid threading issues
+        try await context.perform {
+            // Delete associated files if they exist
+            if let sourceURL = note.sourceURL {
+                do {
+                    if FileManager.default.fileExists(atPath: sourceURL.path) {
+                        try FileManager.default.removeItem(at: sourceURL)
+                        #if DEBUG
+                        print("🔄 NoteSyncManager: Deleted associated file for note \(noteId)")
+                        #endif
+                    }
+                } catch {
+                    #if DEBUG
+                    print("🔄 NoteSyncManager: Error deleting associated file - \(error)")
+                    #endif
+                }
+            }
+
+            // Mark the note as successfully deleted from Supabase
+            // We'll permanently delete it after the sync loop to avoid threading issues
+            note.syncStatus = "deleted_from_supabase"
+
+            if context.hasChanges {
+                try context.save()
+                #if DEBUG
+                print("🔄 NoteSyncManager: Marked note as deleted from Supabase: \(noteId)")
+                #endif
+            }
+        }
+    }
+
+    /// Clean up notes marked as deleted from Supabase
+    /// - Parameter context: The NSManagedObjectContext
+    func cleanupDeletedNotes(context: NSManagedObjectContext) async throws {
+        #if DEBUG
+        print("🔄 NoteSyncManager: Starting cleanup of deleted notes")
+        #endif
+
+        await context.perform {
+            let noteRequest = NSFetchRequest<Note>(entityName: "Note")
+            noteRequest.predicate = NSPredicate(format: "syncStatus == %@", "deleted_from_supabase")
+
+            do {
+                let deletedNotes = try context.fetch(noteRequest)
+
+                #if DEBUG
+                print("🔄 NoteSyncManager: Found \(deletedNotes.count) notes to permanently delete")
+                #endif
+
+                for note in deletedNotes {
+                    context.delete(note)
+                }
+
+                // Save changes if any
+                if context.hasChanges {
+                    try context.save()
+                    #if DEBUG
+                    print("🔄 NoteSyncManager: Successfully cleaned up deleted notes")
+                    #endif
+                }
+            } catch {
+                #if DEBUG
+                print("🔄 NoteSyncManager: Error fetching deleted notes - \(error)")
+                #endif
+            }
+        }
+    }
+
+    /// Clean up old deleted notes (permanently delete notes that have been soft-deleted for more than 30 days)
+    /// - Parameter context: The NSManagedObjectContext
+    func cleanupOldDeletedNotes(context: NSManagedObjectContext) async throws {
+        #if DEBUG
+        print("🔄 NoteSyncManager: Starting cleanup of old deleted notes")
+        #endif
+
+        let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+
+        try await context.perform {
+            let request = NSFetchRequest<Note>(entityName: "Note")
+            request.predicate = NSPredicate(format: "deletedAt != nil AND deletedAt < %@", thirtyDaysAgo as CVarArg)
+
+            do {
+                let oldDeletedNotes = try context.fetch(request)
+
+                #if DEBUG
+                print("🔄 NoteSyncManager: Found \(oldDeletedNotes.count) old deleted notes to permanently delete")
+                #endif
+
+                for note in oldDeletedNotes {
+                    // Delete associated files if they exist
+                    if let sourceURL = note.sourceURL {
+                        do {
+                            if FileManager.default.fileExists(atPath: sourceURL.path) {
+                                try FileManager.default.removeItem(at: sourceURL)
+                                #if DEBUG
+                                print("🔄 NoteSyncManager: Deleted associated file for note \(note.id?.uuidString ?? "unknown")")
+                                #endif
+                            }
+                        } catch {
+                            #if DEBUG
+                            print("🔄 NoteSyncManager: Error deleting associated file - \(error)")
+                            #endif
+                        }
+                    }
+
+                    context.delete(note)
+                }
+
+                if context.hasChanges {
+                    try context.save()
+                    #if DEBUG
+                    print("🔄 NoteSyncManager: Successfully cleaned up \(oldDeletedNotes.count) old deleted notes")
+                    #endif
+                }
+            } catch {
+                #if DEBUG
+                print("🔄 NoteSyncManager: Error during cleanup - \(error)")
+                #endif
+                throw error
+            }
+        }
+    }
+
+    // MARK: - Utility Methods
+
+    /// Fix existing audio notes that may have incorrect syncStatus
+    /// This utility method marks audio notes with "synced" status as "pending" for sync
+    /// - Parameter context: The NSManagedObjectContext to update notes in
+    /// - Returns: Number of notes that were fixed
+    func fixAudioNoteSyncStatus(context: NSManagedObjectContext) async throws -> Int {
+        return try await context.perform {
+            let request = NSFetchRequest<Note>(entityName: "Note")
+
+            // Find audio notes (recording or audio sourceType) that are marked as "synced"
+            // but may have been created before the syncStatus fix
+            request.predicate = NSPredicate(format: "(sourceType == %@ OR sourceType == %@) AND syncStatus == %@",
+                                          "recording", "audio", "synced")
+
+            let audioNotes = try context.fetch(request)
+
+            #if DEBUG
+            print("🔧 NoteSyncManager: Found \(audioNotes.count) audio notes with 'synced' status to potentially fix")
+            #endif
+
+            var fixedCount = 0
+
+            for note in audioNotes {
+                // Mark the note for sync
+                note.syncStatus = "pending"
+                fixedCount += 1
+
+                #if DEBUG
+                print("🔧 NoteSyncManager: Fixed sync status for audio note: \(note.title ?? "Untitled")")
+                #endif
+            }
+
+            if context.hasChanges {
+                try context.save()
+                #if DEBUG
+                print("🔧 NoteSyncManager: Successfully fixed \(fixedCount) audio notes")
+                #endif
+            }
+
+            return fixedCount
+        }
+    }
+
+    /// Fix notes with sync_status = "pending" in Supabase
+    /// This utility method updates remote records to have sync_status = "synced"
+    /// - Returns: Number of notes fixed
+    func fixPendingNotesInSupabase() async throws -> Int {
+        // Get current user ID
+        let session = try await supabaseService.getSession()
+        let userId = session.user.id
+
+        #if DEBUG
+        print("🔧 NoteSyncManager: Starting remote sync status fix for notes for user: \(userId)")
+        #endif
+
+        var notesFixed = 0
+
+        // Fix notes with sync_status = "pending" in Supabase with network recovery
+        do {
+            let response = try await networkRecoveryManager.executeWithRetry(
+                operation: {
+                    try await self.supabaseService.client.from("notes")
+                        .update(["sync_status": "synced"])
+                        .eq("user_id", value: userId.uuidString)
+                        .eq("sync_status", value: "pending")
+                        .execute()
+                },
+                operationName: "Fix Notes Sync Status"
+            )
+
+            // Parse the response to count affected rows
+            if let jsonArray = try? JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] {
+                notesFixed = jsonArray.count
+            }
+
+            #if DEBUG
+            print("🔧 NoteSyncManager: Fixed \(notesFixed) notes in Supabase")
+            #endif
+        } catch {
+            #if DEBUG
+            print("🔧 NoteSyncManager: Error fixing notes in Supabase: \(error)")
+            #endif
+        }
+
+        return notesFixed
     }
 }
