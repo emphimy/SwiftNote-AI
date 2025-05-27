@@ -686,16 +686,9 @@ struct AudioRecordingView: View {
                             .padding(.horizontal)
 
                         // Language Picker Section
-                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                            Text("Language")
-                                .font(Theme.Typography.caption)
-                                .foregroundColor(Theme.Colors.secondaryText)
-                                .padding(.horizontal)
-
-                            LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                                .padding(.vertical, Theme.Spacing.sm)
-                        }
-                        .padding(.horizontal)
+                        LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                            .padding(.vertical, Theme.Spacing.sm)
+                            .padding(.horizontal, Theme.Spacing.xs)
 
                         // Recording Controls
                         VStack(spacing: Theme.Spacing.md) {

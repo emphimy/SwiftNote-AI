@@ -366,17 +366,9 @@ struct ScanTextView: View {
                                     }
 
                                     // Language Picker Section
-                                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                                        Text("Language")
-                                            .font(Theme.Typography.caption)
-                                            .foregroundColor(Theme.Colors.secondaryText)
-
-                                        LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                                            .padding(.vertical, Theme.Spacing.sm)
-                                    }
-                                    .padding()
-                                    .background(Theme.Colors.secondaryBackground)
-                                    .cornerRadius(Theme.Layout.cornerRadius)
+                                    LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                                        .padding(.vertical, Theme.Spacing.sm)
+                                        .padding(.horizontal, Theme.Spacing.xs)
                                 }
                             } else {
                                 // Processing Status
@@ -484,16 +476,9 @@ struct ScanTextView: View {
                     if !viewModel.scannedPages.isEmpty && !viewModel.isProcessingComplete {
                         VStack(spacing: Theme.Spacing.md) {
                             // Language Picker Section
-                            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                                Text("Language")
-                                    .font(Theme.Typography.caption)
-                                    .foregroundColor(Theme.Colors.secondaryText)
-
-                                LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                                    .padding(.vertical, Theme.Spacing.sm)
-                            }
-                            .padding(.horizontal)
-                            .padding(.bottom, Theme.Spacing.sm)
+                            LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                                .padding(.vertical, Theme.Spacing.sm)
+                                .padding(.horizontal, Theme.Spacing.xs)
 
                             // Generate Note Button
                             Button(action: {

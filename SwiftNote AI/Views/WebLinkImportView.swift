@@ -298,14 +298,9 @@ struct WebLinkImportView: View {
                     // URL Input Section
                     VStack(spacing: Theme.Spacing.md) {
                         // Language Picker Section
-                        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                            Text("Language")
-                                .font(Theme.Typography.caption)
-                                .foregroundColor(Theme.Colors.secondaryText)
-
-                            LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                                .padding(.vertical, Theme.Spacing.sm)
-                        }
+                        LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                            .padding(.vertical, Theme.Spacing.sm)
+                            .padding(.horizontal, Theme.Spacing.xs)
                         HStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: "link")
                                 .foregroundColor(isURLFieldFocused ? Theme.Colors.primary : .gray)

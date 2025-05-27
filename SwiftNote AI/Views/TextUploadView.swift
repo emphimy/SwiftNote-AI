@@ -796,17 +796,9 @@ struct TextUploadView: View {
             .cornerRadius(Theme.Layout.cornerRadius)
 
             // Language Picker Section
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                Text("Language")
-                    .font(Theme.Typography.caption)
-                    .foregroundColor(Theme.Colors.secondaryText)
-
-                LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                    .padding(.vertical, Theme.Spacing.sm)
-            }
-            .padding()
-            .background(Theme.Colors.secondaryBackground)
-            .cornerRadius(Theme.Layout.cornerRadius)
+            LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                .padding(.vertical, Theme.Spacing.sm)
+                .padding(.horizontal, Theme.Spacing.xs)
         }
     }
 
@@ -843,15 +835,9 @@ struct TextUploadView: View {
             documentStatsSection
 
             // Language Picker Section
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                Text("Language")
-                    .font(Theme.Typography.caption)
-                    .foregroundColor(Theme.Colors.secondaryText)
-                    .padding(.horizontal)
-
-                LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                    .padding(.vertical, Theme.Spacing.sm)
-            }
+            LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                .padding(.vertical, Theme.Spacing.sm)
+                .padding(.horizontal, Theme.Spacing.xs)
 
             // Content Preview with Markdown Support
             contentPreviewSection
