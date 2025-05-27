@@ -2,6 +2,12 @@ import SwiftUI
 import CoreData
 import Combine
 
+// MARK: - Core Data Error
+private struct CoreDataError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 // MARK: - Folder Detail Error
 enum FolderDetailError: LocalizedError {
     case invalidFolder
@@ -60,6 +66,20 @@ final class FolderDetailViewModel: ObservableObject {
                 self?.fetchNotes()
             }
         }
+
+        // Also listen for note deletions from other views
+        NotificationCenter.default.addObserver(
+            forName: .init("NoteDeleted"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            #if DEBUG
+            print("📁 FolderDetailViewModel: Received NoteDeleted notification")
+            #endif
+            Task { @MainActor [weak self] in
+                self?.fetchNotes()
+            }
+        }
     }
 
     private func setupSearchSubscription() {
@@ -81,17 +101,21 @@ final class FolderDetailViewModel: ObservableObject {
 
         let request = NSFetchRequest<Note>(entityName: "Note")
 
-        // Special handling for "All Notes" folder - show all notes
+        // Create predicate to exclude deleted notes
+        let notDeletedPredicate = NSPredicate(format: "deletedAt == nil")
+
+        // Special handling for "All Notes" folder - show all notes (but exclude deleted)
         if folder.name == "All Notes" {
-            // No predicate - fetch all notes
+            request.predicate = notDeletedPredicate
             #if DEBUG
-            print("📁 FolderDetailViewModel: Fetching all notes for All Notes folder")
+            print("📁 FolderDetailViewModel: Fetching all non-deleted notes for All Notes folder")
             #endif
         } else {
-            // For regular folders, only fetch notes assigned to this folder
-            request.predicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+            // For regular folders, only fetch notes assigned to this folder and not deleted
+            let folderPredicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [folderPredicate, notDeletedPredicate])
             #if DEBUG
-            print("📁 FolderDetailViewModel: Fetching notes for specific folder: \(folder.name ?? "Untitled")")
+            print("📁 FolderDetailViewModel: Fetching non-deleted notes for specific folder: \(folder.name ?? "Untitled")")
             #endif
         }
 
@@ -178,6 +202,8 @@ final class FolderDetailViewModel: ObservableObject {
         // If we're in the "All Notes" folder, we need to fetch all notes first
         if folder.name == "All Notes" {
             let request = NSFetchRequest<Note>(entityName: "Note")
+            // Exclude deleted notes from search
+            request.predicate = NSPredicate(format: "deletedAt == nil")
             request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.timestamp, ascending: false)]
 
             do {
@@ -246,6 +272,85 @@ final class FolderDetailViewModel: ObservableObject {
                 note.preview.localizedCaseInsensitiveContains(searchText) ||
                 note.tags.contains { $0.localizedCaseInsensitiveContains(searchText) }
             }
+        }
+    }
+
+    // MARK: - Note Operations
+    func deleteNote(_ note: NoteCardConfiguration) async throws {
+        #if DEBUG
+        print("📁 FolderDetailViewModel: Deleting note: \(note.title)")
+        #endif
+
+        let request = NSFetchRequest<Note>(entityName: "Note")
+        request.predicate = NSPredicate(format: "title == %@ AND timestamp == %@", note.title, note.date as CVarArg)
+
+        do {
+            guard let noteObject = try viewContext.fetch(request).first else {
+                throw CoreDataError(message: "Note not found for deletion")
+            }
+
+            try PersistenceController.shared.deleteNote(noteObject)
+
+            // Force save to persistent store
+            PersistenceController.shared.saveContext()
+
+            // Refresh notes list for this folder
+            await MainActor.run {
+                self.fetchNotes()
+
+                // Notify other views that a note was deleted
+                NotificationCenter.default.post(name: .init("NoteDeleted"), object: nil)
+            }
+
+            #if DEBUG
+            print("📁 FolderDetailViewModel: Note deleted successfully")
+            #endif
+        } catch {
+            #if DEBUG
+            print("📁 FolderDetailViewModel: Error deleting note - \(error)")
+            print("Error details: \((error as NSError).userInfo)")
+            #endif
+
+            throw CoreDataError(message: "Failed to delete note: \(error.localizedDescription)")
+        }
+    }
+
+    func toggleFavorite(_ note: NoteCardConfiguration) async throws {
+        #if DEBUG
+        print("📁 FolderDetailViewModel: Toggling favorite for note: \(note.title)")
+        #endif
+
+        let request = NSFetchRequest<Note>(entityName: "Note")
+        request.predicate = NSPredicate(format: "title == %@ AND timestamp == %@", note.title, note.date as CVarArg)
+
+        do {
+            guard let noteObject = try viewContext.fetch(request).first else {
+                throw CoreDataError(message: "Note not found for favorite toggle")
+            }
+
+            noteObject.isFavorite.toggle()
+            noteObject.lastModified = Date()
+            noteObject.syncStatus = "pending" // Mark for sync
+
+            try viewContext.save()
+
+            // Force save to persistent store
+            PersistenceController.shared.saveContext()
+
+            // Refresh notes list for this folder
+            await MainActor.run {
+                self.fetchNotes()
+            }
+
+            #if DEBUG
+            print("📁 FolderDetailViewModel: Favorite toggled successfully")
+            #endif
+        } catch {
+            #if DEBUG
+            print("📁 FolderDetailViewModel: Error toggling favorite - \(error)")
+            #endif
+
+            throw CoreDataError(message: "Failed to toggle favorite: \(error.localizedDescription)")
         }
     }
 
@@ -390,11 +495,96 @@ struct FolderDetailView: View {
 
     // MARK: - Helper Methods
     private func makeCardActions(for note: NoteCardConfiguration) -> CardActions {
-        return CardActionsImplementation(
+        return FolderCardActionsImplementation(
             note: note,
-            viewModel: HomeViewModel(context: viewContext),  // Create temporary instance for actions
+            folderViewModel: viewModel,
             toastManager: toastManager
         )
+    }
+}
+
+// MARK: - Folder Card Actions Implementation
+struct FolderCardActionsImplementation: CardActions {
+    let note: NoteCardConfiguration
+    let folderViewModel: FolderDetailViewModel
+    let toastManager: ToastManager
+
+    func onFavorite() {
+        Task {
+            do {
+                try await folderViewModel.toggleFavorite(note)
+                await MainActor.run {
+                    toastManager.show("Favorite updated", type: .success)
+                }
+            } catch {
+                #if DEBUG
+                print("📁 FolderCardActions: Error toggling favorite: \(error.localizedDescription)")
+                #endif
+                await MainActor.run {
+                    toastManager.show("Failed to update favorite status", type: .error)
+                }
+            }
+        }
+    }
+
+    func onShare() {
+        #if DEBUG
+        print("📁 FolderCardActions: Share triggered for note: \(note.title)")
+        #endif
+
+        // Create share content
+        var shareText = "📝 \(note.title)\n\n"
+        shareText += note.preview
+
+        if !note.tags.isEmpty {
+            shareText += "\n\n🏷️ Tags: \(note.tags.joined(separator: ", "))"
+        }
+
+        shareText += "\n\n📅 Created: \(DateFormatter.localizedString(from: note.date, dateStyle: .medium, timeStyle: .short))"
+
+        // Present share sheet
+        DispatchQueue.main.async {
+            let activityVC = UIActivityViewController(activityItems: [shareText], applicationActivities: nil)
+
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let window = windowScene.windows.first,
+               let rootViewController = window.rootViewController {
+
+                // For iPad, set popover presentation
+                if let popover = activityVC.popoverPresentationController {
+                    popover.sourceView = window
+                    popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
+                    popover.permittedArrowDirections = []
+                }
+
+                rootViewController.present(activityVC, animated: true)
+            }
+        }
+    }
+
+    func onDelete() {
+        Task {
+            do {
+                try await folderViewModel.deleteNote(note)
+                await MainActor.run {
+                    toastManager.show("Note deleted", type: .success)
+                }
+            } catch {
+                #if DEBUG
+                print("📁 FolderCardActions: Error deleting note: \(error.localizedDescription)")
+                #endif
+                await MainActor.run {
+                    toastManager.show("Failed to delete note", type: .error)
+                }
+            }
+        }
+    }
+
+    func onTagSelected(_ tag: String) {
+        #if DEBUG
+        print("📁 FolderCardActions: Tag selected: \(tag) for note: \(note.title)")
+        #endif
+        // TODO: Implement tag selection handling for folder views
     }
 }
 

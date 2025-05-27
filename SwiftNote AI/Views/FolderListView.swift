@@ -526,11 +526,9 @@ private struct FolderRow: View {
                     if folder.name == "All Notes" {
                         // For All Notes folder, fetch all notes count
                         FolderNoteCountView(folder: folder)
-                    } else if let notes = folder.notes?.allObjects as? [Note] {
-                        // For regular folders, use the relationship count
-                        Text("\(notes.count) notes")
-                            .font(Theme.Typography.caption)
-                            .foregroundColor(Theme.Colors.secondaryText)
+                    } else {
+                        // For regular folders, use filtered count excluding soft-deleted notes
+                        FolderSpecificNoteCountView(folder: folder)
                     }
                 }
                 Spacer()
@@ -570,23 +568,83 @@ private struct FolderNoteCountView: View {
             .onAppear {
                 fetchAllNotesCount()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .init("NoteDeleted"))) { _ in
+                fetchAllNotesCount()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .init("RefreshNotes"))) { _ in
+                fetchAllNotesCount()
+            }
     }
 
     private func fetchAllNotesCount() {
         let request = NSFetchRequest<Note>(entityName: "Note")
         request.resultType = .countResultType
 
+        // Exclude soft-deleted notes
+        request.predicate = NSPredicate(format: "deletedAt == nil")
+
         do {
             let count = try viewContext.count(for: request)
             self.noteCount = count
 
             #if DEBUG
-            print("📁 FolderNoteCountView: Fetched total note count: \(count)")
+            print("📁 FolderNoteCountView: Fetched total non-deleted note count: \(count)")
             #endif
         } catch {
             #if DEBUG
             print("📁 FolderNoteCountView: Error fetching note count - \(error)")
             #endif
+        }
+    }
+}
+
+// MARK: - Folder Specific Note Count View
+private struct FolderSpecificNoteCountView: View {
+    let folder: Folder
+    @State private var noteCount: Int = 0
+    @Environment(\.managedObjectContext) private var viewContext
+
+    var body: some View {
+        Text("\(noteCount) notes")
+            .font(Theme.Typography.caption)
+            .foregroundColor(Theme.Colors.secondaryText)
+            .onAppear {
+                fetchFolderNotesCount()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .init("NoteDeleted"))) { _ in
+                fetchFolderNotesCount()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .init("RefreshNotes"))) { _ in
+                fetchFolderNotesCount()
+            }
+    }
+
+    private func fetchFolderNotesCount() {
+        guard let folderId = folder.id else {
+            self.noteCount = 0
+            return
+        }
+
+        let request = NSFetchRequest<Note>(entityName: "Note")
+        request.resultType = .countResultType
+
+        // Filter by folder and exclude soft-deleted notes
+        let folderPredicate = NSPredicate(format: "folder.id == %@", folderId as CVarArg)
+        let notDeletedPredicate = NSPredicate(format: "deletedAt == nil")
+        request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [folderPredicate, notDeletedPredicate])
+
+        do {
+            let count = try viewContext.count(for: request)
+            self.noteCount = count
+
+            #if DEBUG
+            print("📁 FolderSpecificNoteCountView: Fetched note count for folder '\(folder.name ?? "Untitled")': \(count)")
+            #endif
+        } catch {
+            #if DEBUG
+            print("📁 FolderSpecificNoteCountView: Error fetching note count for folder '\(folder.name ?? "Untitled")' - \(error)")
+            #endif
+            self.noteCount = 0
         }
     }
 }

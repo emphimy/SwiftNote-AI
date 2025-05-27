@@ -390,7 +390,8 @@ struct NoteDetailsView: View {
         Task {
             do {
                 try await viewModel.moveToFolder(folder)
-                toastManager.show("Note moved to \(folder?.name ?? "All Notes")", type: .success)
+                let folderName = folder?.name ?? "All Notes"
+                toastManager.show("Note moved to \(folderName)", type: .success)
             } catch {
                 #if DEBUG
                 print("📝 NoteDetailsView: Error moving note - \(error)")
@@ -553,30 +554,15 @@ struct FolderPickerView: View {
     var body: some View {
         NavigationView {
             List {
-                // Option to remove from folder (root)
-                Button(action: {
-                    onSelect(nil)
-                    dismiss()
-                }) {
-                    HStack {
-                        Image(systemName: "tray")
-                            .foregroundColor(Theme.Colors.secondaryText)
-
-                        Text("No Folder")
-
-                        Spacer()
-
-                        if currentFolderName == nil {
-                            Image(systemName: "checkmark")
-                                .foregroundColor(Theme.Colors.primary)
-                        }
-                    }
-                }
-
-                // List of folders
+                // List of folders (including "All Notes" as the default/root folder)
                 ForEach(folders) { folder in
                     Button(action: {
-                        onSelect(folder)
+                        // If selecting "All Notes", pass nil to remove from specific folder
+                        if folder.name == "All Notes" {
+                            onSelect(nil)
+                        } else {
+                            onSelect(folder)
+                        }
                         dismiss()
                     }) {
                         HStack {
@@ -587,7 +573,9 @@ struct FolderPickerView: View {
 
                             Spacer()
 
-                            if currentFolderName == folder.name {
+                            // Show checkmark for current folder or "All Notes" if no folder assigned
+                            if (currentFolderName == folder.name) ||
+                               (currentFolderName == nil && folder.name == "All Notes") {
                                 Image(systemName: "checkmark")
                                     .foregroundColor(Theme.Colors.primary)
                             }

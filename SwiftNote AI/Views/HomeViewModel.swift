@@ -568,6 +568,9 @@ final class HomeViewModel: ObservableObject {
             // Refresh notes list
             self.fetchNotes()
 
+            // Notify other views that a note was deleted
+            NotificationCenter.default.post(name: .init("NoteDeleted"), object: nil)
+
             #if DEBUG
             print("🏠 HomeViewModel: Note deleted successfully")
             #endif
