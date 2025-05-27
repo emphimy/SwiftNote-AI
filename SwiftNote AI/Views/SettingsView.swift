@@ -543,28 +543,31 @@ struct SettingsView: View {
         // MARK: - Update Original sectionView
         @ViewBuilder
         func sectionView(for section: SettingsSection) -> some View {
-            VStack(alignment: .leading, spacing: 8) { // Reduced spacing between header and content
+            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 // Section Header
-                HStack {
+                HStack(spacing: Theme.Spacing.sm) {
                     Image(systemName: section.icon)
-                        .font(.system(size: Theme.Settings.iconSize))
+                        .font(.system(size: 20, weight: .medium))
                         .foregroundColor(section.color)
+                        .frame(width: 24, height: 24)
 
                     Text(section.title)
-                        .font(.system(size: 18, weight: .semibold)) // Custom smaller size
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(Theme.Colors.text)
                 }
+                .padding(.horizontal, Theme.Spacing.xs)
 
-                // Section Content - reduced padding for more compact look
+                // Section Content
                 sectionContent(for: section)
-                    .padding(.vertical, 8) // Reduced vertical padding
-                    .padding(.horizontal, 12) // Reduced horizontal padding
+                    .padding(.vertical, Theme.Spacing.md)
+                    .padding(.horizontal, Theme.Spacing.md)
                     .background(Theme.Colors.secondaryBackground)
                     .cornerRadius(Theme.Settings.cornerRadius)
             }
         }
 
     private var appearanceSection: some View {
-        VStack(spacing: 6) { // Minimal spacing for appearance controls
+        VStack(spacing: Theme.Spacing.sm) {
             Picker("Theme", selection: Binding(
                 get: { themeManager.currentTheme },
                 set: { newTheme in
@@ -583,15 +586,16 @@ struct SettingsView: View {
             .pickerStyle(.segmented)
 
             Text("Choose how SwiftNote AI appears to you")
-                .font(Theme.Typography.caption)
+                .font(.system(size: 13))
                 .foregroundColor(Theme.Colors.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
     private var profileSection: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Theme.Spacing.md) {
             // User info display
-            HStack {
+            HStack(spacing: Theme.Spacing.md) {
                 // Profile image or icon
                 if let avatarUrl = authManager.userProfile?.avatarUrl, !avatarUrl.isEmpty {
                     AsyncImage(url: URL(string: avatarUrl)) { image in
@@ -600,18 +604,18 @@ struct SettingsView: View {
                             .aspectRatio(contentMode: .fill)
                     } placeholder: {
                         ProgressView()
-                            .frame(width: 40, height: 40)
+                            .frame(width: 44, height: 44)
                     }
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
                     .clipShape(Circle())
-                    .overlay(Circle().stroke(Theme.Colors.primary, lineWidth: 1))
+                    .overlay(Circle().stroke(Theme.Colors.primary, lineWidth: 2))
                 } else {
                     Image(systemName: "person.circle.fill")
-                        .font(.system(size: 40))
+                        .font(.system(size: 44, weight: .medium))
                         .foregroundColor(Theme.Colors.primary)
                 }
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                     Text(authManager.userProfile?.fullName ?? "User")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(Theme.Colors.text)
@@ -628,13 +632,18 @@ struct SettingsView: View {
             Button(action: {
                 showingSignOutAlert = true
             }) {
-                HStack {
-                    Text("Sign Out")
-                        .foregroundColor(Theme.Colors.error)
-                    Spacer()
+                HStack(spacing: Theme.Spacing.sm) {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
+                        .font(.system(size: 16, weight: .medium))
                         .foregroundColor(Theme.Colors.error)
+
+                    Text("Sign Out")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(Theme.Colors.error)
+
+                    Spacer()
                 }
+                .padding(.vertical, Theme.Spacing.xs)
             }
         }
         .alert("Sign Out", isPresented: $showingSignOutAlert) {
@@ -659,25 +668,31 @@ struct SettingsView: View {
     }
 
     private var privacySection: some View {
-        VStack(spacing: 8) { // Consistent spacing
+        VStack(spacing: Theme.Spacing.md) {
             // Biometric Authentication
-            Toggle(viewModel.biometricType == .faceID ? "Use Face ID" : "Use Touch ID", isOn: .init(
-                get: { viewModel.biometricEnabled },
-                set: { _ in
-                    handleBiometricToggle()
+            VStack(spacing: Theme.Spacing.xs) {
+                Toggle(viewModel.biometricType == .faceID ? "Use Face ID" : "Use Touch ID", isOn: .init(
+                    get: { viewModel.biometricEnabled },
+                    set: { _ in
+                        handleBiometricToggle()
+                    }
+                ))
+                .font(.system(size: 15, weight: .medium))
+                .onChange(of: viewModel.biometricEnabled) { newValue in
+                    #if DEBUG
+                    print("⚙️ SettingsView: Biometric setting changed to: \(newValue)")
+                    #endif
                 }
-            ))
-            .onChange(of: viewModel.biometricEnabled) { newValue in
-                #if DEBUG
-                print("⚙️ SettingsView: Biometric setting changed to: \(newValue)")
-                #endif
-            }
-            .onAppear {
-                // Update the biometric type when the view appears
-                viewModel.biometricType = BiometricAuthManager.shared.biometricType()
-            }
+                .onAppear {
+                    // Update the biometric type when the view appears
+                    viewModel.biometricType = BiometricAuthManager.shared.biometricType()
+                }
 
-            // Privacy Settings section removed
+                Text("Secure your app with biometric authentication")
+                    .font(.system(size: 13))
+                    .foregroundColor(Theme.Colors.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             // Legal Links
             LegalSection()
@@ -719,7 +734,7 @@ struct SettingsView: View {
     }
 
     private var syncSection: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: Theme.Spacing.md) {
             // Sync button
             Button(action: {
                 #if DEBUG
@@ -741,8 +756,9 @@ struct SettingsView: View {
                     viewModel.syncToSupabase(context: viewContext)
                 }
             }) {
-                HStack {
+                HStack(spacing: Theme.Spacing.sm) {
                     Text(viewModel.twoWaySyncEnabled ? "Two-Way Sync" : "Upload to Cloud")
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundColor(Theme.Colors.text)
                     Spacer()
                     if viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked() {
@@ -750,37 +766,45 @@ struct SettingsView: View {
                             .progressViewStyle(CircularProgressViewStyle())
                     } else {
                         Image(systemName: viewModel.twoWaySyncEnabled ? "arrow.triangle.2.circlepath" : "arrow.up.circle")
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundColor(Theme.Colors.primary)
                     }
                 }
+                .padding(.vertical, Theme.Spacing.xs)
             }
             .disabled(viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked())
 
             // Sync description
-            Text(viewModel.twoWaySyncEnabled ? "Syncs folders and notes bidirectionally with conflict resolution" : "Uploads local folders and notes to the cloud")
-                .font(Theme.Typography.caption)
-                .foregroundColor(Theme.Colors.secondaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(spacing: Theme.Spacing.xs) {
+                Text(viewModel.twoWaySyncEnabled ? "Syncs folders and notes bidirectionally with conflict resolution" : "Uploads local folders and notes to the cloud")
+                    .font(.system(size: 13))
+                    .foregroundColor(Theme.Colors.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Two-way sync toggle
-            Toggle("Enable two-way sync", isOn: $viewModel.twoWaySyncEnabled)
-                .disabled(viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked())
+                // Two-way sync toggle
+                Toggle("Enable two-way sync", isOn: $viewModel.twoWaySyncEnabled)
+                    .font(.system(size: 15, weight: .medium))
+                    .disabled(viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked())
 
-            // Two-way sync description
-            Text("Downloads remote changes and resolves conflicts using 'Last Write Wins' strategy")
-                .font(Theme.Typography.caption)
-                .foregroundColor(Theme.Colors.secondaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Two-way sync description
+                Text("Downloads remote changes and resolves conflicts using 'Last Write Wins' strategy")
+                    .font(.system(size: 13))
+                    .foregroundColor(Theme.Colors.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             // Include binary data toggle
-            Toggle("Include binary data (notes content)", isOn: $viewModel.syncBinaryDataEnabled)
-                .disabled(viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked())
+            VStack(spacing: Theme.Spacing.xs) {
+                Toggle("Include binary data (notes content)", isOn: $viewModel.syncBinaryDataEnabled)
+                    .font(.system(size: 15, weight: .medium))
+                    .disabled(viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked())
 
-            // Binary data description
-            Text("Syncs full note content including text, formatting, and attachments")
-                .font(Theme.Typography.caption)
-                .foregroundColor(Theme.Colors.secondaryText)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Binary data description
+                Text("Syncs full note content including text, formatting, and attachments")
+                    .font(.system(size: 13))
+                    .foregroundColor(Theme.Colors.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             // Last sync time
             if let lastSync = viewModel.lastSupabaseSync {
@@ -1083,12 +1107,14 @@ struct SettingsRow: View {
     var body: some View {
         VStack(spacing: 0) {
             // Row content
-            HStack {
+            HStack(spacing: Theme.Spacing.md) {
                 Image(systemName: icon)
-                    .foregroundColor(color.opacity(colorScheme == .dark ? 0.9 : 1.0))
-                    .frame(width: 24)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundColor(color)
+                    .frame(width: 24, height: 24)
 
                 Text(title)
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundColor(Theme.Colors.text)
 
                 Spacer()
@@ -1097,17 +1123,17 @@ struct SettingsRow: View {
                     rightContent()
                 } else {
                     Image(systemName: "chevron.right")
-                        .font(.caption)
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(Theme.Colors.secondaryText)
                 }
             }
-            .padding(.vertical, 8) // Fixed vertical padding
+            .padding(.vertical, Theme.Spacing.sm)
 
             // Divider with no extra spacing
             if showDivider {
                 Divider()
                     .background(Theme.Colors.tertiaryBackground)
-                    .padding(.leading, 32)
+                    .padding(.leading, 40)
             }
         }
     }
