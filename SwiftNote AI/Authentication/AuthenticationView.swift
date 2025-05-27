@@ -3,312 +3,300 @@ import AuthenticationServices
 import Combine
 
 struct AuthenticationView: View {
-    // Flag to control whether email authentication is enabled
-    private let isEmailAuthEnabled = false // Set to false to hide email auth
-
     @EnvironmentObject private var authManager: AuthenticationManager
     @Environment(\.colorScheme) private var colorScheme
-    @State private var isSignIn = true
-    @State private var email = ""
-    @State private var password = ""
-    @State private var confirmPassword = ""
-    @State private var isPasswordVisible = false
-    @State private var isConfirmPasswordVisible = false
-    @State private var showingForgotPasswordAlert = false
-    @State private var forgotPasswordEmail = ""
-    @FocusState private var focusedField: Field?
-
-    enum Field {
-        case email, password, confirmPassword
-    }
 
     var body: some View {
-        ZStack {
-            // Background with tap gesture to dismiss keyboard
-            Theme.Colors.background
+        GeometryReader { geometry in
+            ZStack {
+                // Gradient background
+                LinearGradient(
+                    colors: [
+                        Theme.Colors.background,
+                        Theme.Colors.secondaryBackground.opacity(0.3)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
                 .ignoresSafeArea()
-                .onTapGesture {
-                    dismissKeyboard()
-                }
 
-            VStack(spacing: Theme.Spacing.lg) {
-                // Logo and title
-                VStack(spacing: Theme.Spacing.md) {
-                    Image(systemName: "note.text")
-                        .font(.system(size: 60))
-                        .foregroundColor(Theme.Colors.primary)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        // Top spacer
+                        Spacer()
+                            .frame(height: geometry.safeAreaInsets.top + 60)
 
-                    Text("SwiftNote AI")
-                        .font(Theme.Typography.h1)
-                        .foregroundColor(Theme.Colors.text)
+                        // Hero section with logo and branding
+                        VStack(spacing: Theme.Spacing.xl) {
+                            // App logo with elegant presentation
+                            VStack(spacing: Theme.Spacing.xl) {
+                                // Logo with subtle glow effect and rounded corners
+                                ZStack {
+                                    // Subtle glow effect
+                                    RoundedRectangle(cornerRadius: 28)
+                                        .fill(
+                                            RadialGradient(
+                                                colors: [
+                                                    Theme.Colors.primary.opacity(0.12),
+                                                    Color.clear
+                                                ],
+                                                center: .center,
+                                                startRadius: 0,
+                                                endRadius: 120
+                                            )
+                                        )
+                                        .frame(width: 240, height: 240)
 
-                    Text("Sign in to your account")
-                        .font(Theme.Typography.body)
-                        .foregroundColor(Theme.Colors.secondaryText)
-                }
-                .padding(.top, Theme.Spacing.xl)
-                .padding(.bottom, isEmailAuthEnabled ? 0 : Theme.Spacing.xl)
+                                    // App logo with rounded corners
+                                    Image("SwiftNote_Logo")
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 110, height: 110)
+                                        .clipShape(RoundedRectangle(cornerRadius: 24))
+                                        .shadow(
+                                            color: Color.black.opacity(0.1),
+                                            radius: 12,
+                                            x: 0,
+                                            y: 6
+                                        )
+                                }
 
-                // Email authentication form (only shown if enabled)
-                if isEmailAuthEnabled {
-                    VStack(spacing: Theme.Spacing.md) {
-                        // Email field
-                        TextField("Email", text: $email)
-                            .textContentType(.emailAddress)
-                            .keyboardType(.emailAddress)
-                            .autocapitalization(.none)
-                            .disableAutocorrection(true)
-                            .focused($focusedField, equals: .email)
-                            .submitLabel(.next)
-                            .onSubmit {
-                                focusedField = .password
+                                // Enhanced social proof badges based on actual features
+                                VStack(spacing: Theme.Spacing.md) {
+                                    // First row of badges
+                                    HStack(spacing: Theme.Spacing.sm) {
+                                        // AI Transcription badge
+                                        FeatureBadge(
+                                            icon: "waveform.and.mic",
+                                            text: "AI Transcription",
+                                            color: Theme.Colors.primary
+                                        )
+
+                                        // Auto Notes badge
+                                        FeatureBadge(
+                                            icon: "doc.text.magnifyingglass",
+                                            text: "Auto Notes",
+                                            color: Theme.Colors.secondary
+                                        )
+
+                                        // YouTube Support badge
+                                        FeatureBadge(
+                                            icon: "play.rectangle",
+                                            text: "YouTube",
+                                            color: Theme.Colors.error
+                                        )
+                                    }
+
+                                    // Second row of badges
+                                    HStack(spacing: Theme.Spacing.sm) {
+                                        // Quiz Generation badge
+                                        FeatureBadge(
+                                            icon: "questionmark.circle",
+                                            text: "Quiz Gen",
+                                            color: Theme.Colors.success
+                                        )
+
+                                        // Flashcards badge
+                                        FeatureBadge(
+                                            icon: "rectangle.stack",
+                                            text: "Flashcards",
+                                            color: Theme.Colors.accent
+                                        )
+
+                                        // AI Chat badge
+                                        FeatureBadge(
+                                            icon: "bubble.left.and.bubble.right",
+                                            text: "AI Chat",
+                                            color: Theme.Colors.primary
+                                        )
+                                    }
+                                }
                             }
-                            .padding()
-                            .background(Theme.Colors.secondaryBackground)
-                            .cornerRadius(Theme.Layout.cornerRadius)
 
-                        // Password field
+                            // App title and tagline
+                            VStack(spacing: Theme.Spacing.md) {
+                                Text("SwiftNote AI")
+                                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                                    .foregroundColor(Theme.Colors.text)
+
+                                VStack(spacing: Theme.Spacing.xs) {
+                                    Text("Transform audio & video into")
+                                        .font(.system(size: 18, weight: .medium))
+                                        .foregroundColor(Theme.Colors.secondaryText)
+
+                                    Text("smart study materials")
+                                        .font(.system(size: 18, weight: .semibold))
+                                        .foregroundColor(Theme.Colors.primary)
+                                }
+                                .multilineTextAlignment(.center)
+                            }
+                            .padding(.horizontal, Theme.Spacing.lg)
+                        }
+                        .padding(.bottom, Theme.Spacing.xxxl)
+
+                        // CTA and Authentication section
+                        VStack(spacing: Theme.Spacing.xl) {
+                            // Professional CTA
+                            Text("Get Started")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundColor(Theme.Colors.secondaryText)
+
+                            // Authentication buttons (Apple first, then Google)
+                            VStack(spacing: Theme.Spacing.md) {
+                                // Apple sign-in button (first)
+                                AppleSignInButton(
+                                    onCompletion: { result in
+                                        Task {
+                                            await authManager.handleAppleSignIn(result: result)
+                                        }
+                                    },
+                                    onRequest: { request in
+                                        let (hashedNonce, _) = authManager.prepareAppleSignIn()
+                                        request.nonce = hashedNonce
+                                    },
+                                    style: .black,
+                                    cornerRadius: 16,
+                                    height: 56
+                                )
+                                .frame(height: 56)
+                                .disabled(authManager.isLoading)
+
+                                // Google sign-in button (second)
+                                Button(action: {
+                                    authManager.signInWithGoogle()
+                                }) {
+                                    HStack(spacing: Theme.Spacing.md) {
+                                        Image("google_logo")
+                                            .resizable()
+                                            .aspectRatio(contentMode: .fit)
+                                            .frame(width: 24, height: 24)
+
+                                        Text("Continue with Google")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundColor(Theme.Colors.text)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 56)
+                                    .background(Color.white)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 16)
+                                            .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                                    )
+                                    .cornerRadius(16)
+                                    .shadow(
+                                        color: Color.black.opacity(0.04),
+                                        radius: 8,
+                                        x: 0,
+                                        y: 2
+                                    )
+                                }
+                                .disabled(authManager.isLoading)
+                            }
+                            .padding(.horizontal, Theme.Spacing.lg)
+                        }
+                        .padding(.bottom, Theme.Spacing.xxxl)
+
+                        // Bottom spacer
+                        Spacer()
+                            .frame(height: geometry.safeAreaInsets.bottom + 40)
+                    }
+                }
+                .scrollIndicators(.hidden)
+            }
+        }
+
+                // Error message overlay
+                if let errorMessage = authManager.errorMessage {
+                    VStack {
+                        Spacer()
+
                         HStack {
-                            if isPasswordVisible {
-                                TextField("Password", text: $password)
-                                    .textContentType(isSignIn ? .password : .newPassword)
-                                    .focused($focusedField, equals: .password)
-                                    .submitLabel(isSignIn ? .done : .next)
-                                    .onSubmit {
-                                        if isSignIn {
-                                            dismissKeyboard()
-                                        } else {
-                                            focusedField = .confirmPassword
-                                        }
-                                    }
-                            } else {
-                                SecureField("Password", text: $password)
-                                    .textContentType(isSignIn ? .password : .newPassword)
-                                    .focused($focusedField, equals: .password)
-                                    .submitLabel(isSignIn ? .done : .next)
-                                    .onSubmit {
-                                        if isSignIn {
-                                            dismissKeyboard()
-                                        } else {
-                                            focusedField = .confirmPassword
-                                        }
-                                    }
-                            }
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.white)
 
-                            Button(action: {
-                                isPasswordVisible.toggle()
-                            }) {
-                                Image(systemName: isPasswordVisible ? "eye.slash" : "eye")
-                                    .foregroundColor(Theme.Colors.secondaryText)
-                            }
+                            Text(errorMessage)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.white)
+                                .multilineTextAlignment(.leading)
                         }
                         .padding()
-                        .background(Theme.Colors.secondaryBackground)
-                        .cornerRadius(Theme.Layout.cornerRadius)
-
-                        // Confirm password field (sign up only)
-                        if !isSignIn {
-                            HStack {
-                                if isConfirmPasswordVisible {
-                                    TextField("Confirm Password", text: $confirmPassword)
-                                        .textContentType(.newPassword)
-                                        .focused($focusedField, equals: .confirmPassword)
-                                        .submitLabel(.done)
-                                        .onSubmit {
-                                            dismissKeyboard()
-                                        }
-                                } else {
-                                    SecureField("Confirm Password", text: $confirmPassword)
-                                        .textContentType(.newPassword)
-                                        .focused($focusedField, equals: .confirmPassword)
-                                        .submitLabel(.done)
-                                        .onSubmit {
-                                            dismissKeyboard()
-                                        }
-                                }
-
-                                Button(action: {
-                                    isConfirmPasswordVisible.toggle()
-                                }) {
-                                    Image(systemName: isConfirmPasswordVisible ? "eye.slash" : "eye")
-                                        .foregroundColor(Theme.Colors.secondaryText)
-                                }
-                            }
-                            .padding()
-                            .background(Theme.Colors.secondaryBackground)
-                            .cornerRadius(Theme.Layout.cornerRadius)
-                        }
-
-                        // Forgot password button (sign in only)
-                        if isSignIn {
-                            Button(action: {
-                                forgotPasswordEmail = email // Pre-fill with current email
-                                showingForgotPasswordAlert = true
-                            }) {
-                                Text("Forgot Password?")
-                                    .font(Theme.Typography.caption)
-                                    .foregroundColor(Theme.Colors.primary)
-                                    .frame(maxWidth: .infinity, alignment: .trailing)
-                                    .padding(.trailing, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Theme.Colors.error)
+                                .shadow(
+                                    color: Theme.Colors.error.opacity(0.3),
+                                    radius: 8,
+                                    x: 0,
+                                    y: 4
+                                )
+                        )
+                        .padding(.horizontal, Theme.Spacing.lg)
+                        .padding(.bottom, 100)
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                authManager.dismissErrorMessage()
                             }
                         }
-
-                        // Sign in/up button
-                        Button(action: {
-                            Task {
-                                if isSignIn {
-                                    await authManager.signInWithEmail(email: email, password: password)
-                                } else {
-                                    if password == confirmPassword {
-                                        await authManager.signUpWithEmail(email: email, password: password)
-                                    } else {
-                                        authManager.errorMessage = "Passwords do not match"
-                                    }
-                                }
-                            }
-                        }) {
-                            Text(isSignIn ? "Sign In" : "Sign Up")
-                                .font(Theme.Typography.body.bold())
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Theme.Colors.primary)
-                                .cornerRadius(Theme.Layout.cornerRadius)
-                        }
-                        .disabled(authManager.isLoading || !isFormValid)
-                        .opacity(isFormValid ? 1.0 : 0.6)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
-                    .padding(.horizontal, Theme.Spacing.lg)
                 }
 
-                // Social sign-in options
-                VStack(spacing: Theme.Spacing.lg) {
-                    Text(isEmailAuthEnabled ? "Or continue with" : "Sign in with")
-                        .font(Theme.Typography.body)
-                        .foregroundColor(Theme.Colors.secondaryText)
-                        .padding(.top, Theme.Spacing.md)
+                // Loading overlay
+                if authManager.isLoading {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                        .onTapGesture { } // Prevent interaction
 
-                    VStack(spacing: Theme.Spacing.md) {
-                        // Apple sign-in (default)
-                        AppleSignInButton(
-                            onCompletion: { result in
-                                Task {
-                                    await authManager.handleAppleSignIn(result: result)
-                                }
-                            },
-                            onRequest: { request in
-                                // Get both the hashed nonce (for Apple) and raw nonce (stored for Supabase)
-                                let (hashedNonce, _) = authManager.prepareAppleSignIn()
-                                // Apple requires the hashed nonce
-                                request.nonce = hashedNonce
-                            },
-                            style: colorScheme == .dark ? .white : .black,
-                            cornerRadius: Theme.Layout.cornerRadius,
-                            height: 55
-                        )
-                        .frame(height: 55)
-                        .frame(maxWidth: .infinity) // Make button fill available width
+                    VStack(spacing: Theme.Spacing.lg) {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                            .progressViewStyle(CircularProgressViewStyle(tint: Theme.Colors.primary))
 
-                        // Google sign-in
-                        GoogleSignInButton(
-                            action: {
-                                // Trigger the Google Sign In flow
-                                authManager.signInWithGoogle()
-                            },
-                            height: 55,
-                            cornerRadius: Theme.Layout.cornerRadius
-                        )
-                        .frame(height: 55)
-                        .frame(maxWidth: .infinity) // Make button fill available width
-                    }
-                    .padding(.horizontal, Theme.Spacing.lg) // Add horizontal padding like the email form had
-                }
-
-                // Toggle between sign in and sign up (only shown if email auth is enabled)
-                if isEmailAuthEnabled {
-                    Button(action: {
-                        withAnimation {
-                            isSignIn.toggle()
-                            // Clear fields when switching modes
-                            password = ""
-                            confirmPassword = ""
-                        }
-                    }) {
-                        Text(isSignIn ? "Don't have an account? Sign Up" : "Already have an account? Sign In")
-                            .font(Theme.Typography.caption)
+                        Text("Signing you in...")
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundColor(Theme.Colors.primary)
                     }
-                }
-
-                Spacer()
-            }
-            .padding()
-
-            // Error message
-            if let errorMessage = authManager.errorMessage {
-                VStack {
-                    Spacer()
-
-                    Text(errorMessage)
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(.white)
-                        .padding()
-                        .background(Color.red.opacity(0.8))
-                        .cornerRadius(Theme.Layout.cornerRadius)
-                        .padding()
-                        .onTapGesture {
-                            authManager.dismissErrorMessage()
-                        }
-                        .transition(.opacity)
-                        .animation(.easeInOut, value: authManager.errorMessage != nil)
+                    .padding(Theme.Spacing.xl)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Theme.Colors.background)
+                            .shadow(
+                                color: Color.black.opacity(0.1),
+                                radius: 20,
+                                x: 0,
+                                y: 10
+                            )
+                    )
                 }
             }
-
-            // Loading indicator
-            if authManager.isLoading {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-
-                ProgressView()
-                    .scaleEffect(1.5)
-                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-            }
-        }
-        // Forgot password alert
-        .alert("Reset Password", isPresented: $showingForgotPasswordAlert) {
-            TextField("Email", text: $forgotPasswordEmail)
-                .autocapitalization(.none)
-                .keyboardType(.emailAddress)
-
-            Button("Cancel", role: .cancel) {}
-
-            Button("Send Reset Link") {
-                Task {
-                    await authManager.resetPassword(email: forgotPasswordEmail)
-                }
-            }
-        } message: {
-            Text("Enter your email address and we'll send you a link to reset your password.")
-        }
-    }
-
-    // Dismiss the keyboard
-    private func dismissKeyboard() {
-        focusedField = nil
-    }
-
-    // Validate form fields
-    private var isFormValid: Bool {
-        // If email auth is disabled, we don't need to validate the form
-        if !isEmailAuthEnabled {
-            return true
         }
 
-        if isSignIn {
-            return !email.isEmpty && !password.isEmpty
-        } else {
-            return !email.isEmpty && !password.isEmpty && !confirmPassword.isEmpty && password == confirmPassword
+// MARK: - Feature Badge Component
+struct FeatureBadge: View {
+    let icon: String
+    let text: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(color)
+
+            Text(text)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(color)
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(color.opacity(0.12))
+                .overlay(
+                    Capsule()
+                        .stroke(color.opacity(0.2), lineWidth: 0.5)
+                )
+        )
     }
 }
 
