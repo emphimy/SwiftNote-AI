@@ -22,7 +22,7 @@ struct NoteListCard: View {
                         .foregroundColor(configuration.sourceType.color)
 
                     Text(configuration.title)
-                        .font(Theme.Typography.body.weight(.medium))
+                        .font(Theme.Typography.caption.weight(.medium))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -35,19 +35,21 @@ struct NoteListCard: View {
                         actions.onFavorite()
                     }) {
                         Image(systemName: configuration.isFavorite ? "star.fill" : "star")
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundColor(configuration.isFavorite ? Theme.Colors.warning : Theme.Colors.secondaryText)
                     }
+                    .buttonStyle(PlainButtonStyle())
                 }
 
                 // Footer
                 HStack {
                     Text(configuration.date, style: .date)
-                        .font(Theme.Typography.caption)
+                        .font(Theme.Typography.small)
                         .foregroundColor(Theme.Colors.tertiaryText)
 
                     Spacer()
 
-                    HStack(spacing: Theme.Spacing.sm) {
+                    HStack(spacing: Theme.Spacing.md) {
                         Button(action: {
 #if DEBUG
                             print("📝 NoteListCard: Share button tapped")
@@ -55,8 +57,10 @@ struct NoteListCard: View {
                             actions.onShare()
                         }) {
                             Image(systemName: "square.and.arrow.up")
-                                .foregroundColor(Theme.Colors.secondaryText)
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(Theme.Colors.primary)
                         }
+                        .buttonStyle(PlainButtonStyle())
 
                         Button(action: {
 #if DEBUG
@@ -64,9 +68,11 @@ struct NoteListCard: View {
 #endif
                             actions.onDelete()
                         }) {
-                            Image(systemName: "trash")
+                            Image(systemName: "trash.fill")
+                                .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(Theme.Colors.error)
                         }
+                        .buttonStyle(PlainButtonStyle())
                     }
                 }
             }
@@ -109,7 +115,7 @@ struct NoteGridCard: View {
                         .foregroundColor(configuration.sourceType.color)
 
                     Text(configuration.title)
-                        .font(Theme.Typography.body.weight(.medium))
+                        .font(Theme.Typography.caption.weight(.medium))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
 

@@ -1,18 +1,18 @@
-Color Set for the app
+Color Set for the app - Modern Pastel Palette
 
 
 /*
-AppPrimary:
-- Light: #007AFF
-- Dark: #0A84FF
+AppPrimary (Modern Blue):
+- Light: #4A8AD6
+- Dark: #6BA8E8
 
-AppSecondary:
-- Light: #5856D6
-- Dark: #5E5CE6
+AppSecondary (Muted Lavender):
+- Light: #B8A9D9
+- Dark: #C4B5E0
 
-Accent:
-- Light: #FF9500
-- Dark: #FF9F0A
+Accent (Warm Peach):
+- Light: #F4A688
+- Dark: #F7B89A
 
 Background:
 - Light: #FFFFFF
@@ -26,6 +26,10 @@ TertiaryBackground:
 - Light: #E5E5EA
 - Dark: #3A3A3C
 
+CardBackground (Soft Pastel Blue with opacity):
+- Light: #9BC4E6 (8% opacity)
+- Dark: #ADD4F0 (8% opacity)
+
 Text:
 - Light: #000000
 - Dark: #FFFFFF
@@ -38,17 +42,17 @@ TertiaryText:
 - Light: #3C3C43 (0.3 opacity)
 - Dark: #EBEBF5 (0.3 opacity)
 
-Success:
-- Light: #34C759
-- Dark: #30D158
+Success (Soft Mint):
+- Light: #A8E6A3
+- Dark: #B8F0B3
 
-Error:
-- Light: #FF3B30
-- Dark: #FF453A
+Error (Soft Coral):
+- Light: #F5A3A3
+- Dark: #F8B8B8
 
-Warning:
-- Light: #FF9500
-- Dark: #FF9F0A
+Warning (Soft Amber):
+- Light: #F5D982
+- Dark: #F8E29A
 
 FolderBlue:
 - Light: #007AFF
