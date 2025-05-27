@@ -67,10 +67,10 @@ The SupabaseSyncService.swift file was originally ~3,007 lines and needed to be 
 
 ## Planned Extractions (Not Yet Completed)
 
-### 6. NoteSyncManager.swift - Phase 2 (595 lines)
-**Status: 🟡 PHASE 2 COMPLETED - AWAITING APPROVAL FOR PHASE 3**
+### 6. NoteSyncManager.swift - Phase 3 (957 lines)
+**Status: 🟡 PHASE 3 COMPLETED - AWAITING APPROVAL FOR PHASE 4**
 - **Purpose**: Handle all note-related sync operations
-- **Phase 1 & 2 Completed Features**:
+- **Phase 1, 2 & 3 Completed Features**:
   - `syncNotesToSupabase()` - Main note upload orchestration with progress tracking
   - `syncNoteMetadataOnly()` - Upload notes without binary data (insert/update logic)
   - `syncNoteWithBinaryData()` - Upload notes with binary content (direct bytea format)
@@ -79,9 +79,13 @@ The SupabaseSyncService.swift file was originally ~3,007 lines and needed to be 
   - `createSupabaseNoteFromCoreData()` - Convert CoreData to Supabase format (metadata only)
   - `createFullSupabaseNoteFromCoreData()` - Create full notes with binary data
   - `createEnhancedSupabaseNoteFromCoreData()` - Create Base64-encoded notes (deprecated)
+  - `downloadNotesFromSupabase()` - Download notes from Supabase with progress tracking
+  - `resolveNoteConflict()` - "Last Write Wins" conflict resolution strategy
+  - `updateLocalNoteFromRemote()` - Update local CoreData notes with remote data
+  - `downloadNoteBinaryData()` - Download binary data for notes (direct bytea format)
 - **Integration**: Fully integrated with SupabaseSyncService using closure-based progress updates
 - **Dependencies**: SupabaseService, SyncTransactionManager, NetworkRecoveryManager, ProgressUpdateCoordinator
-- **Remaining Phases**: Download/conflict resolution, cleanup operations
+- **Remaining Phases**: Cleanup operations (note deletion)
 
 ### 7. SyncUtilities.swift (Optional)
 **Status: ❌ NOT STARTED**
@@ -108,16 +112,17 @@ The SupabaseSyncService.swift file was originally ~3,007 lines and needed to be 
 
 ## Current Status
 - **Original File Size**: ~3,007 lines
-- **Extracted So Far**: ~1,939 lines (SyncTransactionManager + ProgressUpdateCoordinator + NetworkRecoveryManager + SyncDataModels + FolderSyncManager + NoteSyncManager Phase 1&2)
-- **Current SupabaseSyncService Size**: 1,307 lines
-- **Remaining to Extract**: ~672 lines
-- **Target Reduction**: 70-80% (aim for main file to be ~600-900 lines)
-- **Phase 2 Progress**: Binary data operations and note creation methods successfully extracted
+- **Extracted So Far**: ~2,301 lines (SyncTransactionManager + ProgressUpdateCoordinator + NetworkRecoveryManager + SyncDataModels + FolderSyncManager + NoteSyncManager Phase 1-3)
+- **Current SupabaseSyncService Size**: 893 lines
+- **Remaining to Extract**: ~310 lines
+- **Target Reduction**: 76.5% (aim for main file to be ~600-900 lines)
+- **Phase 3 Progress**: Download operations and conflict resolution successfully extracted
 
 ## Next Steps
 1. ✅ SyncDataModels.swift extraction completed (safest, no logic changes)
 2. ✅ FolderSyncManager.swift extraction completed (folder operations)
 3. ✅ NoteSyncManager.swift Phase 1 completed (core upload operations)
 4. ✅ NoteSyncManager.swift Phase 2 completed (binary data operations)
-5. **AWAITING APPROVAL**: NoteSyncManager.swift Phase 3 (download/conflict resolution)
-6. Consider SyncUtilities.swift if common patterns emerge
+5. ✅ NoteSyncManager.swift Phase 3 completed (download/conflict resolution)
+6. **AWAITING APPROVAL**: NoteSyncManager.swift Phase 4 (cleanup operations)
+7. Consider SyncUtilities.swift if common patterns emerge

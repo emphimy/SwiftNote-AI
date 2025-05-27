@@ -587,6 +587,368 @@ class NoteSyncManager {
         )
     }
 
+    // MARK: - Download Methods
+
+    /// Download notes from Supabase to CoreData
+    /// - Parameters:
+    ///   - context: The NSManagedObjectContext to save notes to
+    ///   - includeBinaryData: Whether to include binary data in the download
+    ///   - updateProgress: Closure to update sync progress
+    /// - Returns: Success flag
+    func downloadNotesFromSupabase(context: NSManagedObjectContext, includeBinaryData: Bool, updateProgress: @escaping (SyncProgress) -> Void) async throws -> Bool {
+        // Get current user ID
+        let session = try await supabaseService.getSession()
+        let userId = session.user.id
+
+        #if DEBUG
+        print("🔄 NoteSyncManager: Starting note download for user: \(userId) with binary data: \(includeBinaryData)")
+        #endif
+
+        // Fetch notes from Supabase for the current user (excluding deleted notes) with network recovery
+        let remoteNotes: [SimpleSupabaseNote] = try await networkRecoveryManager.executeWithRetry(
+            operation: {
+                try await self.supabaseService.fetch(
+                    from: "notes",
+                    filters: { query in
+                        query.eq("user_id", value: userId.uuidString)
+                             .is("deleted_at", value: nil)
+                    }
+                )
+            },
+            operationName: "Notes Download"
+        )
+
+        #if DEBUG
+        print("🔄 NoteSyncManager: Found \(remoteNotes.count) remote notes")
+        #endif
+
+        // Update progress
+        await MainActor.run {
+            var progress = SyncProgress()
+            progress.totalNotes = remoteNotes.count
+            progress.downloadedNotes = 0
+            updateProgress(progress)
+        }
+
+        // Use an actor-isolated counter to track success
+        let successCounter = SuccessCounter()
+
+        for (index, remoteNote) in remoteNotes.enumerated() {
+            do {
+                // Update progress status
+                await MainActor.run {
+                    var progress = SyncProgress()
+                    progress.currentStatus = "Downloading note \(index + 1) of \(remoteNotes.count)"
+                    updateProgress(progress)
+                }
+
+                #if DEBUG
+                print("🔄 NoteSyncManager: Processing note \(remoteNote.id) - \(remoteNote.title)")
+                #endif
+
+                // Check if note exists locally and resolve conflicts
+                let conflictResolved = try await resolveNoteConflict(remoteNote: remoteNote, context: context, includeBinaryData: includeBinaryData, updateProgress: updateProgress)
+
+                if conflictResolved {
+                    await successCounter.increment()
+                    #if DEBUG
+                    print("🔄 NoteSyncManager: Successfully processed note \(remoteNote.id)")
+                    #endif
+                } else {
+                    #if DEBUG
+                    print("🔄 NoteSyncManager: Failed to process note \(remoteNote.id)")
+                    #endif
+                }
+
+                // Update progress
+                let currentSuccessCount = await successCounter.getCount()
+                await MainActor.run {
+                    var progress = SyncProgress()
+                    progress.downloadedNotes = currentSuccessCount
+                    updateProgress(progress)
+                }
+            } catch {
+                #if DEBUG
+                print("🔄 NoteSyncManager: Error downloading note \(remoteNote.id): \(error.localizedDescription)")
+                print("🔄 NoteSyncManager: Full error details: \(error)")
+                #endif
+                // Continue processing other notes even if one fails
+            }
+        }
+
+        // Get final success count
+        let finalSuccessCount = await successCounter.getCount()
+
+        #if DEBUG
+        print("🔄 NoteSyncManager: Note download completed. Downloaded \(finalSuccessCount) of \(remoteNotes.count) notes")
+        #endif
+
+        // Consider success if we processed any notes OR if there were no notes to process
+        return finalSuccessCount > 0 || remoteNotes.isEmpty
+    }
+
+    // MARK: - Conflict Resolution Methods
+
+    /// Resolve note conflict using "Last Write Wins" strategy
+    /// - Parameters:
+    ///   - remoteNote: The note from Supabase
+    ///   - context: The NSManagedObjectContext
+    ///   - includeBinaryData: Whether to include binary data in the resolution
+    ///   - updateProgress: Closure to update sync progress
+    /// - Returns: True if conflict was resolved successfully
+    private func resolveNoteConflict(remoteNote: SimpleSupabaseNote, context: NSManagedObjectContext, includeBinaryData: Bool, updateProgress: @escaping (SyncProgress) -> Void) async throws -> Bool {
+        // Skip deleted remote notes - they should not be downloaded
+        if remoteNote.deletedAt != nil {
+            #if DEBUG
+            print("🔄 NoteSyncManager: Skipping deleted remote note \(remoteNote.id)")
+            #endif
+            return true
+        }
+
+        // Store the note ID for safe access across context operations
+        let noteId = remoteNote.id
+
+        // Perform all CoreData operations within a single context.perform block to avoid race conditions
+        let (shouldUpdate, isNewNote) = try await context.perform {
+            let request = NSFetchRequest<Note>(entityName: "Note")
+            request.predicate = NSPredicate(format: "id == %@", noteId as CVarArg)
+            request.fetchLimit = 1
+
+            let existingNotes = try context.fetch(request)
+
+            if let localNote = existingNotes.first {
+                // Check if local note is deleted
+                if localNote.deletedAt != nil {
+                    #if DEBUG
+                    print("🔄 NoteSyncManager: Local note \(noteId) is deleted, skipping remote update")
+                    #endif
+                    return (false, false) // Don't update deleted local notes
+                }
+
+                // Note exists locally - check for conflicts
+                let localModified = localNote.lastModified ?? localNote.timestamp ?? Date.distantPast
+                let remoteModified = remoteNote.lastModified
+
+                #if DEBUG
+                print("🔄 NoteSyncManager: Resolving note conflict - Local: \(localModified), Remote: \(remoteModified)")
+                #endif
+
+                // "Last Write Wins" strategy
+                if remoteModified > localModified {
+                    #if DEBUG
+                    print("🔄 NoteSyncManager: Remote note \(noteId) is newer, will update local data")
+                    #endif
+                    return (true, false) // Existing note, should update, not new
+                } else {
+                    #if DEBUG
+                    print("🔄 NoteSyncManager: Local note \(noteId) is newer, keeping local data")
+                    #endif
+                    return (false, false) // Existing note, no update needed, not new
+                }
+            } else {
+                // Note doesn't exist locally - create new note with proper ID
+                let newNote = Note(context: context)
+                newNote.id = noteId  // Set the ID immediately to satisfy validation
+                #if DEBUG
+                print("🔄 NoteSyncManager: Creating new local note \(noteId)")
+                #endif
+                return (true, true) // New note, should update, is new
+            }
+        }
+
+        // If we need to update the note, perform the update and save
+        if shouldUpdate {
+            // Find or create the note and update it
+            let localNote = try await context.perform {
+                let request = NSFetchRequest<Note>(entityName: "Note")
+                request.predicate = NSPredicate(format: "id == %@", noteId as CVarArg)
+                request.fetchLimit = 1
+
+                let existingNotes = try context.fetch(request)
+
+                if let existing = existingNotes.first {
+                    return existing
+                } else {
+                    // Create new note if it doesn't exist
+                    let newNote = Note(context: context)
+                    newNote.id = noteId  // Set the ID immediately to satisfy validation
+                    return newNote
+                }
+            }
+
+            // Update the note with remote data (outside context.perform to allow async operations)
+            try await updateLocalNoteFromRemote(localNote: localNote, remoteNote: remoteNote, context: context, includeBinaryData: includeBinaryData)
+
+            // Save changes
+            try await context.perform {
+                if context.hasChanges {
+                    do {
+                        try context.save()
+                        #if DEBUG
+                        print("🔄 NoteSyncManager: Successfully saved note changes to CoreData")
+                        #endif
+                    } catch {
+                        #if DEBUG
+                        print("🔄 NoteSyncManager: Failed to save note changes to CoreData: \(error.localizedDescription)")
+                        #endif
+                        throw error
+                    }
+                }
+            }
+
+            // Update conflict counter if this was a conflict resolution (not a new note)
+            if !isNewNote {
+                await MainActor.run {
+                    var progress = SyncProgress()
+                    progress.resolvedConflicts = 1
+                    updateProgress(progress)
+                }
+            }
+
+            #if DEBUG
+            print("🔄 NoteSyncManager: \(isNewNote ? "Created" : "Updated") local note \(noteId)")
+            #endif
+        }
+
+        return true
+    }
+
+    /// Update local note with data from remote note
+    /// - Parameters:
+    ///   - localNote: The local CoreData note
+    ///   - remoteNote: The remote Supabase note
+    ///   - context: The NSManagedObjectContext
+    ///   - includeBinaryData: Whether to include binary data in the update
+    private func updateLocalNoteFromRemote(localNote: Note, remoteNote: SimpleSupabaseNote, context: NSManagedObjectContext, includeBinaryData: Bool) async throws {
+        // Update basic metadata
+        localNote.id = remoteNote.id
+        localNote.title = remoteNote.title
+        localNote.sourceType = remoteNote.sourceType
+        localNote.timestamp = remoteNote.timestamp
+        localNote.lastModified = remoteNote.lastModified
+        localNote.isFavorite = remoteNote.isFavorite
+        localNote.processingStatus = remoteNote.processingStatus
+        localNote.keyPoints = remoteNote.keyPoints
+        localNote.citations = remoteNote.citations
+        localNote.duration = remoteNote.duration ?? 0.0 // Safely unwrap optional Double
+        localNote.transcriptLanguage = remoteNote.languageCode
+        localNote.tags = remoteNote.tags
+        localNote.transcript = remoteNote.transcript
+        localNote.videoId = remoteNote.videoId
+        localNote.syncStatus = "synced"
+
+        // Set source URL
+        if let sourceURLString = remoteNote.sourceURL {
+            localNote.sourceURL = URL(string: sourceURLString)
+        }
+
+        // Handle folder relationship
+        if let folderId = remoteNote.folderId {
+            let folderRequest = NSFetchRequest<Folder>(entityName: "Folder")
+            folderRequest.predicate = NSPredicate(format: "id == %@", folderId as CVarArg)
+            folderRequest.fetchLimit = 1
+
+            let folders = try context.fetch(folderRequest)
+            localNote.folder = folders.first
+        }
+
+        // Handle binary data if requested and available
+        if includeBinaryData {
+            try await downloadNoteBinaryData(for: localNote, remoteNoteId: remoteNote.id)
+        }
+
+        // Ensure the note has at least some content for HomeViewModel validation
+        // If no originalContent was downloaded, create a placeholder from the title
+        if localNote.originalContent == nil {
+            let placeholderContent = localNote.title ?? "Downloaded Note"
+            localNote.originalContent = placeholderContent.data(using: .utf8)
+
+            #if DEBUG
+            print("🔄 NoteSyncManager: Created placeholder content for note \(remoteNote.id)")
+            #endif
+        }
+    }
+
+    /// Download binary data for a note from Supabase
+    /// - Parameters:
+    ///   - localNote: The local CoreData note to update
+    ///   - remoteNoteId: The ID of the remote note
+    private func downloadNoteBinaryData(for localNote: Note, remoteNoteId: UUID) async throws {
+        // Fetch the full note with binary data from Supabase using direct bytea format with network recovery
+        let fullNotes: [SupabaseNote] = try await networkRecoveryManager.executeWithRetry(
+            operation: {
+                try await self.supabaseService.fetch(
+                    from: "notes",
+                    filters: { query in
+                        query.eq("id", value: remoteNoteId.uuidString)
+                    }
+                )
+            },
+            operationName: "Binary Data Download (\(remoteNoteId))"
+        )
+
+        guard let fullNote = fullNotes.first else {
+            #if DEBUG
+            print("🔄 NoteSyncManager: No full note found for binary data download for note \(remoteNoteId)")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("🔄 NoteSyncManager: Found full note for binary data download (direct bytea format)")
+        #endif
+
+        // Directly assign binary data from bytea columns (no encoding/decoding needed)
+        if let originalContentData = fullNote.originalContent {
+            localNote.originalContent = originalContentData
+
+            #if DEBUG
+            let sizeInMB = originalContentData.sizeInMB()
+            print("🔄 NoteSyncManager: Downloaded originalContent (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        } else {
+            #if DEBUG
+            print("🔄 NoteSyncManager: No originalContent binary data found for note \(remoteNoteId)")
+            #endif
+        }
+
+        if let aiGeneratedContentData = fullNote.aiGeneratedContent {
+            localNote.aiGeneratedContent = aiGeneratedContentData
+
+            #if DEBUG
+            let sizeInMB = aiGeneratedContentData.sizeInMB()
+            print("🔄 NoteSyncManager: Downloaded aiGeneratedContent (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        }
+
+        if let sectionsData = fullNote.sections {
+            localNote.sections = sectionsData
+
+            #if DEBUG
+            let sizeInMB = sectionsData.sizeInMB()
+            print("🔄 NoteSyncManager: Downloaded sections (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        }
+
+        if let supplementaryMaterialsData = fullNote.supplementaryMaterials {
+            localNote.supplementaryMaterials = supplementaryMaterialsData
+
+            #if DEBUG
+            let sizeInMB = supplementaryMaterialsData.sizeInMB()
+            print("🔄 NoteSyncManager: Downloaded supplementaryMaterials (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        }
+
+        if let mindMapData = fullNote.mindMap {
+            localNote.mindMap = mindMapData
+
+            #if DEBUG
+            let sizeInMB = mindMapData.sizeInMB()
+            print("🔄 NoteSyncManager: Downloaded mindMap (\(String(format: "%.2f", sizeInMB)) MB) from bytea")
+            #endif
+        }
+    }
+
     /// Placeholder for deleteNoteFromSupabase - will be implemented in Phase 4
     private func deleteNoteFromSupabase(note: Note, userId: UUID, context: NSManagedObjectContext) async throws {
         // TODO: Implement in Phase 4
