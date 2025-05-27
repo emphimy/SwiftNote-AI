@@ -24,7 +24,7 @@ struct AuthenticationView: View {
                     VStack(spacing: 0) {
                         // Top spacer
                         Spacer()
-                            .frame(height: geometry.safeAreaInsets.top + 60)
+                            .frame(height: geometry.safeAreaInsets.top + 30)
 
                         // Hero section with logo and branding
                         VStack(spacing: Theme.Spacing.xl) {
@@ -68,21 +68,21 @@ struct AuthenticationView: View {
                                         // AI Transcription badge
                                         FeatureBadge(
                                             icon: "waveform.and.mic",
-                                            text: "AI Transcription",
+                                            text: "Audio Notes",
                                             color: Theme.Colors.primary
                                         )
 
                                         // Auto Notes badge
                                         FeatureBadge(
                                             icon: "doc.text.magnifyingglass",
-                                            text: "Auto Notes",
+                                            text: "Text Notes",
                                             color: Theme.Colors.secondary
                                         )
 
                                         // YouTube Support badge
                                         FeatureBadge(
                                             icon: "play.rectangle",
-                                            text: "YouTube",
+                                            text: "Video Notes",
                                             color: Theme.Colors.error
                                         )
                                     }
@@ -120,7 +120,7 @@ struct AuthenticationView: View {
                                     .foregroundColor(Theme.Colors.text)
 
                                 VStack(spacing: Theme.Spacing.xs) {
-                                    Text("Transform audio & video into")
+                                    Text("Transform audio, video & text into")
                                         .font(.system(size: 18, weight: .medium))
                                         .foregroundColor(Theme.Colors.secondaryText)
 
@@ -132,10 +132,10 @@ struct AuthenticationView: View {
                             }
                             .padding(.horizontal, Theme.Spacing.lg)
                         }
-                        .padding(.bottom, Theme.Spacing.xxxl)
+                        .padding(.bottom, Theme.Spacing.lg)
 
                         // CTA and Authentication section
-                        VStack(spacing: Theme.Spacing.xl) {
+                        VStack(spacing: Theme.Spacing.lg) {
                             // Professional CTA
                             Text("Get Started")
                                 .font(.system(size: 18, weight: .medium))
@@ -194,11 +194,10 @@ struct AuthenticationView: View {
                             }
                             .padding(.horizontal, Theme.Spacing.lg)
                         }
-                        .padding(.bottom, Theme.Spacing.xxxl)
 
                         // Bottom spacer
                         Spacer()
-                            .frame(height: geometry.safeAreaInsets.bottom + 40)
+                            .frame(height: geometry.safeAreaInsets.bottom + 24)
                     }
                 }
                 .scrollIndicators(.hidden)
@@ -243,30 +242,32 @@ struct AuthenticationView: View {
 
                 // Loading overlay
                 if authManager.isLoading {
-                    Color.black.opacity(0.3)
-                        .ignoresSafeArea()
-                        .onTapGesture { } // Prevent interaction
+                    ZStack {
+                        // Full screen background
+                        Theme.Colors.background
+                            .ignoresSafeArea()
+                            .onTapGesture { } // Prevent interaction
 
-                    VStack(spacing: Theme.Spacing.lg) {
-                        ProgressView()
-                            .scaleEffect(1.2)
-                            .progressViewStyle(CircularProgressViewStyle(tint: Theme.Colors.primary))
+                        // Centered loading content
+                        VStack(spacing: Theme.Spacing.xl) {
+                            // App logo
+                            Image("SwiftNote_Logo")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 80, height: 80)
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
 
-                        Text("Signing you in...")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(Theme.Colors.primary)
+                            VStack(spacing: Theme.Spacing.lg) {
+                                ProgressView()
+                                    .scaleEffect(1.2)
+                                    .progressViewStyle(CircularProgressViewStyle(tint: Theme.Colors.primary))
+
+                                Text("Signing you in...")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(Theme.Colors.primary)
+                            }
+                        }
                     }
-                    .padding(Theme.Spacing.xl)
-                    .background(
-                        RoundedRectangle(cornerRadius: 16)
-                            .fill(Theme.Colors.background)
-                            .shadow(
-                                color: Color.black.opacity(0.1),
-                                radius: 20,
-                                x: 0,
-                                y: 10
-                            )
-                    )
                 }
             }
         }

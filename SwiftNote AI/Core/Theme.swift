@@ -191,6 +191,12 @@ enum Theme {
 
         static let sections: [SettingsSection] = [
             .init(
+                id: "profile",
+                title: "Profile",
+                icon: "person.circle.fill",
+                color: Colors.primary
+            ),
+            .init(
                 id: "appearance",
                 title: "Appearance",
                 icon: "paintbrush.fill",

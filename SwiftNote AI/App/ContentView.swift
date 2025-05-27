@@ -473,9 +473,6 @@ struct ContentView: View {
                 }
                 .navigationViewStyle(StackNavigationViewStyle()) // Use stack style to prevent split view on iPad
             }
-            .fullScreenCover(isPresented: $viewModel.isShowingProfile) {
-                AuthProfileView()
-            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     FolderNavigationButton(isShowingFolders: $isShowingFolders)
@@ -487,34 +484,18 @@ struct ContentView: View {
                 }
 
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack(spacing: Theme.Spacing.md) {
-                        // Profile button
-                        Button(action: {
-                            #if DEBUG
-                            print("👤 ContentView: Profile button tapped")
-                            #endif
-                            viewModel.isShowingProfile = true
-                        }) {
-                            Image(systemName: "person.circle")
-                                .font(.system(size: 24))
-                                .foregroundColor(Theme.Colors.primary)
-                                .scaleEffect(viewModel.isShowingProfile ? 1.1 : 1.0)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewModel.isShowingProfile)
-                        }
-
-                        // Settings button
-                        Button(action: {
-                            #if DEBUG
-                            print("⚙️ ContentView: Settings button tapped")
-                            #endif
-                            viewModel.isShowingSettings = true
-                        }) {
-                            Image(systemName: "gear")
-                                .font(.system(size: 24))
-                                .foregroundColor(Theme.Colors.primary)
-                                .scaleEffect(viewModel.isShowingSettings ? 1.1 : 1.0)
-                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewModel.isShowingSettings)
-                        }
+                    // Settings button
+                    Button(action: {
+                        #if DEBUG
+                        print("⚙️ ContentView: Settings button tapped")
+                        #endif
+                        viewModel.isShowingSettings = true
+                    }) {
+                        Image(systemName: "gear")
+                            .font(.system(size: 24))
+                            .foregroundColor(Theme.Colors.primary)
+                            .scaleEffect(viewModel.isShowingSettings ? 1.1 : 1.0)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewModel.isShowingSettings)
                     }
                 }
             }

@@ -418,11 +418,14 @@ final class SettingsViewModel: ObservableObject {
 struct SettingsView: View {
     @StateObject private var viewModel = SettingsViewModel()
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var authManager: AuthenticationManager
     @Environment(\.dismiss) private var dismiss
     @Environment(\.toastManager) private var toastManager
     @Environment(\.managedObjectContext) private var viewContext
     @State private var noteTitle: String = ""
     @State private var refreshToggle = false
+    @State private var showingSignOutAlert = false
+    @State private var profileUpdateCounter = 0
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -522,6 +525,8 @@ struct SettingsView: View {
     @ViewBuilder
     func sectionContent(for section: SettingsSection) -> some View {
         switch section.id {
+        case "profile":
+            profileSection
         case "appearance":
             appearanceSection
         case "privacy":
@@ -580,6 +585,76 @@ struct SettingsView: View {
             Text("Choose how SwiftNote AI appears to you")
                 .font(Theme.Typography.caption)
                 .foregroundColor(Theme.Colors.secondaryText)
+        }
+    }
+
+    private var profileSection: some View {
+        VStack(spacing: 8) {
+            // User info display
+            HStack {
+                // Profile image or icon
+                if let avatarUrl = authManager.userProfile?.avatarUrl, !avatarUrl.isEmpty {
+                    AsyncImage(url: URL(string: avatarUrl)) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        ProgressView()
+                            .frame(width: 40, height: 40)
+                    }
+                    .frame(width: 40, height: 40)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Theme.Colors.primary, lineWidth: 1))
+                } else {
+                    Image(systemName: "person.circle.fill")
+                        .font(.system(size: 40))
+                        .foregroundColor(Theme.Colors.primary)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(authManager.userProfile?.fullName ?? "User")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(Theme.Colors.text)
+
+                    Text(authManager.userProfile?.email ?? "")
+                        .font(.system(size: 14))
+                        .foregroundColor(Theme.Colors.secondaryText)
+                }
+
+                Spacer()
+            }
+
+            // Sign out button
+            Button(action: {
+                showingSignOutAlert = true
+            }) {
+                HStack {
+                    Text("Sign Out")
+                        .foregroundColor(Theme.Colors.error)
+                    Spacer()
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                        .foregroundColor(Theme.Colors.error)
+                }
+            }
+        }
+        .alert("Sign Out", isPresented: $showingSignOutAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Sign Out", role: .destructive) {
+                Task {
+                    await authManager.signOut()
+                }
+            }
+        } message: {
+            Text("Are you sure you want to sign out?")
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .userProfileUpdated)) { _ in
+            profileUpdateCounter += 1
+        }
+        .id(profileUpdateCounter)
+        .onAppear {
+            Task {
+                await authManager.refreshUserProfile()
+            }
         }
     }
 
