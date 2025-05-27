@@ -43,7 +43,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		C9F047312CF92F090031419E /* Exceptions for "SwiftNote AI" folder in "SwiftNote AI" target */ = {
+		C95F791A2DE5CE0200B7EC0B /* Exceptions for "SwiftNote AI" folder in "SwiftNote AI" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -56,7 +56,7 @@
 		C9F0470A2CF92F080031419E /* SwiftNote AI */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				C9F047312CF92F090031419E /* Exceptions for "SwiftNote AI" folder in "SwiftNote AI" target */,
+				C95F791A2DE5CE0200B7EC0B /* Exceptions for "SwiftNote AI" folder in "SwiftNote AI" target */,
 			);
 			path = "SwiftNote AI";
 			sourceTree = "<group>";
