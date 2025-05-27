@@ -40,6 +40,14 @@ class SupabaseSyncService {
         progressCoordinator: progressCoordinator
     )
 
+    /// Note sync manager for note-related operations
+    private lazy var noteSyncManager = NoteSyncManager(
+        supabaseService: supabaseService,
+        transactionManager: transactionManager,
+        networkRecoveryManager: networkRecoveryManager,
+        progressCoordinator: progressCoordinator
+    )
+
     // MARK: - Initialization
     private init() {
         #if DEBUG
@@ -231,7 +239,13 @@ class SupabaseSyncService {
                     }
                     transactionManager.addCheckpoint("folders_uploaded")
 
-                    let uploadNoteSuccess = try await syncNotesToSupabase(context: transactionContext, includeBinaryData: includeBinaryData)
+                    let uploadNoteSuccess = try await noteSyncManager.syncNotesToSupabase(context: transactionContext, includeBinaryData: includeBinaryData) { [weak self] progress in
+                        self?.syncProgress.totalNotes = progress.totalNotes
+                        self?.syncProgress.syncedNotes = progress.syncedNotes
+                        if !progress.currentStatus.isEmpty {
+                            self?.syncProgress.currentStatus = progress.currentStatus
+                        }
+                    }
                     transactionManager.addCheckpoint("notes_uploaded")
 
                     #if DEBUG
@@ -303,7 +317,13 @@ class SupabaseSyncService {
                         syncProgress.currentStatus = "Syncing notes..."
                     }
 
-                    let noteSuccess = try await syncNotesToSupabase(context: transactionContext, includeBinaryData: includeBinaryData)
+                    let noteSuccess = try await noteSyncManager.syncNotesToSupabase(context: transactionContext, includeBinaryData: includeBinaryData) { [weak self] progress in
+                        self?.syncProgress.totalNotes = progress.totalNotes
+                        self?.syncProgress.syncedNotes = progress.syncedNotes
+                        if !progress.currentStatus.isEmpty {
+                            self?.syncProgress.currentStatus = progress.currentStatus
+                        }
+                    }
                     transactionManager.addCheckpoint("one_way_notes_synced")
 
                     overallSuccess = folderSuccess || noteSuccess
@@ -379,166 +399,9 @@ class SupabaseSyncService {
 
 
 
-    /// Sync notes from CoreData to Supabase
-    /// - Parameters:
-    ///   - context: The NSManagedObjectContext to fetch notes from
-    ///   - includeBinaryData: Whether to include binary data in the sync
-    /// - Returns: Success flag
-    private func syncNotesToSupabase(context: NSManagedObjectContext, includeBinaryData: Bool) async throws -> Bool {
-        // Get current user ID
-        let session = try await supabaseService.getSession()
-        let userId = session.user.id
 
-        #if DEBUG
-        print("🔄 SupabaseSyncService: Starting note sync for user: \(userId) with binary data: \(includeBinaryData)")
-        #endif
 
-        // Fetch notes from CoreData that need syncing
-        let notes = try await fetchNotesForSync(context: context)
 
-        #if DEBUG
-        print("🔄 SupabaseSyncService: Found \(notes.count) notes to sync")
-        #endif
-
-        // Update progress
-        await MainActor.run {
-            syncProgress.totalNotes = notes.count
-            syncProgress.syncedNotes = 0
-        }
-
-        // Sync each note to Supabase
-        // Use an actor-isolated counter to track success
-
-        let successCounter = SuccessCounter()
-
-        for (index, note) in notes.enumerated() {
-            do {
-                // Update progress status with throttling
-                progressCoordinator.scheduleUpdate { [weak self] in
-                    self?.syncProgress.currentStatus = "Syncing note \(index + 1) of \(notes.count)"
-                }
-
-                // Check if this is a deleted note that needs to be removed from Supabase
-                if note.deletedAt != nil {
-                    // Delete the note from Supabase
-                    try await deleteNoteFromSupabase(note: note, userId: userId, context: context)
-                } else {
-                    if includeBinaryData {
-                        // Sync with binary data
-                        try await syncNoteWithBinaryData(note: note, userId: userId, context: context)
-                    } else {
-                        // Sync metadata only
-                        try await syncNoteMetadataOnly(note: note, userId: userId, context: context)
-                    }
-                }
-
-                // Update sync status in CoreData
-                await updateSyncStatus(noteId: note.id ?? UUID(), status: "synced", context: context)
-
-                // Increment success counter in a thread-safe way
-                await successCounter.increment()
-
-                // Update progress with throttling
-                let currentSuccessCount = await successCounter.getCount()
-                progressCoordinator.scheduleUpdate { [weak self] in
-                    self?.syncProgress.syncedNotes = currentSuccessCount
-                }
-            } catch {
-                #if DEBUG
-                print("🔄 SupabaseSyncService: Error syncing note \(note.id?.uuidString ?? "unknown"): \(error)")
-                #endif
-            }
-        }
-
-        // Get final success count
-        let finalSuccessCount = await successCounter.getCount()
-
-        #if DEBUG
-        print("🔄 SupabaseSyncService: Note sync completed. Synced \(finalSuccessCount) of \(notes.count) notes")
-        #endif
-
-        return finalSuccessCount > 0
-    }
-
-    /// Sync a note's metadata only (no binary data)
-    /// - Parameters:
-    ///   - note: The CoreData Note
-    ///   - userId: The Supabase user ID
-    ///   - context: The NSManagedObjectContext
-    private func syncNoteMetadataOnly(note: Note, userId: UUID, context: NSManagedObjectContext) async throws {
-        // Get folder ID if available
-        var folderId: UUID? = nil
-        if let folder = note.folder, let folderID = folder.id {
-            folderId = folderID
-        }
-
-        // Create a simplified note with all available metadata fields
-        let metadataNote = SimpleSupabaseNote(
-            id: note.id ?? UUID(),
-            title: note.title ?? "Untitled Note",
-            sourceType: note.sourceType ?? "text",
-            timestamp: note.timestamp ?? Date(),
-            lastModified: note.lastModified ?? Date(),
-            isFavorite: note.isFavorite,
-            processingStatus: note.processingStatus ?? "completed",
-            userId: userId,
-            folderId: folderId,
-            keyPoints: note.keyPoints,
-            citations: note.citations,
-            duration: note.duration,
-            languageCode: note.transcriptLanguage,
-            sourceURL: note.sourceURL?.absoluteString,
-            tags: note.tags,
-            transcript: note.transcript,
-            videoId: note.videoId,
-            syncStatus: "synced", // Mark as synced in remote database
-            deletedAt: note.deletedAt
-        )
-
-        // Check if note already exists in Supabase with network recovery
-        let existingNotes: [SimpleSupabaseNote] = try await networkRecoveryManager.executeWithRetry(
-            operation: {
-                try await self.supabaseService.fetch(
-                    from: "notes",
-                    filters: { query in
-                        query.eq("id", value: metadataNote.id.uuidString)
-                    }
-                )
-            },
-            operationName: "Note Existence Check (\(metadataNote.title))"
-        )
-
-        if existingNotes.isEmpty {
-            // Insert new note with network recovery
-            _ = try await networkRecoveryManager.executeWithRetry(
-                operation: {
-                    try await self.supabaseService.client.from("notes")
-                        .insert(metadataNote)
-                        .execute()
-                },
-                operationName: "Note Insert (\(metadataNote.title))"
-            )
-
-            #if DEBUG
-            print("🔄 SupabaseSyncService: Inserted note metadata: \(metadataNote.id)")
-            #endif
-        } else {
-            // Update existing note with network recovery
-            _ = try await networkRecoveryManager.executeWithRetry(
-                operation: {
-                    try await self.supabaseService.client.from("notes")
-                        .update(metadataNote)
-                        .eq("id", value: metadataNote.id.uuidString)
-                        .execute()
-                },
-                operationName: "Note Update (\(metadataNote.title))"
-            )
-
-            #if DEBUG
-            print("🔄 SupabaseSyncService: Updated note metadata: \(metadataNote.id)")
-            #endif
-        }
-    }
 
     /// Sync a note with binary data
     /// - Parameters:
@@ -722,31 +585,7 @@ class SupabaseSyncService {
 
     // MARK: - Private Methods
 
-    /// Fetch notes from CoreData that need syncing
-    /// - Parameter context: The NSManagedObjectContext to fetch notes from
-    /// - Returns: Array of notes that need syncing (including deleted notes)
-    private func fetchNotesForSync(context: NSManagedObjectContext) async throws -> [Note] {
-        return try await context.perform {
-            let request = NSFetchRequest<Note>(entityName: "Note")
 
-            // Include all notes (including deleted ones) for sync
-            // We need to sync deleted notes to propagate deletions to Supabase
-            // Filter by sync status to only sync notes that need syncing
-            request.predicate = NSPredicate(format: "syncStatus != %@", "synced")
-
-            // Sort by lastModified to sync newest changes first
-            request.sortDescriptors = [NSSortDescriptor(keyPath: \Note.lastModified, ascending: false)]
-
-            let notes = try context.fetch(request)
-
-            #if DEBUG
-            let deletedCount = notes.filter { $0.deletedAt != nil }.count
-            print("🔄 SupabaseSyncService: Fetched \(notes.count) notes for sync (\(deletedCount) deleted)")
-            #endif
-
-            return notes
-        }
-    }
 
     /// Create a SupabaseNote from a CoreData Note
     /// - Parameters:

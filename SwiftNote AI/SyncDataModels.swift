@@ -1,11 +1,3 @@
-//
-//  SyncDataModels.swift
-//  SwiftNote AI
-//
-//  Created by Augment Agent on 1/27/25.
-//  Extracted from SupabaseSyncService.swift for better code organization
-//
-
 import Foundation
 
 // MARK: - Sync Progress Tracking
