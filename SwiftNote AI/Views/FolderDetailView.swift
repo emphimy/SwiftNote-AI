@@ -377,7 +377,6 @@ struct FolderDetailView: View {
     @Environment(\.toastManager) private var toastManager
     @StateObject private var viewModel: FolderDetailViewModel
     let folder: Folder
-    @State private var viewMode: ListGridContainer<AnyView>.ViewMode = .list
     @State private var selectedNote: NoteCardConfiguration?
 
     init(folder: Folder) {
@@ -427,23 +426,6 @@ struct FolderDetailView: View {
                             .foregroundColor(Theme.Colors.secondaryText)
 
                         Spacer()
-
-                        Button(action: {
-                            #if DEBUG
-                            print("📁 FolderDetailView: Toggle view mode to: \(viewMode == .list ? "grid" : "list")")
-                            #endif
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                viewMode = viewMode == .list ? .grid : .list
-                            }
-                        }) {
-                            Image(systemName: viewMode == .list ? "square.grid.2x2" : "list.bullet")
-                                .foregroundColor(Theme.Colors.primary)
-                                .padding(Theme.Spacing.xs)
-                                .background(
-                                    Circle()
-                                        .fill(Theme.Colors.primary.opacity(0.1))
-                                )
-                        }
                     }
                     .padding(.horizontal)
                 }
@@ -452,7 +434,6 @@ struct FolderDetailView: View {
                 // MARK: - Notes Content
                 FolderNotesContentView(
                     viewModel: viewModel,
-                    viewMode: $viewMode,
                     selectedNote: $selectedNote,
                     cardActions: makeCardActions
                 )
@@ -489,7 +470,6 @@ struct FolderDetailView: View {
 // MARK: - Folder Notes Content View
 private struct FolderNotesContentView: View {
     @ObservedObject var viewModel: FolderDetailViewModel
-    @Binding var viewMode: ListGridContainer<AnyView>.ViewMode
     @Binding var selectedNote: NoteCardConfiguration?
     let cardActions: (NoteCardConfiguration) -> CardActions
 
@@ -514,17 +494,17 @@ private struct FolderNotesContentView: View {
                     .padding(.top, Theme.Spacing.xl)
                 }
             } else {
-                ListGridContainer(viewMode: $viewMode) {
-                    AnyView(
+                ScrollView {
+                    LazyVStack(spacing: Theme.Spacing.sm) {
                         ForEach(viewModel.notes, id: \.title) { note in
                             NoteCardView(
                                 note: note,
-                                viewMode: viewMode,
+                                viewMode: .list,
                                 cardActions: cardActions,
                                 selectedNote: $selectedNote
                             )
                         }
-                    )
+                    }
                 }
                 .padding(.horizontal)
             }

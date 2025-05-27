@@ -770,11 +770,11 @@ struct AudioRecordingView: View {
                             .foregroundColor(Theme.Colors.error)
 
                         Text("Error")
-                            .font(.headline)
+                            .font(Theme.Typography.h3)
                             .foregroundColor(Theme.Colors.text)
 
                         Text(message)
-                            .font(.body)
+                            .font(Theme.Typography.body)
                             .foregroundColor(Theme.Colors.secondaryText)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
@@ -783,7 +783,8 @@ struct AudioRecordingView: View {
                             viewModel.loadingState = .idle
                         }) {
                             Text("Dismiss")
-                                .font(.headline)
+                                .font(Theme.Typography.body)
+                                .fontWeight(.semibold)
                                 .foregroundColor(.white)
                                 .padding(.vertical, 12)
                                 .padding(.horizontal, 24)
@@ -814,12 +815,12 @@ struct AudioRecordingView: View {
                     .padding(.bottom, Theme.Spacing.sm)
 
                 Text(message)
-                    .font(.headline)
+                    .font(Theme.Typography.h3)
                     .foregroundColor(Theme.Colors.text)
                     .multilineTextAlignment(.center)
 
                 Text("This may take a minute...")
-                    .font(.subheadline)
+                    .font(Theme.Typography.body)
                     .foregroundColor(Theme.Colors.secondaryText)
             }
             .padding(Theme.Spacing.lg)
@@ -880,7 +881,8 @@ struct AudioRecordingView: View {
                     Image(systemName: "record.circle")
                         .font(.system(size: 20))
                     Text("Resume Recording")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(Theme.Typography.body)
+                        .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
                 .padding(.vertical, Theme.Spacing.md)
@@ -901,7 +903,8 @@ struct AudioRecordingView: View {
                     Image(systemName: "note.text.badge.plus")
                         .font(.system(size: 18))
                     Text("Generate Note")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(Theme.Typography.body)
+                        .fontWeight(.medium)
                 }
                 .foregroundColor(Theme.Colors.primary)
                 .padding(.vertical, Theme.Spacing.sm)
@@ -917,7 +920,8 @@ struct AudioRecordingView: View {
                 viewModel.deleteRecording()
             }) {
                 Text("Delete Recording")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(Theme.Typography.body)
+                    .fontWeight(.medium)
                     .foregroundColor(Theme.Colors.error)
                     .padding(.vertical, Theme.Spacing.sm)
                     .padding(.horizontal, Theme.Spacing.md)
@@ -939,7 +943,8 @@ struct AudioRecordingView: View {
                     Image(systemName: "note.text.badge.plus")
                         .font(.system(size: 20))
                     Text("Generate Note")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(Theme.Typography.body)
+                        .fontWeight(.semibold)
                 }
                 .foregroundColor(.white)
                 .padding(.vertical, Theme.Spacing.md)
@@ -959,7 +964,8 @@ struct AudioRecordingView: View {
                     Image(systemName: "record.circle")
                         .font(.system(size: 18))
                     Text("Resume Recording")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(Theme.Typography.body)
+                        .fontWeight(.medium)
                 }
                 .foregroundColor(Theme.Colors.primary)
                 .padding(.vertical, Theme.Spacing.sm)
@@ -975,7 +981,8 @@ struct AudioRecordingView: View {
                 viewModel.deleteRecording()
             }) {
                 Text("Delete Recording")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(Theme.Typography.body)
+                    .fontWeight(.medium)
                     .foregroundColor(Theme.Colors.error)
                     .padding(.vertical, Theme.Spacing.sm)
                     .padding(.horizontal, Theme.Spacing.md)

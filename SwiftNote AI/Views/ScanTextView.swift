@@ -356,7 +356,7 @@ struct ScanTextView: View {
                                             Image(systemName: "doc.viewfinder")
                                                 .font(.system(size: 40))
                                             Text("Tap to Scan")
-                                                .font(.headline)
+                                                .font(Theme.Typography.h3)
                                         }
                                         .frame(maxWidth: .infinity)
                                         .padding(Theme.Spacing.xl)
@@ -383,12 +383,12 @@ struct ScanTextView: View {
                                 if viewModel.isProcessingComplete {
                                     VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                                         Text("Note Title: \(viewModel.noteTitle)")
-                                            .font(.headline)
+                                            .font(Theme.Typography.h3)
                                             .foregroundColor(Theme.Colors.text)
                                             .padding(.bottom, Theme.Spacing.sm)
 
                                         Text("Note has been processed and saved automatically.")
-                                            .font(.subheadline)
+                                            .font(Theme.Typography.body)
                                             .foregroundColor(Theme.Colors.secondaryText)
                                     }
                                     .padding()
@@ -406,7 +406,7 @@ struct ScanTextView: View {
                                         }) {
                                             HStack {
                                                 Text("Page \(index + 1)")
-                                                    .font(.headline)
+                                                    .font(Theme.Typography.h3)
                                                     .foregroundColor(Theme.Colors.text)
 
                                                 Spacer()
@@ -414,7 +414,7 @@ struct ScanTextView: View {
                                                 // Preview of text content
                                                 if !page.isExpanded && !page.recognizedText.isEmpty {
                                                     Text(page.recognizedText.prefix(30) + (page.recognizedText.count > 30 ? "..." : ""))
-                                                        .font(.caption)
+                                                        .font(Theme.Typography.caption)
                                                         .foregroundColor(Theme.Colors.secondaryText)
                                                         .lineLimit(1)
                                                 }
@@ -452,7 +452,7 @@ struct ScanTextView: View {
                                                         set: { viewModel.updatePageText(pageId: page.id, newText: $0) }
                                                     ))
                                                     .focused($isTextFieldFocused)
-                                                    .font(.body)
+                                                    .font(Theme.Typography.body)
                                                     .foregroundColor(Theme.Colors.text)
                                                     .frame(minHeight: 100)
                                                     .padding()
@@ -506,7 +506,8 @@ struct ScanTextView: View {
                                     Image(systemName: "wand.and.stars")
                                     Text("Generate Note with AI")
                                 }
-                                .font(.headline)
+                                .font(Theme.Typography.body)
+                                .fontWeight(.semibold)
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity)
                                 .padding()

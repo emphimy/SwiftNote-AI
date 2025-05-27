@@ -285,12 +285,11 @@ struct WebLinkImportView: View {
                             .padding(.top, Theme.Spacing.xl)
 
                         Text("Import Web Content")
-                            .font(.title2)
-                            .fontWeight(.bold)
+                            .font(Theme.Typography.h2)
                             .foregroundColor(Theme.Colors.text)
 
                         Text("Paste any URL to import web content or files from supported providers")
-                            .font(.body)
+                            .font(Theme.Typography.body)
                             .foregroundColor(Theme.Colors.secondaryText)
                             .multilineTextAlignment(.center)
                             .padding(.horizontal)
@@ -369,7 +368,7 @@ struct WebLinkImportView: View {
                                 .scaleEffect(1.2)
                             if let message = message {
                                 Text(message)
-                                    .font(.caption)
+                                    .font(Theme.Typography.caption)
                                     .foregroundColor(Theme.Colors.secondaryText)
                             }
 
