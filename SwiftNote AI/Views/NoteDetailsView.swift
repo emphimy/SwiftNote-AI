@@ -299,40 +299,72 @@ struct NoteDetailsView: View {
     // MARK: - Header Section
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack {
+            HStack(alignment: .center, spacing: Theme.Spacing.md) {
+                // Source icon with enhanced styling
                 viewModel.note.sourceType.icon
-                    .foregroundColor(viewModel.note.sourceType.color)
-                    .font(.system(size: 26, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [viewModel.note.sourceType.color, viewModel.note.sourceType.color.opacity(0.7)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .font(.system(size: 28, weight: .bold))
+                    .frame(width: 32, height: 32)
 
-                if viewModel.isEditing {
-                    TextField("Title", text: Binding(
-                        get: { viewModel.note.title },
-                        set: { newTitle in
-                            #if DEBUG
-                            print("📝 NoteDetailsView: Updating title to: \(newTitle)")
-                            #endif
-                            var updatedNote = viewModel.note
-                            updatedNote.title = newTitle
-                            viewModel.note = updatedNote
-                        }
-                    ))
-                    .font(Theme.Typography.h2)
-                } else {
-                    Text(viewModel.note.title)
-                        .font(Theme.Typography.h2)
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    if viewModel.isEditing {
+                        TextField("Title", text: Binding(
+                            get: { viewModel.note.title },
+                            set: { newTitle in
+                                #if DEBUG
+                                print("📝 NoteDetailsView: Updating title to: \(newTitle)")
+                                #endif
+                                var updatedNote = viewModel.note
+                                updatedNote.title = newTitle
+                                viewModel.note = updatedNote
+                            }
+                        ))
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(Theme.Colors.text)
+                    } else {
+                        Text(viewModel.note.title)
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundColor(Theme.Colors.text)
+                            .lineLimit(3)
+                            .multilineTextAlignment(.leading)
+                    }
                 }
+
+                Spacer()
             }
 
-            HStack(spacing: Theme.Spacing.md) {
-                Text(viewModel.note.date, style: .date)
-                    .font(Theme.Typography.caption)
-                    .foregroundColor(Theme.Colors.secondaryText)
+            // Metadata row with better spacing and styling
+            HStack(spacing: Theme.Spacing.lg) {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Theme.Colors.primary)
+
+                    Text(viewModel.note.date, style: .date)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Theme.Colors.secondaryText)
+                }
 
                 if let language = viewModel.note.language {
-                    LanguageDisplay(language: language, compact: true)
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "globe")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Theme.Colors.primary)
+
+                        LanguageDisplay(language: language, compact: true)
+                    }
                 }
+
+                Spacer()
             }
         }
+        .padding(.horizontal, Theme.Spacing.md)
     }
 
     // MARK: - Content Section

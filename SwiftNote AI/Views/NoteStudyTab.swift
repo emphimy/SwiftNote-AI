@@ -54,12 +54,12 @@ struct NoteStudyTabs: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(Theme.Colors.secondaryBackground.opacity(0.9))
+                    .fill(Theme.Colors.secondaryBackground.opacity(0.8))
                     .overlay(
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.gray.opacity(0.1), lineWidth: 1)
+                            .stroke(Theme.Colors.primary.opacity(0.1), lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+                    .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
             )
             .padding(.horizontal, Theme.Spacing.xs)
             .padding(.top, 0)
@@ -212,7 +212,7 @@ struct ReadTabView: View {
                 }
                 .padding()
             } else if let content = viewModel.content {
-                VStack(alignment: .leading, spacing: Theme.Spacing.md) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
                     // Show video player if it's a YouTube note
                     if note.sourceType == .video,
                        let metadata = note.metadata,
@@ -235,11 +235,13 @@ struct ReadTabView: View {
                             }
                     }
 
-                    ForEach(content.formattedContent) { block in
-                        ContentBlockView(block: block, fontSize: viewModel.textSize)
+                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                        ForEach(content.formattedContent) { block in
+                            ContentBlockView(block: block, fontSize: viewModel.textSize)
+                        }
                     }
                 }
-                .padding(.horizontal, Theme.Spacing.xs)
+                .padding(.horizontal, Theme.Spacing.md)
             } else {
                 Text("No content available")
                     .foregroundColor(Theme.Colors.secondaryText)
@@ -967,16 +969,19 @@ private struct ContentBlockView: View {
         case .paragraph:
             Text(LocalizedStringKey(block.content))
                 .font(.system(size: fontSize))
-                .padding(.vertical, 2)
+                .lineSpacing(2)
+                .padding(.vertical, 3)
         case .bulletList:
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
                 Text("•")
                     .font(.system(size: fontSize))
+                    .foregroundColor(Theme.Colors.primary)
                 Text(LocalizedStringKey(block.content))
                     .font(.system(size: fontSize))
+                    .lineSpacing(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.vertical, 2)
+            .padding(.vertical, 3)
         case .numberedList:
             Text(LocalizedStringKey(block.content))
                 .font(.system(size: fontSize))
@@ -1140,20 +1145,26 @@ struct TranscriptTabView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 // Time range header
                                 Text(block.timeRange)
-                                    .font(.system(size: 14, weight: .medium))
+                                    .font(.system(size: 12, weight: .medium))
                                     .foregroundColor(Theme.Colors.primary)
 
                                 // Consolidated text content
                                 Text(block.consolidatedText)
-                                    .font(.system(size: 15))
+                                    .font(.system(size: 13))
                                     .foregroundColor(Theme.Colors.text)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .lineSpacing(4)
+                                    .lineSpacing(3)
                             }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(Color.black.opacity(0.15))
-                            .cornerRadius(12)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Theme.Colors.cardBackground)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Theme.Colors.primary.opacity(0.1), lineWidth: 1)
+                                    )
+                            )
                             .padding(.horizontal, 8)
                         }
                     }

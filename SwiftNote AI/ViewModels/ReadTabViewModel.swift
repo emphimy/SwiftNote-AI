@@ -7,17 +7,17 @@ import Down
 @MainActor
 final class ReadTabViewModel: ObservableObject {
     @Published var content: NoteContent?
-    @Published var textSize: CGFloat = 16
+    @Published var textSize: CGFloat = 14
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var searchText = ""
     @Published var highlights: [TextHighlight] = []
-    
+
     private let note: NoteCardConfiguration
-    
+
     init(note: NoteCardConfiguration) {
         self.note = note
-        
+
         #if DEBUG
         print("""
         📖 ReadTabViewModel: Initializing
@@ -26,11 +26,11 @@ final class ReadTabViewModel: ObservableObject {
         """)
         #endif
     }
-    
+
     func loadContent() async {
         isLoading = true
         defer { isLoading = false }
-        
+
         do {
             // First check metadata for AI generated content
             if let aiContent = note.metadata?["aiGeneratedContent"] as? String {
@@ -50,7 +50,7 @@ final class ReadTabViewModel: ObservableObject {
                     throw NSError(domain: "ReadTab", code: 1001,
                                  userInfo: [NSLocalizedDescriptionKey: "Note content is empty"])
                 }
-                
+
                 #if DEBUG
                 print("📖 ReadTabViewModel: Using preview content")
                 #endif
@@ -69,7 +69,7 @@ final class ReadTabViewModel: ObservableObject {
             errorMessage = "Failed to load content: \(error.localizedDescription)"
         }
     }
-    
+
     private func parseContent(_ text: String) throws -> [ContentBlock] {
         guard !text.isEmpty else {
             #if DEBUG
@@ -78,22 +78,22 @@ final class ReadTabViewModel: ObservableObject {
             throw NSError(domain: "ReadTab", code: 1002,
                          userInfo: [NSLocalizedDescriptionKey: "Cannot parse empty text"])
         }
-        
+
         #if DEBUG
         print("📖 ReadTabViewModel: Parsing content of length: \(text.count)")
         #endif
-        
+
         var blocks: [ContentBlock] = []
         let lines = text.components(separatedBy: .newlines)
         var currentCodeBlock: String?
         var codeLanguage: String?
         var tableHeaders: [String]?
         var tableRows: [[String]] = []
-        
+
         for line in lines {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
-            
+
             // Handle code blocks
             if trimmed.hasPrefix("```") {
                 if currentCodeBlock == nil {
@@ -106,18 +106,18 @@ final class ReadTabViewModel: ObservableObject {
                 }
                 continue
             }
-            
+
             if currentCodeBlock != nil {
                 currentCodeBlock?.append(trimmed + "\n")
                 continue
             }
-            
+
             // Handle tables
             if trimmed.contains("|") {
                 let cells = trimmed.components(separatedBy: "|")
                     .map { $0.trimmingCharacters(in: .whitespaces) }
                     .filter { !$0.isEmpty }
-                
+
                 if tableHeaders == nil {
                     tableHeaders = cells
                 } else if trimmed.contains("---") {
@@ -131,7 +131,7 @@ final class ReadTabViewModel: ObservableObject {
                 tableHeaders = nil
                 tableRows = []
             }
-            
+
             // Handle headers
             if trimmed.hasPrefix("# ") {
                 blocks.append(ContentBlock(type: .heading1, content: String(trimmed.dropFirst(2))))
@@ -171,15 +171,15 @@ final class ReadTabViewModel: ObservableObject {
                 parseInlineFormatting(trimmed, fontSize: textSize, into: &blocks)
             }
         }
-        
+
         // Handle any remaining table
         if let headers = tableHeaders {
             blocks.append(ContentBlock(type: .table(headers: headers, rows: tableRows), content: ""))
         }
-        
+
         return blocks
     }
-    
+
     // Helper method to parse inline formatting (bold, italic, etc.)
     private func parseInlineFormatting(_ text: String, fontSize: CGFloat, into blocks: inout [ContentBlock]) {
         // Check for inline formatting
@@ -189,11 +189,11 @@ final class ReadTabViewModel: ObservableObject {
             var currentText = ""
             var inBold = false
             var inItalic = false
-            
+
             while currentIndex < text.endIndex {
                 let nextTwoChars = text[currentIndex...].prefix(2)
                 let nextChar = text[currentIndex]
-                
+
                 // Handle bold (** **)
                 if nextTwoChars == "**" {
                     // Add current text if any
@@ -211,13 +211,13 @@ final class ReadTabViewModel: ObservableObject {
                         blocks.append(ContentBlock(type: blockType, content: currentText))
                         currentText = ""
                     }
-                    
+
                     // Toggle bold state
                     inBold.toggle()
                     currentIndex = text.index(currentIndex, offsetBy: 2)
                 }
                 // Handle italic (* *)
-                else if nextChar == "*" && (currentIndex == text.startIndex || text[text.index(before: currentIndex)] != "*") && 
+                else if nextChar == "*" && (currentIndex == text.startIndex || text[text.index(before: currentIndex)] != "*") &&
                         (currentIndex == text.index(before: text.endIndex) || text[text.index(after: currentIndex)] != "*") {
                     // Add current text if any
                     if !currentText.isEmpty {
@@ -234,7 +234,7 @@ final class ReadTabViewModel: ObservableObject {
                         blocks.append(ContentBlock(type: blockType, content: currentText))
                         currentText = ""
                     }
-                    
+
                     // Toggle italic state
                     inItalic.toggle()
                     currentIndex = text.index(after: currentIndex)
@@ -244,7 +244,7 @@ final class ReadTabViewModel: ObservableObject {
                     currentIndex = text.index(after: currentIndex)
                 }
             }
-            
+
             // Add any remaining text
             if !currentText.isEmpty {
                 let blockType: ContentBlock.BlockType
@@ -264,14 +264,14 @@ final class ReadTabViewModel: ObservableObject {
             blocks.append(ContentBlock(type: .paragraph, content: text))
         }
     }
-    
+
     func adjustTextSize(_ delta: CGFloat) {
         textSize = min(max(12, textSize + delta), 24)
         #if DEBUG
         print("📖 ReadTabViewModel: Text size adjusted to: \(textSize)")
         #endif
     }
-    
+
     func addHighlight(_ text: String, range: Range<String.Index>, color: Color = .yellow) {
         let highlight = TextHighlight(text: text, range: range, color: color, note: nil)
         highlights.append(highlight)

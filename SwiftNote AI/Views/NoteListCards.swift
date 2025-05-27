@@ -128,8 +128,10 @@ struct NoteGridCard: View {
                         actions.onFavorite()
                     }) {
                         Image(systemName: configuration.isFavorite ? "star.fill" : "star")
+                            .font(.system(size: 16, weight: .medium))
                             .foregroundColor(configuration.isFavorite ? Theme.Colors.warning : Theme.Colors.secondaryText)
                     }
+                    .buttonStyle(PlainButtonStyle())
                 }
 
                 Spacer()
