@@ -397,82 +397,65 @@ struct FolderDetailView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // MARK: - Search Bar
-            SearchBar(
-                text: $viewModel.searchText,
-                placeholder: "Search notes",
-                onCancel: {
-                    #if DEBUG
-                    print("🔍 FolderDetail: Search cancelled")
-                    #endif
-                    viewModel.searchText = ""
-                }
-            )
-            .padding()
+        ZStack {
+            Theme.Colors.background
+                .ignoresSafeArea()
 
-            // MARK: - Folder Header
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                HStack {
-                    Circle()
-                        .fill(Color(folder.color ?? "blue"))
-                        .frame(width: 12, height: 12)
-
-                    Text("\(viewModel.notes.count) notes")
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.secondaryText)
-
-                    Spacer()
-
-                    Button(action: {
+            VStack(spacing: 0) {
+                // MARK: - Search Bar
+                SearchBar(
+                    text: $viewModel.searchText,
+                    placeholder: "Search notes",
+                    onCancel: {
                         #if DEBUG
-                        print("📁 FolderDetailView: Toggle view mode to: \(viewMode == .list ? "grid" : "list")")
+                        print("🔍 FolderDetail: Search cancelled")
                         #endif
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            viewMode = viewMode == .list ? .grid : .list
-                        }
-                    }) {
-                        Image(systemName: viewMode == .list ? "square.grid.2x2" : "list.bullet")
-                            .foregroundColor(Theme.Colors.primary)
-                            .padding(Theme.Spacing.xs)
-                            .background(
-                                Circle()
-                                    .fill(Theme.Colors.primary.opacity(0.1))
-                            )
+                        viewModel.searchText = ""
                     }
-                }
-                .padding(.horizontal)
-            }
-            .padding(.vertical, Theme.Spacing.sm)
+                )
+                .padding()
 
-            // MARK: - Notes Content
-            if viewModel.isLoading {
-                LoadingIndicator(message: "Loading notes...")
-            } else if viewModel.notes.isEmpty {
-                EmptyStateView(
-                    icon: "folder",
-                    title: "Empty Folder",
-                    message: "Start adding notes to this folder",
-                    actionTitle: nil
-                ) {
-                    #if DEBUG
-                    print("📁 FolderDetailView: Empty state action triggered")
-                    #endif
-                }
-            } else {
-                ListGridContainer(viewMode: $viewMode) {
-                    AnyView(
-                        ForEach(viewModel.notes, id: \.title) { note in
-                            NoteCardView(
-                                note: note,
-                                viewMode: viewMode,
-                                cardActions: makeCardActions,
-                                selectedNote: $selectedNote
-                            )
+                // MARK: - Folder Header
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    HStack {
+                        Circle()
+                            .fill(Color(folder.color ?? "blue"))
+                            .frame(width: 12, height: 12)
+
+                        Text("\(viewModel.notes.count) notes")
+                            .font(Theme.Typography.caption)
+                            .foregroundColor(Theme.Colors.secondaryText)
+
+                        Spacer()
+
+                        Button(action: {
+                            #if DEBUG
+                            print("📁 FolderDetailView: Toggle view mode to: \(viewMode == .list ? "grid" : "list")")
+                            #endif
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                viewMode = viewMode == .list ? .grid : .list
+                            }
+                        }) {
+                            Image(systemName: viewMode == .list ? "square.grid.2x2" : "list.bullet")
+                                .foregroundColor(Theme.Colors.primary)
+                                .padding(Theme.Spacing.xs)
+                                .background(
+                                    Circle()
+                                        .fill(Theme.Colors.primary.opacity(0.1))
+                                )
                         }
-                    )
+                    }
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
+                .padding(.vertical, Theme.Spacing.sm)
+
+                // MARK: - Notes Content
+                FolderNotesContentView(
+                    viewModel: viewModel,
+                    viewMode: $viewMode,
+                    selectedNote: $selectedNote,
+                    cardActions: makeCardActions
+                )
             }
         }
         .navigationTitle(folder.name ?? "Untitled Folder")
@@ -500,6 +483,52 @@ struct FolderDetailView: View {
             folderViewModel: viewModel,
             toastManager: toastManager
         )
+    }
+}
+
+// MARK: - Folder Notes Content View
+private struct FolderNotesContentView: View {
+    @ObservedObject var viewModel: FolderDetailViewModel
+    @Binding var viewMode: ListGridContainer<AnyView>.ViewMode
+    @Binding var selectedNote: NoteCardConfiguration?
+    let cardActions: (NoteCardConfiguration) -> CardActions
+
+    var body: some View {
+        Group {
+            if viewModel.isLoading {
+                LoadingIndicator(message: "Loading notes...")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if viewModel.notes.isEmpty {
+                ScrollView {
+                    EmptyStateView(
+                        icon: "folder",
+                        title: "Empty Folder",
+                        message: "Start adding notes to this folder",
+                        actionTitle: nil
+                    ) {
+                        #if DEBUG
+                        print("📁 FolderDetailView: Empty state action triggered")
+                        #endif
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Theme.Spacing.xl)
+                }
+            } else {
+                ListGridContainer(viewMode: $viewMode) {
+                    AnyView(
+                        ForEach(viewModel.notes, id: \.title) { note in
+                            NoteCardView(
+                                note: note,
+                                viewMode: viewMode,
+                                cardActions: cardActions,
+                                selectedNote: $selectedNote
+                            )
+                        }
+                    )
+                }
+                .padding(.horizontal)
+            }
+        }
     }
 }
 
