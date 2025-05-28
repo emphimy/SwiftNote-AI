@@ -1083,6 +1083,45 @@ private struct ContentBlockView: View {
                     .stroke(Theme.Colors.primary.opacity(0.2), lineWidth: 1)
             )
             .padding(.vertical, 8)
+        case .feynmanSimplification:
+            VStack(alignment: .leading, spacing: 8) {
+                // Header with lightbulb icon
+                HStack(spacing: 8) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.system(size: fontSize * 0.9, weight: .medium))
+                        .foregroundColor(.orange)
+
+                    Text("Feynman Simplification")
+                        .font(.system(size: fontSize * 0.85, weight: .semibold))
+                        .foregroundColor(Theme.Colors.primary)
+                }
+
+                // Content with tooltip-like styling
+                Text(LocalizedStringKey(block.content))
+                    .font(.system(size: fontSize * 0.9))
+                    .foregroundColor(Theme.Colors.text)
+                    .lineSpacing(3)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [
+                                        Color.orange.opacity(0.08),
+                                        Color.orange.opacity(0.04)
+                                    ]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+            }
+            .padding(.vertical, 6)
         case .formattedText(let style):
             switch style {
             case .bold:

@@ -89,8 +89,9 @@ final class ReadTabViewModel: ObservableObject {
         var codeLanguage: String?
         var tableHeaders: [String]?
         var tableRows: [[String]] = []
+        var isNextParagraphFeynman = false
 
-        for line in lines {
+        for (index, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
 
@@ -132,8 +133,16 @@ final class ReadTabViewModel: ObservableObject {
                 tableRows = []
             }
 
+            // Handle Feynman simplifications first (before regular headers)
+            if (trimmed.contains("**###** 💡 Feynman Simplification") ||
+                trimmed.contains("💡 Feynman Simplification") ||
+                trimmed.contains("💡Feynman Simplification")) {
+                // Mark that the next paragraph should be treated as a Feynman simplification
+                isNextParagraphFeynman = true
+                continue
+            }
             // Handle headers
-            if trimmed.hasPrefix("# ") {
+            else if trimmed.hasPrefix("# ") {
                 blocks.append(ContentBlock(type: .heading1, content: String(trimmed.dropFirst(2))))
             } else if trimmed.hasPrefix("## ") {
                 blocks.append(ContentBlock(type: .heading2, content: String(trimmed.dropFirst(3))))
@@ -168,7 +177,13 @@ final class ReadTabViewModel: ObservableObject {
             }
             // Handle formatted text
             else {
-                parseInlineFormatting(trimmed, fontSize: textSize, into: &blocks)
+                // Check if this paragraph should be a Feynman simplification
+                if isNextParagraphFeynman {
+                    blocks.append(ContentBlock(type: .feynmanSimplification, content: trimmed))
+                    isNextParagraphFeynman = false
+                } else {
+                    parseInlineFormatting(trimmed, fontSize: textSize, into: &blocks)
+                }
             }
         }
 
