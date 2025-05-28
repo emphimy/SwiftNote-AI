@@ -496,7 +496,7 @@ private struct FolderNotesContentView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: Theme.Spacing.sm) {
-                        ForEach(viewModel.notes, id: \.title) { note in
+                        ForEach(viewModel.notes, id: \.id) { note in
                             NoteCardView(
                                 note: note,
                                 viewMode: .list,

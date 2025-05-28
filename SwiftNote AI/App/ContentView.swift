@@ -195,7 +195,7 @@ private struct NotesGridListView: View {
     var body: some View {
         ListGridContainer(viewMode: $viewModel.viewMode) {
             AnyView(
-                ForEach(viewModel.notes, id: \.title) { note in
+                ForEach(viewModel.notes, id: \.id) { note in
                     NoteCardView(
                         note: note,
                         viewMode: viewModel.viewMode,
