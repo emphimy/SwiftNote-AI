@@ -65,9 +65,9 @@ actor NoteGenerationService {
 
         ### {{Theme Name}}
         - Concise detail bullets (≤25 words each).
-        > **###** 💡 Feynman Simplification
-        >
-        > One plain‑language paragraph that could be read to a novice.
+        
+        **###** 💡 Feynman Simplification
+        One plain‑language paragraph that could be read to a novice.
 
         If—and only if—information (dates, stats, comparisons, steps) would be clearer in a table, add up to **2** tables directly within the relevant theme sections. Do not create a separate "Tables" section.
 
