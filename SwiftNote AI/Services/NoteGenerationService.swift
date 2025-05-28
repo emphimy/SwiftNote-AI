@@ -54,17 +54,19 @@ actor NoteGenerationService {
 
         let prompt = """
         \(languageInstruction)
+        
+        **###** 💡 SwiftNote AI Simplification
+        One plain‑language paragraph that could be read to a novice.
 
         ## Summary
         Give a 1‑paragraph overview (≤90 words total).
 
-        For each major theme you find (create as many as needed):
-
+        For each major theme you find (create as many as needed):   
         ### {{Theme Name}}
-        - Concise details for each theme (≤25 words each).
-
-        **###** 💡 Feynman Simplification
-        One plain‑language paragraph that could be read to a novice.
+        Present the theme content in the most appropriate format:
+        - Use bullet points for lists of facts, steps, or multiple related points
+        - Use paragraphs for explanations, narratives, or cohesive concepts
+        - Keep content concise and focused (≤60 words total per theme)
 
         If—and only if—information (dates, stats, comparisons, steps) would be clearer in a table, add up to **2** tables directly within the relevant theme sections. Do not create a separate "Tables" section.
 
