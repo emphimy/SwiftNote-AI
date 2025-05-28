@@ -58,14 +58,11 @@ actor NoteGenerationService {
         ## Summary
         Give a 1‑paragraph overview (≤90 words total).
 
-        - Bullet the 4-6 most important takeaways directly after the summary.
-
-        ## Important Themes
         For each major theme you find (create as many as needed):
 
         ### {{Theme Name}}
-        - Concise detail bullets (≤25 words each).
-        
+        - Concise details for each theme (≤25 words each).
+
         **###** 💡 Feynman Simplification
         One plain‑language paragraph that could be read to a novice.
 
