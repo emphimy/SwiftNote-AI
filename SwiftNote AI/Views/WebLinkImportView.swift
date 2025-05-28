@@ -268,39 +268,20 @@ struct WebLinkImportView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: Theme.Spacing.xl) {
                     // Header Section
-                    VStack(spacing: Theme.Spacing.md) {
-                        Image(systemName: "link.circle.fill")
-                            .font(.system(size: 60))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .padding(.top, Theme.Spacing.xl)
-
-                        Text("Import Web Content")
-                            .font(Theme.Typography.h2)
-                            .foregroundColor(Theme.Colors.text)
-
-                        Text("Paste any URL to import web content or files from supported providers")
-                            .font(Theme.Typography.body)
-                            .foregroundColor(Theme.Colors.secondaryText)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                    }
+                    NoteCreationHeader(
+                        icon: "link.circle.fill",
+                        title: "Import Web Content",
+                        subtitle: "Paste any URL to import web content or files from supported providers"
+                    )
 
                     // URL Input Section
                     VStack(spacing: Theme.Spacing.md) {
                         // Language Picker Section
-                        LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                            .padding(.vertical, Theme.Spacing.sm)
-                            .padding(.horizontal, Theme.Spacing.xs)
+                        StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
                         HStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: "link")
                                 .foregroundColor(isURLFieldFocused ? Theme.Colors.primary : .gray)
@@ -337,22 +318,17 @@ struct WebLinkImportView: View {
                         )
                         .animation(.easeInOut, value: isURLFieldFocused)
 
-                        Button(action: {
-                            Task {
-                                await viewModel.processURL()
+                        PrimaryActionButton(
+                            title: "Import Content",
+                            icon: "arrow.right.circle.fill",
+                            isEnabled: !viewModel.urlInput.isEmpty,
+                            isLoading: viewModel.loadingState.isLoading,
+                            action: {
+                                Task {
+                                    await viewModel.processURL()
+                                }
                             }
-                        }) {
-                            HStack {
-                                Text("Import Content")
-                                Image(systemName: "arrow.right.circle.fill")
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(viewModel.urlInput.isEmpty ? Theme.Colors.primary.opacity(0.5) : Theme.Colors.primary)
-                            .foregroundColor(.white)
-                            .cornerRadius(Theme.Layout.cornerRadius)
-                        }
-                        .disabled(viewModel.urlInput.isEmpty)
+                        )
                     }
                     .padding(.horizontal)
 

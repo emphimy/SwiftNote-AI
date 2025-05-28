@@ -476,7 +476,7 @@ struct AudioUploadView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: Theme.Spacing.lg) {
                     headerSection
@@ -513,23 +513,11 @@ struct AudioUploadView: View {
     // MARK: - View Components
 
     private var headerSection: some View {
-        VStack(spacing: Theme.Spacing.sm) {
-            Image(systemName: "waveform.circle.fill")
-                .font(.system(size: 60))
-                .foregroundStyle(.blue.gradient)
-                .scaleEffect(1.0)
-                .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: UUID())
-
-            Text("Import Audio")
-                .font(Theme.Typography.h2)
-                .foregroundColor(Theme.Colors.text)
-
-            Text("Upload your audio files for transcription and note-taking")
-                .font(Theme.Typography.body)
-                .foregroundColor(Theme.Colors.secondaryText)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.top, Theme.Spacing.xl)
+        NoteCreationHeader(
+            icon: "waveform.circle.fill",
+            title: "Import Audio",
+            subtitle: "Upload your audio files for transcription and note-taking"
+        )
     }
 
     private var fileSelectionSection: some View {
@@ -557,9 +545,7 @@ struct AudioUploadView: View {
             }
 
             // Language Picker Section
-            LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                .padding(.vertical, Theme.Spacing.sm)
-                .padding(.horizontal, Theme.Spacing.xs)
+            StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
 
             supportedFormatsSection
         }
@@ -599,58 +585,102 @@ struct AudioUploadView: View {
     }
 
     private var audioFileInfo: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                    Text(viewModel.selectedFileName ?? "Untitled")
-                        .font(Theme.Typography.h3)
-                        .foregroundColor(Theme.Colors.text)
+        HStack(spacing: Theme.Spacing.sm) {
+            // Audio file icon
+            Image(systemName: "waveform.circle.fill")
+                .font(.system(size: 20))
+                .foregroundColor(Theme.Colors.primary)
+                .frame(width: 24)
 
+            // File info
+            VStack(alignment: .leading, spacing: 2) {
+                Text(viewModel.selectedFileName ?? "Untitled")
+                    .font(Theme.Typography.body)
+                    .fontWeight(.medium)
+                    .foregroundColor(Theme.Colors.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                HStack(spacing: Theme.Spacing.xs) {
                     if let stats = viewModel.stats {
-                        Text("\(stats.formattedDuration) • \(ByteCountFormatter.string(fromByteCount: stats.fileSize, countStyle: .file))")
-                            .font(Theme.Typography.caption)
+                        Text(stats.formattedDuration)
+                            .font(Theme.Typography.small)
+                            .foregroundColor(Theme.Colors.secondaryText)
+
+                        Text("•")
+                            .font(Theme.Typography.small)
+                            .foregroundColor(Theme.Colors.secondaryText)
+
+                        Text(ByteCountFormatter.string(fromByteCount: stats.fileSize, countStyle: .file))
+                            .font(Theme.Typography.small)
+                            .foregroundColor(Theme.Colors.secondaryText)
+
+                        Text("•")
+                            .font(Theme.Typography.small)
+                            .foregroundColor(Theme.Colors.secondaryText)
+
+                        Text(stats.format)
+                            .font(Theme.Typography.small)
                             .foregroundColor(Theme.Colors.secondaryText)
                     }
                 }
-
-                Spacer()
-
-                Button(action: { showingFilePicker = true }) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.blue.gradient)
-                }
-            }
-            .padding()
-            .background(Theme.Colors.secondaryBackground)
-            .cornerRadius(Theme.Layout.cornerRadius)
-        }
-    }
-
-    private var audioDetails: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.md) {
-            // Audio details
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                if let stats = viewModel.stats {
-                    AudioDetailRow(label: "Format", value: stats.format)
-                    AudioDetailRow(label: "Sample Rate", value: "\(Int(stats.sampleRate))Hz")
-                }
             }
 
-            // Language Picker Section
-            LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                .padding(.vertical, Theme.Spacing.sm)
-                .padding(.horizontal, Theme.Spacing.xs)
+            Spacer()
+
+            // Change file button
+            Button(action: { showingFilePicker = true }) {
+                Text("Change")
+                    .font(Theme.Typography.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(Theme.Colors.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Theme.Colors.primary.opacity(0.1))
+                    )
+            }
         }
-        .padding()
+        .padding(Theme.Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+            RoundedRectangle(cornerRadius: Theme.CornerRadius.md)
                 .fill(Theme.Colors.secondaryBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                    RoundedRectangle(cornerRadius: Theme.CornerRadius.md)
                         .stroke(Theme.Colors.tertiaryBackground, lineWidth: 1)
                 )
         )
+    }
+
+    private var audioDetails: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            // Language Picker Section
+            StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+
+            // Additional audio details if needed
+            if let stats = viewModel.stats {
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+                    Text("Audio Details")
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.secondaryText)
+                        .padding(.horizontal, Theme.Spacing.sm)
+
+                    VStack(spacing: Theme.Spacing.xs) {
+                        AudioDetailRow(label: "Sample Rate", value: "\(Int(stats.sampleRate)) Hz")
+                    }
+                    .padding(Theme.Spacing.md)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.CornerRadius.md)
+                            .fill(Theme.Colors.secondaryBackground)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.CornerRadius.md)
+                                    .stroke(Theme.Colors.tertiaryBackground, lineWidth: 1)
+                            )
+                    )
+                }
+            }
+        }
     }
 
     // Removed localStorageToggle

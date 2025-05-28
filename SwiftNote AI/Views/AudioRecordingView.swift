@@ -631,28 +631,11 @@ struct AudioRecordingView: View {
                 ScrollView {
                     VStack(spacing: Theme.Spacing.lg) {
                         // Header Section
-                        VStack(spacing: Theme.Spacing.sm) {
-                            Image(systemName: "mic.circle.fill")
-                                .font(.system(size: 60))
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .padding(.top, Theme.Spacing.xl)
-
-                            Text("Audio Recording")
-                                .font(Theme.Typography.h2)
-                                .foregroundColor(Theme.Colors.text)
-
-                            Text(getRecordingStateText())
-                                .font(Theme.Typography.body)
-                                .foregroundColor(Theme.Colors.secondaryText)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                        }
+                        NoteCreationHeader(
+                            icon: "mic.circle.fill",
+                            title: "Audio Recording",
+                            subtitle: getRecordingStateText()
+                        )
 
                         // Audio Visualizer
                         ClassicWaveformView(audioLevel: viewModel.audioLevel)
@@ -660,9 +643,8 @@ struct AudioRecordingView: View {
                             .padding(.horizontal)
 
                         // Language Picker Section
-                        LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                            .padding(.vertical, Theme.Spacing.sm)
-                            .padding(.horizontal, Theme.Spacing.xs)
+                        StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+                            .padding(.horizontal)
 
                         // Recording Controls
                         VStack(spacing: Theme.Spacing.md) {

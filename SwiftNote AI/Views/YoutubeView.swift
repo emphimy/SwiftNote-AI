@@ -20,28 +20,11 @@ struct YouTubeView: View {
             ScrollView {
                 VStack(spacing: Theme.Spacing.xl) {
                     // Header Section
-                    VStack(spacing: Theme.Spacing.sm) {
-                        Image(systemName: "play.circle.fill")
-                            .font(.system(size: 60))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .padding(.top, Theme.Spacing.xl)
-
-                        Text("YouTube Notes")
-                            .font(Theme.Typography.h2)
-                            .foregroundColor(Theme.Colors.text)
-
-                        Text("Create AI-powered notes from YouTube videos")
-                            .font(Theme.Typography.body)
-                            .foregroundColor(Theme.Colors.secondaryText)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-                    }
+                    NoteCreationHeader(
+                        icon: "play.circle.fill",
+                        title: "YouTube Notes",
+                        subtitle: "Create AI-powered notes from YouTube videos"
+                    )
 
                     // URL Input Section
                     VStack(spacing: Theme.Spacing.md) {
@@ -82,29 +65,15 @@ struct YouTubeView: View {
                         .animation(.easeInOut, value: isURLFieldFocused)
 
                         // Language Picker Section
-                        LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                            .padding(.vertical, Theme.Spacing.sm)
-                            .padding(.horizontal, Theme.Spacing.xs)
+                        StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
 
-                        Button(action: processVideo) {
-                            HStack {
-                                if viewModel.isProcessing {
-                                    ProgressView()
-                                        .progressViewStyle(CircularProgressViewStyle())
-                                        .tint(.white)
-                                    Text(viewModel.processState)
-                                } else {
-                                    Text("Create Note")
-                                    Image(systemName: "arrow.right.circle.fill")
-                                }
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(videoUrl.isEmpty ? Theme.Colors.primary.opacity(0.5) : Theme.Colors.primary)
-                            .foregroundColor(.white)
-                            .cornerRadius(Theme.Layout.cornerRadius)
-                        }
-                        .disabled(videoUrl.isEmpty || viewModel.isProcessing)
+                        PrimaryActionButton(
+                            title: viewModel.isProcessing ? viewModel.processState : "Create Note",
+                            icon: viewModel.isProcessing ? nil : "arrow.right.circle.fill",
+                            isEnabled: !videoUrl.isEmpty,
+                            isLoading: viewModel.isProcessing,
+                            action: processVideo
+                        )
                     }
                     .padding(.horizontal)
 

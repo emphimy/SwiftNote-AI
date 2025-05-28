@@ -316,7 +316,7 @@ struct ScanTextView: View {
     }
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ZStack(alignment: .top) {
                 ScrollView {
                     // Add padding at the top to make room for the floating buttons
@@ -324,28 +324,11 @@ struct ScanTextView: View {
                         .frame(height: viewModel.scannedPages.isEmpty ? 0 : 120)
                     VStack(spacing: Theme.Spacing.xl) {
                         // Header Section
-                        VStack(spacing: Theme.Spacing.sm) {
-                            Image(systemName: "viewfinder.circle.fill")
-                                .font(.system(size: 60))
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .padding(.top, Theme.Spacing.xl)
-
-                            Text("Scan Document")
-                                .font(Theme.Typography.h2)
-                                .foregroundColor(Theme.Colors.text)
-
-                            Text("Scan physical documents and convert them to digital notes")
-                                .font(Theme.Typography.body)
-                                .foregroundColor(Theme.Colors.secondaryText)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
-                        }
+                        NoteCreationHeader(
+                            icon: "viewfinder.circle.fill",
+                            title: "Scan Document",
+                            subtitle: "Scan physical documents and convert them to digital notes"
+                        )
 
                         // Content Section
                         VStack(spacing: Theme.Spacing.lg) {
@@ -366,9 +349,7 @@ struct ScanTextView: View {
                                     }
 
                                     // Language Picker Section
-                                    LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                                        .padding(.vertical, Theme.Spacing.sm)
-                                        .padding(.horizontal, Theme.Spacing.xs)
+                                    StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
                                 }
                             } else {
                                 // Processing Status
@@ -476,9 +457,7 @@ struct ScanTextView: View {
                     if !viewModel.scannedPages.isEmpty && !viewModel.isProcessingComplete {
                         VStack(spacing: Theme.Spacing.md) {
                             // Language Picker Section
-                            LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                                .padding(.vertical, Theme.Spacing.sm)
-                                .padding(.horizontal, Theme.Spacing.xs)
+                            StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
 
                             // Generate Note Button
                             Button(action: {

@@ -120,10 +120,19 @@ enum Theme {
         static let body: Font = .system(size: 16, weight: .regular)
         static let caption: Font = .system(size: 14, weight: .regular)
         static let small: Font = .system(size: 12, weight: .regular)
+        static let button: Font = .system(size: 16, weight: .medium)
 
         // Line heights
         static let bodyLineHeight: CGFloat = 1.5
         static let headingLineHeight: CGFloat = 1.3
+    }
+
+    // MARK: - Corner Radius
+    enum CornerRadius {
+        static let sm: CGFloat = 8
+        static let md: CGFloat = 12
+        static let lg: CGFloat = 16
+        static let xl: CGFloat = 20
     }
 
     // MARK: - Spacing

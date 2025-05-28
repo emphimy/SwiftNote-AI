@@ -97,6 +97,7 @@ final class TextUploadViewModel: ObservableObject {
     @Published var aiGeneratedContent: Data?
     @Published private(set) var pdfPageCount: Int?
     @Published var selectedLanguage: Language = Language.supportedLanguages[0] // Default to English
+    @Published var processingProgress: Double = 0.0
 
     // MARK: - Private Properties
     private let viewContext: NSManagedObjectContext
@@ -114,6 +115,7 @@ final class TextUploadViewModel: ObservableObject {
 
     // MARK: - File Processing
     func processSelectedFile(_ url: URL) async throws {
+        processingProgress = 0.0
         loadingState = .loading(message: "Reading file...")
 
         do {
@@ -137,6 +139,7 @@ final class TextUploadViewModel: ObservableObject {
             // Store original URL for later use
             originalFileURL = url
             selectedFileName = url.lastPathComponent
+            processingProgress = 0.2
 
             do {
                 #if DEBUG
@@ -144,23 +147,30 @@ final class TextUploadViewModel: ObservableObject {
                 #endif
 
                 // Read file content
+                loadingState = .loading(message: "Extracting text from PDF...")
                 textContent = try await readFileContent(from: url)
+                processingProgress = 0.5
 
                 // Process with AI if content is not empty
                 if !textContent.isEmpty {
                     loadingState = .loading(message: "Analyzing content with AI...")
+                    processingProgress = 0.6
                     aiGeneratedContent = try await processWithAI(text: textContent)
+                    processingProgress = 0.95
                 }
 
                 // Calculate stats
                 stats = TextStats(text: textContent, fileSize: Int64(fileSize))
+                processingProgress = 1.0
 
                 loadingState = .success(message: "File processed successfully")
             } catch {
+                processingProgress = 0.0
                 loadingState = .error(message: error.localizedDescription)
                 throw error
             }
         } catch {
+            processingProgress = 0.0
             loadingState = .error(message: error.localizedDescription)
             throw error
         }
@@ -178,8 +188,15 @@ final class TextUploadViewModel: ObservableObject {
         print("📄 TextUploadVM: PDF has \(pageCount) pages")
         #endif
 
+        let baseProgress = processingProgress // Current progress before text extraction
+        let extractionProgressRange = 0.3 // Text extraction takes 30% of total progress
+
         for pageIndex in 0..<pageCount {
             guard let page = pdfDoc.page(at: pageIndex) else { continue }
+
+            // Update progress for each page
+            let pageProgress = Double(pageIndex + 1) / Double(pageCount)
+            processingProgress = baseProgress + (extractionProgressRange * pageProgress)
 
             // Try PDFKit text extraction first
             if let pageText = page.string {
@@ -295,9 +312,33 @@ final class TextUploadViewModel: ObservableObject {
     }
 
     private func processWithAI(text: String) async throws -> Data {
+        let startProgress = processingProgress
+        let aiProgressRange = 0.25 // AI processing takes 25% of total progress
+
+        // Start a timer to simulate AI processing progress
+        let progressTask = Task {
+            let steps = 20 // Number of progress updates
+            let stepDuration = 0.5 // Seconds between updates
+
+            for step in 1...steps {
+                try await Task.sleep(nanoseconds: UInt64(stepDuration * 1_000_000_000))
+
+                if !Task.isCancelled {
+                    await MainActor.run {
+                        let stepProgress = Double(step) / Double(steps)
+                        self.processingProgress = startProgress + (aiProgressRange * stepProgress)
+                    }
+                }
+            }
+        }
+
         // Use NoteGenerationService instead of direct prompt
         let noteGenerationService = NoteGenerationService()
         let processedContent = try await noteGenerationService.generateNote(from: text, detectedLanguage: selectedLanguage.code)
+
+        // Cancel the progress simulation since AI processing is done
+        progressTask.cancel()
+
         return processedContent.data(using: .utf8) ?? Data()
     }
 
@@ -389,11 +430,13 @@ final class TextUploadViewModel: ObservableObject {
 
     // MARK: - URL PDF Processing
     func processUrlPdf(_ url: URL) async throws {
+        processingProgress = 0.0
         loadingState = .loading(message: "Downloading PDF...")
 
         do {
             // Download the PDF file
             let (data, response) = try await URLSession.shared.data(from: url)
+            processingProgress = 0.3
 
             // Check if the response is valid
             guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
@@ -419,8 +462,9 @@ final class TextUploadViewModel: ObservableObject {
             try data.write(to: localURL)
             originalFileURL = localURL
             selectedFileName = fileName
+            processingProgress = 0.4
 
-            loadingState = .loading(message: "Processing PDF...")
+            loadingState = .loading(message: "Extracting text from PDF...")
 
             // Create PDF document from the downloaded data
             guard let pdfDocument = PDFDocument(data: data) else {
@@ -433,6 +477,7 @@ final class TextUploadViewModel: ObservableObject {
 
             // Extract text from the PDF
             textContent = try await extractTextFromPDF(pdfDocument)
+            processingProgress = 0.6
 
             #if DEBUG
             print("📄 TextUploadVM: After extraction, pdfPageCount = \(String(describing: pdfPageCount))")
@@ -444,11 +489,14 @@ final class TextUploadViewModel: ObservableObject {
 
             // Process with AI if content is not empty
             loadingState = .loading(message: "Analyzing content with AI...")
+            processingProgress = 0.65
             aiGeneratedContent = try await processWithAI(text: textContent)
+            processingProgress = 0.95
 
             // Calculate stats
             let fileSize = (try? localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             stats = TextStats(text: textContent, fileSize: Int64(fileSize))
+            processingProgress = 1.0
 
             loadingState = .success(message: "PDF processed successfully")
 
@@ -456,6 +504,7 @@ final class TextUploadViewModel: ObservableObject {
             print("📄 TextUploadVM: Successfully processed PDF from URL with \(textContent.count) characters")
             #endif
         } catch {
+            processingProgress = 0.0
             loadingState = .error(message: error.localizedDescription)
 
             #if DEBUG
@@ -564,34 +613,16 @@ struct TextUploadView: View {
 
     // MARK: - View Components
     private var headerSection: some View {
-        VStack(spacing: Theme.Spacing.sm) {
-            Image(systemName: "doc.circle.fill")
-                .font(.system(size: 60))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .scaleEffect(1.0)
-                .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: UUID())
-
-            Text("Import PDF")
-                .font(Theme.Typography.h2)
-                .foregroundColor(Theme.Colors.text)
-
-            Text("Import and convert PDF documents to notes")
-                .font(Theme.Typography.body)
-                .foregroundColor(Theme.Colors.secondaryText)
-                .multilineTextAlignment(.center)
-        }
-        .padding(.top, Theme.Spacing.xl)
+        NoteCreationHeader(
+            icon: "doc.circle.fill",
+            title: "Import PDF",
+            subtitle: "Import and convert PDF documents to notes"
+        )
     }
 
     // MARK: - Body
     var body: some View {
-        NavigationView {
+        NavigationStack {
             ScrollView {
                 VStack(spacing: Theme.Spacing.lg) {
                     headerSection
@@ -617,15 +648,6 @@ struct TextUploadView: View {
                     }
                     .disabled(viewModel.loadingState.isLoading)
                 }
-
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if !viewModel.textContent.isEmpty {
-                        Button("Save") {
-                            saveDocument()
-                        }
-                        .disabled(viewModel.loadingState.isLoading)
-                    }
-                }
             }
             .sheet(isPresented: $showingFilePicker) {
                 DocumentPicker(types: viewModel.supportedTypes, onResult: handleSelectedFile)
@@ -635,61 +657,123 @@ struct TextUploadView: View {
 
     // MARK: - Loading Section
     private var loadingSection: some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            ProgressView()
-                .scaleEffect(1.5)
-                .frame(height: 100)
+        VStack(spacing: Theme.Spacing.xl) {
+            // Simple loading indicator
+            VStack(spacing: Theme.Spacing.md) {
+                // Document with magnifier icon
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.system(size: 48, weight: .medium))
+                    .foregroundColor(Theme.Colors.primary)
 
-            if case let .loading(message) = viewModel.loadingState {
-                HStack(spacing: 12) {
-                    Text(message ?? "Processing...")
-                        .font(Theme.Typography.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(Theme.Colors.text)
-                        .lineLimit(1)
-                }
-                .frame(minWidth: 200)
-            } else if case let .success(message) = viewModel.loadingState {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                    Text(message)
-                        .font(Theme.Typography.body)
-                        .foregroundColor(.green)
-                }
-            } else if case let .error(message) = viewModel.loadingState {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .foregroundStyle(.red)
-                    Text(message)
-                        .font(Theme.Typography.body)
-                        .foregroundColor(.red)
-                }
+                // Horizontal progress bar
+                ProgressView(value: viewModel.processingProgress, total: 1.0)
+                    .progressViewStyle(LinearProgressViewStyle(tint: Theme.Colors.primary))
+                    .frame(width: 200)
+                    .scaleEffect(y: 2.0) // Make it a bit thicker
+                    .animation(.easeInOut(duration: 0.3), value: viewModel.processingProgress)
             }
+            .padding(.top, Theme.Spacing.lg)
 
-            if let file = selectedFile {
-                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                    Text("Processing File:")
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.secondaryText)
-
-                    HStack {
-                        Image(systemName: "doc.text")
-                            .foregroundStyle(Theme.Colors.primary)
-                        Text(file.lastPathComponent)
-                            .lineLimit(1)
-                            .font(Theme.Typography.body)
+            // Status content
+            VStack(spacing: Theme.Spacing.md) {
+                if case let .loading(message) = viewModel.loadingState {
+                    VStack(spacing: Theme.Spacing.sm) {
+                        Text("Analyzing Content with AI")
+                            .font(Theme.Typography.h3)
+                            .fontWeight(.semibold)
                             .foregroundColor(Theme.Colors.text)
+
+                        // Only show the message if it's different from the title
+                        if let message = message, !message.lowercased().contains("analyzing") {
+                            Text(message)
+                                .font(Theme.Typography.body)
+                                .foregroundColor(Theme.Colors.secondaryText)
+                                .multilineTextAlignment(.center)
+                        } else {
+                            Text("Processing your document...")
+                                .font(Theme.Typography.body)
+                                .foregroundColor(Theme.Colors.secondaryText)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                } else if case let .success(message) = viewModel.loadingState {
+                    VStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(.green)
+
+                        Text("Processing Complete")
+                            .font(Theme.Typography.h3)
+                            .fontWeight(.semibold)
+                            .foregroundColor(Theme.Colors.text)
+
+                        Text(message)
+                            .font(Theme.Typography.body)
+                            .foregroundColor(.green)
+                            .multilineTextAlignment(.center)
+                    }
+                } else if case let .error(message) = viewModel.loadingState {
+                    VStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(.red)
+
+                        Text("Processing Failed")
+                            .font(Theme.Typography.h3)
+                            .fontWeight(.semibold)
+                            .foregroundColor(Theme.Colors.text)
+
+                        Text(message)
+                            .font(Theme.Typography.body)
+                            .foregroundColor(.red)
+                            .multilineTextAlignment(.center)
                     }
                 }
-                .padding()
-                .background(Theme.Colors.secondaryBackground)
-                .cornerRadius(Theme.Layout.cornerRadius)
-                .shadow(radius: 2)
+
+                // File info card
+                if let file = selectedFile {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: "doc.text.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(Theme.Colors.primary)
+
+                        Text(file.lastPathComponent)
+                            .font(Theme.Typography.body)
+                            .fontWeight(.medium)
+                            .foregroundColor(Theme.Colors.text)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .padding(.horizontal, Theme.Spacing.md)
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .background(
+                        RoundedRectangle(cornerRadius: Theme.CornerRadius.md)
+                            .fill(Theme.Colors.secondaryBackground)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: Theme.CornerRadius.md)
+                                    .stroke(Theme.Colors.primary.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+                }
+
+                // Simple status message
+                if case .loading = viewModel.loadingState {
+                    Text("This may take a moment...")
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.secondaryText)
+                        .padding(.top, Theme.Spacing.sm)
+                }
             }
         }
         .frame(maxWidth: .infinity)
-        .padding()
+        .padding(.horizontal, Theme.Spacing.lg)
+        .padding(.vertical, Theme.Spacing.xl)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.CornerRadius.lg)
+                .fill(Theme.Colors.cardBackground)
+                .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 5)
+        )
+        .padding(.horizontal)
     }
 
     // MARK: - File Selection Section
@@ -796,9 +880,7 @@ struct TextUploadView: View {
             .cornerRadius(Theme.Layout.cornerRadius)
 
             // Language Picker Section
-            LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                .padding(.vertical, Theme.Spacing.sm)
-                .padding(.horizontal, Theme.Spacing.xs)
+            StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
         }
     }
 
@@ -828,16 +910,11 @@ struct TextUploadView: View {
     // MARK: - Preview Section
     private func previewSection(for file: URL) -> some View {
         VStack(spacing: Theme.Spacing.md) {
-            // File Info Section
+            // File Info Section (now includes stats)
             fileInfoSection(for: file)
 
-            // Document Stats Section
-            documentStatsSection
-
             // Language Picker Section
-            LanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                .padding(.vertical, Theme.Spacing.sm)
-                .padding(.horizontal, Theme.Spacing.xs)
+            StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
 
             // Content Preview with Markdown Support
             contentPreviewSection
@@ -847,58 +924,77 @@ struct TextUploadView: View {
     }
 
     private func fileInfoSection(for file: URL) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-            HStack {
-                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                    Text(file.lastPathComponent)
-                        .font(Theme.Typography.h3)
-                        .foregroundColor(Theme.Colors.text)
+        HStack(spacing: Theme.Spacing.sm) {
+            // File icon
+            Image(systemName: "doc.text.fill")
+                .font(.system(size: 20))
+                .foregroundColor(Theme.Colors.primary)
+                .frame(width: 24)
 
+            // File info
+            VStack(alignment: .leading, spacing: 2) {
+                Text(file.lastPathComponent)
+                    .font(Theme.Typography.body)
+                    .fontWeight(.medium)
+                    .foregroundColor(Theme.Colors.text)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                HStack(spacing: Theme.Spacing.xs) {
                     if let fileSize = viewModel.getFileSize(for: file) {
                         Text(fileSize)
-                            .font(Theme.Typography.caption)
+                            .font(Theme.Typography.small)
+                            .foregroundColor(Theme.Colors.secondaryText)
+                    }
+
+                    if let stats = documentStats {
+                        Text("•")
+                            .font(Theme.Typography.small)
+                            .foregroundColor(Theme.Colors.secondaryText)
+
+                        Text("\(stats.wordCount) words")
+                            .font(Theme.Typography.small)
+                            .foregroundColor(Theme.Colors.secondaryText)
+
+                        Text("•")
+                            .font(Theme.Typography.small)
+                            .foregroundColor(Theme.Colors.secondaryText)
+
+                        Text("\(stats.pageCount) pages")
+                            .font(Theme.Typography.small)
                             .foregroundColor(Theme.Colors.secondaryText)
                     }
                 }
-
-                Spacer()
-
-                Button(action: { showingFilePicker = true }) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.blue.gradient)
-                }
             }
-            .padding()
-            .background(Theme.Colors.secondaryBackground)
-            .cornerRadius(Theme.Layout.cornerRadius)
+
+            Spacer()
+
+            // Change file button
+            Button(action: { showingFilePicker = true }) {
+                Text("Change")
+                    .font(Theme.Typography.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(Theme.Colors.primary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Theme.Colors.primary.opacity(0.1))
+                    )
+            }
         }
-    }
-
-    private var documentStatsSection: some View {
-        HStack(spacing: Theme.Spacing.lg) {
-            StatItem(title: "Words", value: "\(documentStats?.wordCount ?? 0)")
-
-            Divider()
-                .frame(height: 40)
-
-            StatItem(title: "Characters", value: "\(documentStats?.characterCount ?? 0)")
-
-            Divider()
-                .frame(height: 40)
-
-            StatItem(title: "Pages", value: "\(documentStats?.pageCount ?? 0)")
-        }
-        .padding()
+        .padding(Theme.Spacing.md)
         .background(
-            RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+            RoundedRectangle(cornerRadius: Theme.CornerRadius.md)
                 .fill(Theme.Colors.secondaryBackground)
                 .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                    RoundedRectangle(cornerRadius: Theme.CornerRadius.md)
                         .stroke(Theme.Colors.tertiaryBackground, lineWidth: 1)
                 )
         )
     }
+
+
 
     private var contentPreviewSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
@@ -937,13 +1033,11 @@ struct TextUploadView: View {
                         .scaleEffect(0.8)
                         .tint(.white)
 
-                    if case let .loading(message) = viewModel.loadingState {
-                        Text(message ?? "Processing...")
-                            .font(Theme.Typography.body)
-                            .fontWeight(.medium)
-                            .foregroundColor(.white)
-                            .lineLimit(1)
-                    }
+                    Text("Processing...")
+                        .font(Theme.Typography.body)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                        .lineLimit(1)
                 }
                 .frame(minWidth: 200)
             } else {
