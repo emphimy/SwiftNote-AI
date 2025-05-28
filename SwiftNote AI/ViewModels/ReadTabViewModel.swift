@@ -134,7 +134,10 @@ final class ReadTabViewModel: ObservableObject {
             }
 
             // Handle Feynman simplifications first (before regular headers)
-            if (trimmed.contains("**###** 💡 Feynman Simplification") ||
+            if (trimmed.contains("**###** 💡 1 Paragraph Simplification") ||
+                trimmed.contains("💡 1 Paragraph Simplification") ||
+                trimmed.contains("💡1 Paragraph Simplification") ||
+                trimmed.contains("**###** 💡 Feynman Simplification") ||
                 trimmed.contains("💡 Feynman Simplification") ||
                 trimmed.contains("💡Feynman Simplification")) {
                 // Mark that the next paragraph should be treated as a Feynman simplification
