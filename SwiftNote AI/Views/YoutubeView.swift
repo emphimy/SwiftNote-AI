@@ -9,6 +9,7 @@ struct YouTubeView: View {
     @StateObject private var viewModel = YouTubeViewModel()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.managedObjectContext) private var viewContext
+    @Environment(\.toastManager) private var toastManager
     @FocusState private var isURLFieldFocused: Bool
     @State private var videoUrl: String = ""
     @State private var showingError = false
@@ -126,9 +127,13 @@ struct YouTubeView: View {
             } message: {
                 Text(errorMessage)
             }
-            .navigationDestination(isPresented: $viewModel.shouldNavigateToNote) {
-                if let note = viewModel.generatedNote {
-                    NoteDetailsView(note: note, context: viewContext)
+            .onChange(of: viewModel.isProcessingComplete) { isComplete in
+                if isComplete {
+                    // Automatically dismiss the view when processing is complete
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        dismiss()
+                        toastManager.show("YouTube note created successfully", type: .success)
+                    }
                 }
             }
         }
@@ -154,8 +159,7 @@ class YouTubeViewModel: ObservableObject {
 
     @Published var isProcessing = false
     @Published var processState = ""
-    @Published var shouldNavigateToNote = false
-    @Published var generatedNote: NoteCardConfiguration?
+    @Published var isProcessingComplete = false
     @Published private(set) var loadingState: LoadingState = .idle
     @Published var selectedLanguage: Language = Language.supportedLanguages[0] // Default to English
     private var videoId: String?
@@ -203,12 +207,9 @@ class YouTubeViewModel: ObservableObject {
             loadingState = .loading(message: "Saving note...")
             let context = PersistenceController.shared.container.viewContext
 
-            var savedNoteId: UUID?
-
             try context.performAndWait {
                 let note = Note(context: context)
                 note.id = UUID()
-                savedNoteId = note.id
                 note.title = title
                 note.timestamp = Date()
                 note.lastModified = Date()
@@ -247,23 +248,8 @@ class YouTubeViewModel: ObservableObject {
                 #endif
             }
 
-            generatedNote = NoteCardConfiguration(
-                id: savedNoteId ?? UUID(),
-                title: title,
-                date: Date(),
-                preview: noteContent,
-                sourceType: .video,
-                metadata: [
-                    "rawTranscript": transcript,  // Make sure the transcript is saved in metadata
-                    "aiGeneratedContent": noteContent,
-                    "videoId": videoId,  // Include video ID for possible player embedding
-                    "language": selectedLanguage.code,
-                    "languageName": selectedLanguage.name
-                ]
-            )
-
             loadingState = .success(message: "Note created successfully")
-            shouldNavigateToNote = true
+            isProcessingComplete = true
 
             #if DEBUG
             print("🎥 YouTubeViewModel: Note generation completed")

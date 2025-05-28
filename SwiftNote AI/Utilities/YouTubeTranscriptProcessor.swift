@@ -9,8 +9,7 @@ final class YouTubeTranscriptViewModel: ObservableObject {
     @Published var urlInput: String = ""
     @Published var metadata: YouTubeConfig.VideoMetadata?
     @Published private(set) var processState: TranscriptProcessState = .idle
-    @Published var generatedNote: NoteCardConfiguration?
-    @Published var shouldNavigateToNote = false
+    @Published var isProcessingComplete = false
     @Published var errorMessage: String?
     @Published var isLoading = false
 
@@ -108,7 +107,7 @@ final class YouTubeTranscriptViewModel: ObservableObject {
             try await generateNote(from: transcript, language: language)
 
             processState = .completed
-            shouldNavigateToNote = true
+            isProcessingComplete = true
 
             #if DEBUG
             print("🎥 Successfully processed video and generated note")
@@ -153,21 +152,8 @@ final class YouTubeTranscriptViewModel: ObservableObject {
                 print("- Total notes in CoreData: \(count)")
                 #endif
 
-                // Update UI on main thread
+                // Trigger a refresh of the home view
                 DispatchQueue.main.async {
-                    self.generatedNote = NoteCardConfiguration(
-                        title: title,
-                        date: Date(),
-                        preview: content,
-                        sourceType: .video,
-                        metadata: [
-                            "rawTranscript": transcript,
-                            "aiGeneratedContent": content
-                        ]
-                    )
-                    print("📝 YouTubeTranscriptVM: Updated UI with generated note")
-
-                    // Trigger a refresh of the home view
                     NotificationCenter.default.post(name: .init("RefreshNotes"), object: nil)
                 }
             } catch {
@@ -286,10 +272,13 @@ struct YouTubeTranscriptView: View {
                     Text(error)
                 }
             }
-            .navigationDestination(isPresented: $viewModel.shouldNavigateToNote) {
-                if let note = viewModel.generatedNote {
-                    NoteStudyTabs(note: note)
-                        .navigationBarBackButtonHidden()
+            .onChange(of: viewModel.isProcessingComplete) { isComplete in
+                if isComplete {
+                    // Automatically dismiss the view when processing is complete
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        dismiss()
+                        toastManager.show("YouTube note created successfully", type: .success)
+                    }
                 }
             }
         }

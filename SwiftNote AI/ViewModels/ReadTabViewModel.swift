@@ -91,7 +91,7 @@ final class ReadTabViewModel: ObservableObject {
         var tableRows: [[String]] = []
         var isNextParagraphFeynman = false
 
-        for (index, line) in lines.enumerated() {
+        for (_, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
 

@@ -43,8 +43,7 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
     @Published var isProcessing = false
     @Published var recordingState: RecordingState = .initial
     @Published var loadingState: LoadingState = .idle
-    @Published var shouldNavigateToNote = false
-    @Published var generatedNote: NoteCardConfiguration?
+    @Published var isProcessingComplete = false
     @Published var selectedLanguage: Language = Language.supportedLanguages[0] // Default to English
 
     // MARK: - Loading State Enum
@@ -255,6 +254,9 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
                 // Reset loading state
                 loadingState = .idle
 
+                // Mark processing as complete
+                isProcessingComplete = true
+
                 // Cleanup
                 await cleanup()
 
@@ -328,34 +330,6 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
 
                 #if DEBUG
                 print("🎙️ AudioRecordingViewModel: Successfully saved note to database")
-                #endif
-
-                // Create a NoteCardConfiguration for navigation
-                let timestamp = Date()
-
-                // Since we're already on the MainActor, we can directly set these properties
-                self.generatedNote = NoteCardConfiguration(
-                    id: noteId,
-                    title: title,
-                    date: timestamp,
-                    preview: content,
-                    sourceType: .recording,
-                    isFavorite: false,
-                    tags: [],
-                    metadata: [
-                        "rawTranscript": transcript,
-                        "aiGeneratedContent": content,
-                        "language": self.selectedLanguage.code,
-                        "languageName": self.selectedLanguage.name
-                    ],
-                    sourceURL: destinationURL
-                )
-
-                // Set flag to trigger navigation
-                self.shouldNavigateToNote = true
-
-                #if DEBUG
-                print("🎙️ AudioRecordingViewModel: Set up navigation to generated note")
                 #endif
             } catch {
                 #if DEBUG
@@ -737,11 +711,7 @@ struct AudioRecordingView: View {
                         }
                     }
                 }
-                .navigationDestination(isPresented: $viewModel.shouldNavigateToNote) {
-                    if let note = viewModel.generatedNote {
-                        NoteDetailsView(note: note, context: viewModel.viewContext)
-                    }
-                }
+
 
                 // Loading Overlay
                 if case .loading(let message) = viewModel.loadingState {
@@ -791,6 +761,15 @@ struct AudioRecordingView: View {
                     .cornerRadius(16)
                     .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
                     .padding(.horizontal, 40)
+                }
+            }
+            .onChange(of: viewModel.isProcessingComplete) { isComplete in
+                if isComplete {
+                    // Automatically dismiss the view when processing is complete
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        dismiss()
+                        toastManager.show("Audio note created successfully", type: .success)
+                    }
                 }
             }
         }
