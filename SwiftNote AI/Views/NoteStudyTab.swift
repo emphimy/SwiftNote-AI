@@ -1033,7 +1033,6 @@ private struct ContentBlockView: View {
                             .padding(.horizontal, 12)
                             .padding(.vertical, 12)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Theme.Colors.secondaryBackground)
                             .overlay(
                                 Rectangle()
                                     .fill(Theme.Colors.primary.opacity(0.1))
@@ -1042,6 +1041,7 @@ private struct ContentBlockView: View {
                             )
                     }
                 }
+                .background(Theme.Colors.secondaryBackground)
                 .overlay(
                     Rectangle()
                         .fill(Theme.Colors.primary.opacity(0.2))
@@ -1059,7 +1059,6 @@ private struct ContentBlockView: View {
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(rowIndex % 2 == 0 ? Theme.Colors.background : Theme.Colors.cardBackground)
                                 .overlay(
                                     Rectangle()
                                         .fill(Theme.Colors.primary.opacity(0.1))
@@ -1068,6 +1067,7 @@ private struct ContentBlockView: View {
                                 )
                         }
                     }
+                    .background(rowIndex % 2 == 0 ? Theme.Colors.background : Theme.Colors.cardBackground)
                     .overlay(
                         Rectangle()
                             .fill(Theme.Colors.primary.opacity(0.1))
