@@ -58,15 +58,21 @@ actor NoteGenerationService {
         **###** 💡 1 Paragraph Simplification
         One plain‑language paragraph that could be read to a novice.
 
-        ## Summary
-        Give a 1‑paragraph overview (≤90 words total).
+        ## Introduction
+        Give a 1‑paragraph introduction (≤60 words total).
 
         For each major theme you find (create as many as needed):   
         
         ### {{Theme Name}}
-        Keep content concise and focused in 1 paragrah (≤60 words total per theme)
+        Write in PARAGRAPH format. Use bullet points ONLY for:
+        - Sequential steps (1, 2, 3...)
+        - Lists of distinct items/features
+        - Multiple unrelated facts
+        Otherwise, use flowing paragraph text for all explanations and concepts
+        Either use paragraph format or bullet point format per theme
+        ≤60 words total per theme
 
-        If—and only if—information (dates, stats, comparisons, steps) would be clearer in a table, add up to **2** tables directly within the relevant theme sections. Do not create a separate "Tables" section.
+        If—and only if—information (dates, stats, comparisons, steps) would be clearer in a table, add up to 2 tables directly within the relevant theme sections. Do not create a separate "Tables" section.
 
         ## Conclusion
         Wrap up in 1 paragraph, linking back to the main takeaways.
