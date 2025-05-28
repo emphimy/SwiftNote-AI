@@ -1023,28 +1023,66 @@ private struct ContentBlockView: View {
                 .frame(height: 1)
                 .padding(.vertical, 8)
         case .table(let headers, let rows):
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 0) {
                 // Headers
-                HStack {
-                    ForEach(headers, id: \.self) { header in
+                HStack(spacing: 0) {
+                    ForEach(Array(headers.enumerated()), id: \.offset) { index, header in
                         Text(LocalizedStringKey(header))
-                            .font(.system(size: fontSize, weight: .bold))
+                            .font(.system(size: fontSize * 0.9, weight: .semibold))
+                            .foregroundColor(Theme.Colors.text)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 12)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Theme.Colors.secondaryBackground)
+                            .overlay(
+                                Rectangle()
+                                    .fill(Theme.Colors.primary.opacity(0.1))
+                                    .frame(width: index < headers.count - 1 ? 1 : 0)
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                            )
                     }
                 }
+                .overlay(
+                    Rectangle()
+                        .fill(Theme.Colors.primary.opacity(0.2))
+                        .frame(height: 1)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                )
 
                 // Rows
-                ForEach(rows, id: \.self) { row in
-                    HStack {
-                        ForEach(row, id: \.self) { cell in
+                ForEach(Array(rows.enumerated()), id: \.offset) { rowIndex, row in
+                    HStack(spacing: 0) {
+                        ForEach(Array(row.enumerated()), id: \.offset) { cellIndex, cell in
                             Text(LocalizedStringKey(cell))
-                                .font(.system(size: fontSize))
+                                .font(.system(size: fontSize * 0.85))
+                                .foregroundColor(Theme.Colors.text)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(rowIndex % 2 == 0 ? Theme.Colors.background : Theme.Colors.cardBackground)
+                                .overlay(
+                                    Rectangle()
+                                        .fill(Theme.Colors.primary.opacity(0.1))
+                                        .frame(width: cellIndex < row.count - 1 ? 1 : 0)
+                                        .frame(maxWidth: .infinity, alignment: .trailing)
+                                )
                         }
                     }
+                    .overlay(
+                        Rectangle()
+                            .fill(Theme.Colors.primary.opacity(0.1))
+                            .frame(height: 1)
+                            .frame(maxHeight: .infinity, alignment: .bottom)
+                    )
                 }
             }
-            .padding(.vertical, 4)
+            .background(Theme.Colors.background)
+            .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Theme.Colors.primary.opacity(0.2), lineWidth: 1)
+            )
+            .padding(.vertical, 8)
         case .formattedText(let style):
             switch style {
             case .bold:

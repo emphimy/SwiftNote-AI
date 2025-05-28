@@ -58,10 +58,9 @@ actor NoteGenerationService {
         ## Summary
         Give a 1‑paragraph overview (≤90 words total).
 
-        ## Key Points
-        - Bullet the 4-6 most important takeaways.
+        - Bullet the 4-6 most important takeaways directly after the summary.
 
-        ## Important Details
+        ## Important Themes
         For each major theme you find (create as many as needed):
 
         ### {{Theme Name}}
@@ -70,11 +69,10 @@ actor NoteGenerationService {
         >
         > One plain‑language paragraph that could be read to a novice.
 
-        ## Tables
-        If—and only if—information (dates, stats, comparisons, steps) would be clearer in a table, add up to **2** tables here. Otherwise omit this section entirely.
+        If—and only if—information (dates, stats, comparisons, steps) would be clearer in a table, add up to **2** tables directly within the relevant theme sections. Do not create a separate "Tables" section.
 
         ## Conclusion
-        Wrap up in 1 paragraphs, linking back to the Key Points.
+        Wrap up in 1 paragraph, linking back to the main takeaways.
 
         ### Style Rules
         1. Use **##** for main headers, **###** for sub‑headers.
@@ -84,6 +82,7 @@ actor NoteGenerationService {
         5. Bold sparingly for emphasis.
         6. Never invent facts not present in the transcript.
         7. Output *only* Markdown—no explanations, no apologies.
+        8. Do NOT use section headers like "Key Points", "Tables", or "Important Details".
 
         Transcript:
         \(transcript)
