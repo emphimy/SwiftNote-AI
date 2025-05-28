@@ -56,28 +56,25 @@ actor NoteGenerationService {
         \(languageInstruction)
 
         ## Summary
-        Give a 2‑paragraph overview (≤120 words total).
+        Give a 1‑paragraph overview (≤90 words total).
 
         ## Key Points
-        - Bullet the 6‑10 most important takeaways.
+        - Bullet the 4-6 most important takeaways.
 
         ## Important Details
         For each major theme you find (create as many as needed):
 
         ### {{Theme Name}}
         - Concise detail bullets (≤25 words each).
-        > ### 💡 **Feynman Simplification**
+        > **###** 💡 Feynman Simplification
         >
         > One plain‑language paragraph that could be read to a novice.
-
-        ## Notable Quotes
-        > Include only impactful quotations. Omit this section if none.
 
         ## Tables
         If—and only if—information (dates, stats, comparisons, steps) would be clearer in a table, add up to **2** tables here. Otherwise omit this section entirely.
 
         ## Conclusion
-        Wrap up in 1‑2 paragraphs, linking back to the Key Points.
+        Wrap up in 1 paragraphs, linking back to the Key Points.
 
         ### Style Rules
         1. Use **##** for main headers, **###** for sub‑headers.
