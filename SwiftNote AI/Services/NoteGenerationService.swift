@@ -69,8 +69,9 @@ actor NoteGenerationService {
         - Lists of distinct items/features
         - Multiple unrelated facts
         Otherwise, use flowing paragraph text for all explanations and concepts
-        Either use paragraph format or bullet point format per theme
-        ≤60 words total per theme
+        - Either use paragraph format or bullet point format per theme
+        - ≤60 words total per theme
+        - Each NOTE should have at least 1 bullet points theme and 1 numbered theme. 
 
         If—and only if—information (dates, stats, comparisons, steps) would be clearer in a table, add up to 2 tables directly within the relevant theme sections. Do not create a separate "Tables" section.
 
