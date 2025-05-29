@@ -54,7 +54,7 @@ class NoteGenerationProgressModel: ObservableObject {
             switch self {
             case .idle: return "Getting ready to process your content"
             case .uploading: return "This may take a few seconds"
-            case .transcribing: return "Converting speech to text"
+            case .transcribing: return "Analyzing the data"
             case .processing: return "Analyzing your content"
             case .generating: return "Creating AI-powered notes"
             case .saving: return "Finalizing your note"
