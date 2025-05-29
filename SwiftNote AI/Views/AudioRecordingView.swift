@@ -216,58 +216,86 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
         print("🎙️ AudioRecordingViewModel: Generating note from recording")
         #endif
 
-        guard let recordingURL = recordingURL else {
+        guard recordingURL != nil else {
             errorMessage = "No recording available"
             return
         }
 
-        Task {
-            do {
-                // Update loading state
-                loadingState = .loading(message: "Processing audio file...")
+        // Start the new loading experience
+        isProcessingComplete = true
+    }
 
-                // Transcribe the audio file
-                loadingState = .loading(message: "Transcribing audio...")
-                let result = try await transcriptionService.transcribeAudioWithTimestamps(fileURL: recordingURL)
-                let transcript = result.text
+    // MARK: - Generate Note with Progress Tracking
+    func generateNoteWithProgress(
+        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void,
+        onComplete: @escaping () -> Void,
+        onError: @escaping (String) -> Void
+    ) async {
+        guard let recordingURL = recordingURL else {
+            onError("No recording available")
+            return
+        }
 
-                #if DEBUG
-                print("🎙️ AudioRecordingViewModel: Successfully transcribed audio with \(transcript.count) characters")
-                #endif
+        do {
+            // Step 1: Transcribing
+            await MainActor.run { updateProgress(.transcribing(progress: 0.0), 0.0) }
 
-                // Generate note content from transcript
-                loadingState = .loading(message: "Generating note content...")
-                let noteContent = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: selectedLanguage.code)
+            let result = try await transcriptionService.transcribeAudioWithTimestamps(fileURL: recordingURL)
+            let transcript = result.text
 
-                #if DEBUG
-                print("🎙️ AudioRecordingViewModel: Successfully generated note content with \(noteContent.count) characters")
-                #endif
+            #if DEBUG
+            print("🎙️ AudioRecordingViewModel: Successfully transcribed audio with \(transcript.count) characters")
+            #endif
 
-                // Generate title from transcript
-                loadingState = .loading(message: "Generating title...")
-                let title = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: selectedLanguage.code)
+            await MainActor.run { updateProgress(.transcribing(progress: 1.0), 1.0) }
 
-                // Save to Core Data
-                loadingState = .loading(message: "Saving note...")
-                try await saveNoteToDatabase(title: title, content: noteContent, transcript: transcript)
+            // Step 2: Generating note content
+            await MainActor.run { updateProgress(.generating(progress: 0.0), 0.0) }
 
-                // Reset loading state
-                loadingState = .idle
+            // Generate note content with progress simulation
+            let noteContent = try await generateNoteWithProgress(
+                transcript: transcript,
+                selectedLanguage: selectedLanguage,
+                updateProgress: updateProgress
+            )
 
-                // Mark processing as complete
-                isProcessingComplete = true
+            #if DEBUG
+            print("🎙️ AudioRecordingViewModel: Successfully generated note content with \(noteContent.count) characters")
+            #endif
 
-                // Cleanup
-                await cleanup()
+            // Don't set fixed 0.5 progress here, let title generation continue from where note generation left off
 
-            } catch {
-                #if DEBUG
-                print("🎙️ AudioRecordingViewModel: Failed to generate note - \(error)")
-                #endif
+            // Generate title with progress simulation
+            let title = try await generateTitleWithProgress(
+                transcript: transcript,
+                selectedLanguage: selectedLanguage,
+                updateProgress: updateProgress
+            )
 
-                loadingState = .error(message: error.localizedDescription)
-                errorMessage = "Failed to generate note: \(error.localizedDescription)"
-            }
+            await MainActor.run { updateProgress(.generating(progress: 1.0), 1.0) }
+
+            // Step 3: Saving
+            await MainActor.run { updateProgress(.saving(progress: 0.0), 0.0) }
+
+            try await saveNoteToDatabase(title: title, content: noteContent, transcript: transcript)
+
+            await MainActor.run { updateProgress(.saving(progress: 1.0), 1.0) }
+
+            #if DEBUG
+            print("🎙️ AudioRecordingViewModel: Note generation completed successfully")
+            #endif
+
+            // Cleanup
+            await cleanup()
+
+            await MainActor.run { onComplete() }
+
+        } catch {
+            #if DEBUG
+            print("🎙️ AudioRecordingViewModel: Failed to generate note - \(error)")
+            #endif
+
+            await MainActor.run { onError("Failed to generate note: \(error.localizedDescription)") }
         }
     }
 
@@ -407,6 +435,91 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
                 print("🎙️ AudioRecordingViewModel: Failed to save recording - \(error)")
                 #endif
                 throw error
+            }
+        }
+    }
+
+    // MARK: - Progress Simulation Helpers
+    private func generateNoteWithProgress(
+        transcript: String,
+        selectedLanguage: Language,
+        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void
+    ) async throws -> String {
+        // Start progress simulation task
+        let progressTask = Task {
+            await simulateNoteGenerationProgress(updateProgress: updateProgress)
+        }
+
+        // Start the actual API call
+        let noteContent = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: selectedLanguage.code)
+
+        // Cancel progress simulation since API call completed
+        progressTask.cancel()
+
+        return noteContent
+    }
+
+    private func simulateNoteGenerationProgress(
+        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void
+    ) async {
+        // More realistic progress simulation that continues until API completes
+        // Simulate progress from 5% to 40% over expected duration (8-10 seconds)
+        let progressSteps = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
+
+        for (index, progress) in progressSteps.enumerated() {
+            // Variable timing: faster at start, slower towards end
+            let delay: UInt64 = index < 4 ? 500_000_000 : 800_000_000 // 0.5s then 0.8s
+            try? await Task.sleep(nanoseconds: delay)
+
+            await MainActor.run {
+                updateProgress(.generating(progress: progress), progress)
+            }
+        }
+
+        // Continue with small increments until cancelled
+        var finalProgress = 0.4
+        while finalProgress < 0.48 {
+            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            finalProgress += 0.02
+
+            await MainActor.run {
+                updateProgress(.generating(progress: finalProgress), finalProgress)
+            }
+        }
+    }
+
+    private func generateTitleWithProgress(
+        transcript: String,
+        selectedLanguage: Language,
+        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void
+    ) async throws -> String {
+        // Start progress simulation task
+        let progressTask = Task {
+            await simulateTitleGenerationProgress(updateProgress: updateProgress)
+        }
+
+        // Start the actual API call
+        let title = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: selectedLanguage.code)
+
+        // Cancel progress simulation since API call completed
+        progressTask.cancel()
+
+        return title
+    }
+
+    private func simulateTitleGenerationProgress(
+        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void
+    ) async {
+        // Continue from where note generation left off (around 40-48%)
+        // Small increments to show final progress
+        let progressSteps = [0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99]
+
+        for progress in progressSteps {
+            // Shorter delays for title generation (total ~4 seconds)
+            try? await Task.sleep(nanoseconds: 600_000_000) // 0.6 seconds
+
+            await MainActor.run {
+                updateProgress(.generating(progress: progress), progress)
             }
         }
     }
@@ -618,6 +731,7 @@ struct ClassicWaveformView: View {
 // MARK: - Audio Recording View
 struct AudioRecordingView: View {
     @StateObject private var viewModel: AudioRecordingViewModel
+    @StateObject private var loadingCoordinator = NoteGenerationCoordinator()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.toastManager) private var toastManager
 
@@ -695,95 +809,38 @@ struct AudioRecordingView: View {
                 }
 
 
-                // Loading Overlay
-                if case .loading(let message) = viewModel.loadingState {
-                    loadingOverlay(message: message)
-                }
 
-                // Error Alert
-                if case .error(let message) = viewModel.loadingState {
-                    Color.black.opacity(0.4)
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            // Reset loading state
-                            viewModel.loadingState = .idle
-                        }
-
-                    VStack(spacing: Theme.Spacing.md) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 40))
-                            .foregroundColor(Theme.Colors.error)
-
-                        Text("Error")
-                            .font(Theme.Typography.h3)
-                            .foregroundColor(Theme.Colors.text)
-
-                        Text(message)
-                            .font(Theme.Typography.body)
-                            .foregroundColor(Theme.Colors.secondaryText)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
-
-                        Button(action: {
-                            viewModel.loadingState = .idle
-                        }) {
-                            Text("Dismiss")
-                                .font(Theme.Typography.body)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .padding(.vertical, 12)
-                                .padding(.horizontal, 24)
-                                .background(Theme.Colors.primary)
-                                .cornerRadius(10)
-                        }
-                        .padding(.top, Theme.Spacing.sm)
-                    }
-                    .padding(Theme.Spacing.lg)
-                    .background(Theme.Colors.background)
-                    .cornerRadius(16)
-                    .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
-                    .padding(.horizontal, 40)
-                }
             }
             .onChange(of: viewModel.isProcessingComplete) { isComplete in
                 if isComplete {
-                    // Automatically dismiss the view when processing is complete
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        dismiss()
-                        toastManager.show("Audio note created successfully", type: .success)
+                    // Start the new loading experience
+                    loadingCoordinator.startGeneration(
+                        type: .audioRecording,
+                        onComplete: {
+                            dismiss()
+                            toastManager.show("Audio note created successfully", type: .success)
+                        },
+                        onCancel: {
+                            // Reset the processing state
+                            viewModel.isProcessingComplete = false
+                        }
+                    )
+
+                    // Start the actual processing
+                    Task {
+                        await viewModel.generateNoteWithProgress(
+                            updateProgress: loadingCoordinator.updateProgress,
+                            onComplete: loadingCoordinator.completeGeneration,
+                            onError: loadingCoordinator.setError
+                        )
                     }
                 }
             }
+            .noteGenerationLoading(coordinator: loadingCoordinator)
         }
     }
 
-    @ViewBuilder
-    private func loadingOverlay(message: String) -> some View {
-        ZStack {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
 
-            VStack(spacing: Theme.Spacing.md) {
-                ProgressView()
-                    .scaleEffect(1.5)
-                    .padding(.bottom, Theme.Spacing.sm)
-
-                Text(message)
-                    .font(Theme.Typography.h3)
-                    .foregroundColor(Theme.Colors.text)
-                    .multilineTextAlignment(.center)
-
-                Text("This may take a minute...")
-                    .font(Theme.Typography.body)
-                    .foregroundColor(Theme.Colors.secondaryText)
-            }
-            .padding(Theme.Spacing.lg)
-            .background(Theme.Colors.background)
-            .cornerRadius(16)
-            .shadow(color: Color.black.opacity(0.1), radius: 10, x: 0, y: 5)
-            .padding(.horizontal, 40)
-        }
-    }
 
     private var recordingControlButtons: some View {
         VStack(spacing: Theme.Spacing.md) {
