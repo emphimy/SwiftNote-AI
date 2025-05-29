@@ -281,10 +281,21 @@ struct ScanTextView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .top) {
-                mainContentView
-                floatingButtonsView
-                loadingOverlayView
+            ScrollView {
+                VStack(spacing: Theme.Spacing.lg) {
+                    headerSection
+
+                    if viewModel.scannedPages.isEmpty {
+                        emptyStateSection
+                    } else {
+                        scannedPagesSection
+                        languagePickerSection
+                        actionButtonsSection
+                    }
+
+                    Spacer()
+                }
+                .padding()
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -312,6 +323,7 @@ struct ScanTextView: View {
                     isShowingScanner = false
                 }
             }
+            .overlay(loadingOverlayView)
             .onChange(of: viewModel.loadingState) { state in
                 // Only handle OCR errors, not AI processing errors (handled by unified loading system)
                 if case .error(let message) = state, !message.contains("AI") {
@@ -323,42 +335,15 @@ struct ScanTextView: View {
     }
 
     // MARK: - View Components
-    private var mainContentView: some View {
-        ScrollView {
-            // Add padding at the top to make room for the floating buttons
-            Spacer()
-                .frame(height: viewModel.scannedPages.isEmpty ? 0 : 120)
-            VStack(spacing: Theme.Spacing.xl) {
-                // Header Section
-                NoteCreationHeader(
-                    icon: "viewfinder.circle.fill",
-                    title: "Scan Document",
-                    subtitle: "Scan physical documents and convert them to digital notes"
-                )
-
-                // Content Section
-                contentSectionView
-            }
-            .padding(.bottom, 80) // Add padding at the bottom for the floating buttons
-            .onTapGesture {
-                // Dismiss keyboard when tapping outside of a text field
-                isTextFieldFocused = false
-            }
-        }
+    private var headerSection: some View {
+        NoteCreationHeader(
+            icon: "viewfinder.circle.fill",
+            title: "Scan Document",
+            subtitle: "Scan physical documents and convert them to digital notes"
+        )
     }
 
-    private var contentSectionView: some View {
-        VStack(spacing: Theme.Spacing.lg) {
-            if viewModel.scannedPages.isEmpty {
-                emptyStateView
-            } else {
-                scannedPagesView
-            }
-        }
-        .padding()
-    }
-
-    private var emptyStateView: some View {
+    private var emptyStateSection: some View {
         VStack(spacing: Theme.Spacing.md) {
             Button(action: { isShowingScanner = true }) {
                 VStack(spacing: Theme.Spacing.md) {
@@ -379,13 +364,30 @@ struct ScanTextView: View {
         }
     }
 
-    private var scannedPagesView: some View {
+    private var scannedPagesSection: some View {
         VStack(spacing: Theme.Spacing.md) {
-            // Processing status is now handled by unified loading system
+            // Section Header
+            HStack {
+                Text("Scanned Pages (\(viewModel.scannedPages.count))")
+                    .font(Theme.Typography.h3)
+                    .foregroundColor(Theme.Colors.text)
 
-            // Scanned Pages with Accordion
+                Spacer()
+
+                Button(action: { isShowingScanner = true }) {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        Image(systemName: "plus.circle.fill")
+                        Text("Add More")
+                    }
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.primary)
+                }
+            }
+            .padding(.horizontal, Theme.Spacing.sm)
+
+            // Scanned Pages List
             ForEach(viewModel.scannedPages.indices, id: \.self) { index in
-                ScannedPageRowView(
+                ScannedPageCardView(
                     page: viewModel.scannedPages[index],
                     index: index,
                     onToggleExpansion: { viewModel.togglePageExpansion(at: index) },
@@ -395,63 +397,25 @@ struct ScanTextView: View {
                     }
                 )
             }
-
-            // Small spacer at the bottom
-            Spacer()
-                .frame(height: 15)
         }
     }
 
-    private var floatingButtonsView: some View {
-        Group {
-            if !viewModel.scannedPages.isEmpty {
-                VStack(spacing: Theme.Spacing.md) {
-                    // Language Picker Section
-                    StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+    private var languagePickerSection: some View {
+        StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+    }
 
-                    // Generate Note Button
-                    PrimaryActionButton(
-                        title: "Generate Note with AI",
-                        icon: "viewfinder.circle.fill",
-                        isEnabled: !viewModel.combinedText.isEmpty,
-                        isLoading: false,
-                        action: {
-                            isTextFieldFocused = false // Dismiss keyboard
-                            processScanText()
-                        }
-                    )
-
-                    // Scan More Button
-                    Button(action: {
-                        isTextFieldFocused = false // Dismiss keyboard
-                        isShowingScanner = true
-                    }) {
-                        HStack {
-                            Image(systemName: "doc.viewfinder")
-                            Text("Scan More")
-                        }
-                        .font(.headline)
-                        .foregroundColor(Theme.Colors.primary)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.white)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
-                                .stroke(Theme.Colors.primary, lineWidth: 2)
-                        )
-                        .cornerRadius(Theme.Layout.cornerRadius)
-                    }
+    private var actionButtonsSection: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            PrimaryActionButton(
+                title: "Generate Note with AI",
+                icon: "wand.and.stars",
+                isEnabled: !viewModel.combinedText.isEmpty,
+                isLoading: false,
+                action: {
+                    isTextFieldFocused = false
+                    processScanText()
                 }
-                .padding(.horizontal)
-                .padding(.vertical, Theme.Spacing.md)
-                .background(
-                    Rectangle()
-                        .fill(Color.white.opacity(0.95))
-                        .shadow(color: Color.black.opacity(0.2), radius: 5, x: 0, y: 3)
-                )
-                .zIndex(100)
-                .ignoresSafeArea(.keyboard)
-            }
+            )
         }
     }
 
@@ -459,24 +423,34 @@ struct ScanTextView: View {
         Group {
             // OCR processing progress (only for text recognition, not AI processing)
             if case .loading(let message) = viewModel.loadingState, !(message?.contains("Generating") ?? false) {
-                VStack(spacing: Theme.Spacing.md) {
-                    ProgressView()
-                        .scaleEffect(1.2)
-                    if let message = message {
-                        Text(message)
-                            .font(.subheadline)
-                            .foregroundColor(Theme.Colors.secondaryText)
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+
+                    VStack(spacing: Theme.Spacing.md) {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                            .tint(Theme.Colors.primary)
+
+                        if let message = message {
+                            Text(message)
+                                .font(Theme.Typography.body)
+                                .foregroundColor(Theme.Colors.text)
+                                .multilineTextAlignment(.center)
+                        }
+
+                        if viewModel.scanningProgress > 0 {
+                            ProgressView(value: viewModel.scanningProgress)
+                                .progressViewStyle(.linear)
+                                .tint(Theme.Colors.primary)
+                                .frame(width: 200)
+                        }
                     }
-                    if viewModel.scanningProgress > 0 {
-                        ProgressView(value: viewModel.scanningProgress)
-                            .progressViewStyle(.linear)
-                            .padding(.horizontal)
-                    }
+                    .padding(Theme.Spacing.xl)
+                    .background(Theme.Colors.cardBackground)
+                    .cornerRadius(Theme.Layout.cornerRadius)
+                    .shadow(radius: 10)
                 }
-                .padding()
-                .background(Theme.Colors.secondaryBackground.opacity(0.9))
-                .cornerRadius(Theme.Layout.cornerRadius)
-                .padding()
             }
         }
     }
@@ -560,8 +534,8 @@ struct ScanTextView: View {
         }
     }
 
-    // MARK: - Scanned Page Row View
-    struct ScannedPageRowView: View {
+    // MARK: - Scanned Page Card View
+    struct ScannedPageCardView: View {
         let page: ScanPage
         let index: Int
         let onToggleExpansion: () -> Void
@@ -569,66 +543,102 @@ struct ScanTextView: View {
         let onUpdateText: (String) -> Void
 
         var body: some View {
-            VStack(spacing: Theme.Spacing.md) {
-                // Accordion Header
-                Button(action: onToggleExpansion) {
-                    HStack {
+            VStack(spacing: 0) {
+                // Card Header
+                HStack {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                         Text("Page \(index + 1)")
                             .font(Theme.Typography.h3)
                             .foregroundColor(Theme.Colors.text)
 
-                        Spacer()
-
-                        // Preview of text content
-                        if !page.isExpanded && !page.recognizedText.isEmpty {
-                            Text(page.recognizedText.prefix(30) + (page.recognizedText.count > 30 ? "..." : ""))
+                        if !page.recognizedText.isEmpty {
+                            Text("\(page.recognizedText.count) characters")
                                 .font(Theme.Typography.caption)
                                 .foregroundColor(Theme.Colors.secondaryText)
-                                .lineLimit(1)
+                        } else {
+                            Text("Processing...")
+                                .font(Theme.Typography.caption)
+                                .foregroundColor(Theme.Colors.secondaryText)
                         }
+                    }
 
-                        // Expand/collapse icon
-                        Image(systemName: page.isExpanded ? "chevron.up" : "chevron.down")
-                            .foregroundColor(Theme.Colors.primary)
+                    Spacer()
+
+                    // Preview of text content (when collapsed)
+                    if !page.isExpanded && !page.recognizedText.isEmpty {
+                        Text(page.recognizedText.prefix(40) + (page.recognizedText.count > 40 ? "..." : ""))
+                            .font(Theme.Typography.caption)
+                            .foregroundColor(Theme.Colors.secondaryText)
+                            .lineLimit(2)
+                            .frame(maxWidth: 120)
+                    }
+
+                    HStack(spacing: Theme.Spacing.sm) {
+                        // Expand/collapse button
+                        Button(action: onToggleExpansion) {
+                            Image(systemName: page.isExpanded ? "chevron.up.circle.fill" : "chevron.down.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(Theme.Colors.primary)
+                        }
 
                         // Delete button
                         Button(action: onDelete) {
-                            Image(systemName: "trash")
+                            Image(systemName: "trash.circle.fill")
+                                .font(.system(size: 20))
                                 .foregroundColor(.red)
                         }
-                        .padding(.leading, 8)
                     }
                 }
-                .buttonStyle(PlainButtonStyle())
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(Theme.Colors.secondaryBackground.opacity(0.5))
-                .cornerRadius(Theme.Layout.cornerRadius)
+                .padding(Theme.Spacing.md)
+                .background(Theme.Colors.cardBackground)
 
+                // Expanded Content
                 if page.isExpanded {
                     VStack(spacing: Theme.Spacing.md) {
-                        Image(uiImage: page.image)
-                            .resizable()
-                            .scaledToFit()
-                            .cornerRadius(Theme.Layout.cornerRadius)
+                        Divider()
+                            .padding(.horizontal, Theme.Spacing.md)
 
-                        if !page.recognizedText.isEmpty {
-                            TextEditor(text: Binding(
-                                get: { page.recognizedText },
-                                set: onUpdateText
-                            ))
-                            .font(Theme.Typography.body)
-                            .foregroundColor(Theme.Colors.text)
-                            .frame(minHeight: 100)
-                            .padding()
-                            .background(Theme.Colors.secondaryBackground)
-                            .cornerRadius(Theme.Layout.cornerRadius)
+                        VStack(spacing: Theme.Spacing.md) {
+                            // Image Preview
+                            Image(uiImage: page.image)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxHeight: 200)
+                                .cornerRadius(Theme.Layout.cornerRadius)
+                                .shadow(radius: 2)
+
+                            // Text Editor
+                            if !page.recognizedText.isEmpty {
+                                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                                    Text("Recognized Text")
+                                        .font(Theme.Typography.caption.weight(.medium))
+                                        .foregroundColor(Theme.Colors.secondaryText)
+
+                                    TextEditor(text: Binding(
+                                        get: { page.recognizedText },
+                                        set: onUpdateText
+                                    ))
+                                    .font(Theme.Typography.body)
+                                    .foregroundColor(Theme.Colors.text)
+                                    .frame(minHeight: 120)
+                                    .padding(Theme.Spacing.sm)
+                                    .background(Theme.Colors.secondaryBackground)
+                                    .cornerRadius(Theme.Layout.cornerRadius)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                                            .stroke(Theme.Colors.primary.opacity(0.2), lineWidth: 1)
+                                    )
+                                }
+                            }
                         }
+                        .padding(Theme.Spacing.md)
                     }
-                    .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
                 }
             }
-            .padding(.bottom, page.isExpanded ? 8 : 2)
+            .background(Theme.Colors.cardBackground)
+            .cornerRadius(Theme.Layout.cornerRadius)
+            .shadow(color: Color.black.opacity(0.1), radius: 2, x: 0, y: 1)
             .animation(.easeInOut(duration: 0.3), value: page.isExpanded)
         }
     }
