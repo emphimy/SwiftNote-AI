@@ -78,8 +78,8 @@ struct NoteGenerationLoadingView: View {
             }
             .onChange(of: progressModel.isComplete) { isComplete in
                 if isComplete {
-                    // Smooth transition with shorter delay for better UX
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    // Give users time to see the green checkmarks before navigating
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         onComplete()
                     }
                 }
@@ -101,11 +101,18 @@ struct NoteGenerationLoadingView: View {
                 .font(Theme.Typography.h2)
                 .foregroundColor(Theme.Colors.text)
 
-            // Subtitle
-            Text("Don't turn off app while generating note")
-                .font(Theme.Typography.body)
-                .foregroundColor(Theme.Colors.secondaryText)
-                .multilineTextAlignment(.center)
+            // Subtitle with time warning
+            VStack(spacing: Theme.Spacing.xs) {
+                Text("Don't turn off app while generating note")
+                    .font(Theme.Typography.body)
+                    .foregroundColor(Theme.Colors.secondaryText)
+                    .multilineTextAlignment(.center)
+
+                Text("This process may take up to a few minutes")
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.secondaryText.opacity(0.8))
+                    .multilineTextAlignment(.center)
+            }
         }
         .padding(.horizontal, Theme.Spacing.lg)
     }
@@ -185,6 +192,18 @@ private struct StepProgressRow: View {
         return isCurrentStep ? currentStep.progressValue : step.progressValue
     }
 
+    // Determine if this step should show indeterminate progress
+    private var isIndeterminateStep: Bool {
+        switch step {
+        case .transcribing:
+            return true // Audio transcription time is unpredictable
+        case .generating:
+            return true // AI generation time is unpredictable
+        default:
+            return false // Other steps have known/trackable progress
+        }
+    }
+
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
             // Status Icon
@@ -200,7 +219,7 @@ private struct StepProgressRow: View {
 
                     Spacer()
 
-                    if isCurrentStep && step.isInProgress {
+                    if isCurrentStep && step.isInProgress && !isIndeterminateStep {
                         Text("\(Int(currentStepProgressValue * 100))%")
                             .font(Theme.Typography.caption)
                             .foregroundColor(Theme.Colors.secondaryText)
@@ -214,10 +233,16 @@ private struct StepProgressRow: View {
 
                 // Progress Bar
                 if isCurrentStep && step.isInProgress {
-                    ProgressView(value: currentStepProgressValue)
-                        .progressViewStyle(LinearProgressViewStyle(tint: Theme.Colors.primary))
-                        .scaleEffect(y: 1.5)
-                        .animation(.easeInOut(duration: 0.3), value: currentStepProgressValue)
+                    if isIndeterminateStep {
+                        // Animated indeterminate progress for AI generation
+                        AnimatedIndeterminateProgressBar()
+                    } else {
+                        // Determinate progress for known operations
+                        ProgressView(value: currentStepProgressValue)
+                            .progressViewStyle(LinearProgressViewStyle(tint: Theme.Colors.primary))
+                            .scaleEffect(y: 1.5)
+                            .animation(.easeInOut(duration: 0.3), value: currentStepProgressValue)
+                    }
                 } else if status == .completed {
                     Rectangle()
                         .fill(Theme.Colors.success)
@@ -292,6 +317,43 @@ private struct StepProgressRow: View {
             return "exclamationmark"
         case .pending:
             return step.icon
+        }
+    }
+}
+
+// MARK: - Animated Indeterminate Progress Bar
+private struct AnimatedIndeterminateProgressBar: View {
+    @State private var animationOffset: CGFloat = -1.0
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                // Background track
+                Rectangle()
+                    .fill(Theme.Colors.tertiaryBackground)
+                    .frame(height: 3)
+                    .cornerRadius(1.5)
+
+                // Animated progress segment
+                Rectangle()
+                    .fill(Theme.Colors.primary)
+                    .frame(width: geometry.size.width * 0.3, height: 3)
+                    .cornerRadius(1.5)
+                    .offset(x: animationOffset * geometry.size.width)
+                    .animation(
+                        .linear(duration: 1.5)
+                        .repeatForever(autoreverses: false),
+                        value: animationOffset
+                    )
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 1.5)) // Clip to container bounds
+        }
+        .frame(height: 3)
+        .onAppear {
+            animationOffset = 1.3 // Move from -100% to +130% of width
+        }
+        .onDisappear {
+            animationOffset = -1.0 // Reset when view disappears
         }
     }
 }

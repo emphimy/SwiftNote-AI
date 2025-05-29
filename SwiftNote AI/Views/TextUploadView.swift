@@ -100,7 +100,7 @@ final class TextUploadViewModel: ObservableObject {
     @Published var processingProgress: Double = 0.0
 
     // MARK: - Private Properties
-    private let viewContext: NSManagedObjectContext
+    let viewContext: NSManagedObjectContext
     let supportedTypes: [UTType] = [.pdf]
     private(set) var originalFileURL: URL?
     private let aiService = AIProxyService.shared
@@ -149,15 +149,9 @@ final class TextUploadViewModel: ObservableObject {
                 // Read file content
                 loadingState = .loading(message: "Extracting text from PDF...")
                 textContent = try await readFileContent(from: url)
-                processingProgress = 0.5
+                processingProgress = 0.8
 
-                // Process with AI if content is not empty
-                if !textContent.isEmpty {
-                    loadingState = .loading(message: "Analyzing content with AI...")
-                    processingProgress = 0.6
-                    aiGeneratedContent = try await processWithAI(text: textContent)
-                    processingProgress = 0.95
-                }
+                // AI processing will happen in the unified loading screen
 
                 // Calculate stats
                 stats = TextStats(text: textContent, fileSize: Int64(fileSize))
@@ -315,29 +309,16 @@ final class TextUploadViewModel: ObservableObject {
         let startProgress = processingProgress
         let aiProgressRange = 0.25 // AI processing takes 25% of total progress
 
-        // Start a timer to simulate AI processing progress
-        let progressTask = Task {
-            let steps = 20 // Number of progress updates
-            let stepDuration = 0.5 // Seconds between updates
-
-            for step in 1...steps {
-                try await Task.sleep(nanoseconds: UInt64(stepDuration * 1_000_000_000))
-
-                if !Task.isCancelled {
-                    await MainActor.run {
-                        let stepProgress = Double(step) / Double(steps)
-                        self.processingProgress = startProgress + (aiProgressRange * stepProgress)
-                    }
-                }
+        // Use NoteGenerationService with real streaming progress
+        let noteGenerationService = NoteGenerationService()
+        let processedContent = try await noteGenerationService.generateNoteWithProgress(
+            from: text,
+            detectedLanguage: selectedLanguage.code
+        ) { progress in
+            Task { @MainActor in
+                self.processingProgress = startProgress + (aiProgressRange * progress)
             }
         }
-
-        // Use NoteGenerationService instead of direct prompt
-        let noteGenerationService = NoteGenerationService()
-        let processedContent = try await noteGenerationService.generateNote(from: text, detectedLanguage: selectedLanguage.code)
-
-        // Cancel the progress simulation since AI processing is done
-        progressTask.cancel()
 
         return processedContent.data(using: .utf8) ?? Data()
     }
@@ -477,7 +458,7 @@ final class TextUploadViewModel: ObservableObject {
 
             // Extract text from the PDF
             textContent = try await extractTextFromPDF(pdfDocument)
-            processingProgress = 0.6
+            processingProgress = 0.8
 
             #if DEBUG
             print("📄 TextUploadVM: After extraction, pdfPageCount = \(String(describing: pdfPageCount))")
@@ -487,11 +468,7 @@ final class TextUploadViewModel: ObservableObject {
                 throw TextUploadError.emptyContent
             }
 
-            // Process with AI if content is not empty
-            loadingState = .loading(message: "Analyzing content with AI...")
-            processingProgress = 0.65
-            aiGeneratedContent = try await processWithAI(text: textContent)
-            processingProgress = 0.95
+            // AI processing will happen in the unified loading screen
 
             // Calculate stats
             let fileSize = (try? localURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
@@ -513,6 +490,17 @@ final class TextUploadViewModel: ObservableObject {
 
             throw error
         }
+    }
+
+    // MARK: - Reset Processing
+    func resetProcessing() {
+        processingProgress = 0.0
+        loadingState = .idle
+        errorMessage = nil
+
+        #if DEBUG
+        print("📄 TextUploadVM: Reset processing state")
+        #endif
     }
 
     // MARK: - Type Checking
@@ -597,6 +585,7 @@ struct DocumentPicker: UIViewControllerRepresentable {
 // MARK: - Text Upload View
 struct TextUploadView: View {
     @StateObject private var viewModel: TextUploadViewModel
+    @StateObject private var loadingCoordinator = NoteGenerationCoordinator()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.toastManager) private var toastManager
     @State private var showingFilePicker = false
@@ -652,6 +641,7 @@ struct TextUploadView: View {
             .sheet(isPresented: $showingFilePicker) {
                 DocumentPicker(types: viewModel.supportedTypes, onResult: handleSelectedFile)
             }
+            .noteGenerationLoading(coordinator: loadingCoordinator)
         }
     }
 
@@ -1025,41 +1015,122 @@ struct TextUploadView: View {
     // Removed localStorageToggle
 
     private var importButton: some View {
-        Button(action: { saveDocument() }) {
-            if viewModel.loadingState.isLoading {
-                HStack(spacing: 12) {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle())
-                        .scaleEffect(0.8)
-                        .tint(.white)
-
-                    Text("Processing...")
-                        .font(Theme.Typography.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                }
-                .frame(minWidth: 200)
-            } else {
-                HStack(spacing: 8) {
-                    Text("Import PDF")
-                        .font(Theme.Typography.body)
-                        .fontWeight(.semibold)
-
-                    Image(systemName: "arrow.right.circle.fill")
-                        .font(.system(size: 16))
-                }
+        PrimaryActionButton(
+            title: "Import PDF",
+            icon: "doc.circle.fill",
+            isEnabled: !viewModel.textContent.isEmpty,
+            isLoading: false,
+            action: {
+                processPDF()
             }
-        }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(viewModel.loadingState.isLoading ? Theme.Colors.primary.opacity(0.5) : Theme.Colors.primary)
-        .foregroundColor(.white)
-        .cornerRadius(Theme.Layout.cornerRadius)
-        .disabled(viewModel.loadingState.isLoading)
+        )
     }
 
     // MARK: - Helper Methods
+    private func processPDF() {
+        // Start the unified loading experience
+        loadingCoordinator.startGeneration(
+            type: .pdfImport,
+            onComplete: {
+                dismiss()
+                toastManager.show("PDF imported successfully", type: .success)
+            },
+            onCancel: {
+                // Reset any processing state if needed
+                viewModel.resetProcessing()
+            }
+        )
+
+        // Start the actual processing
+        Task {
+            await processPDFWithProgress(
+                updateProgress: loadingCoordinator.updateProgress,
+                onComplete: loadingCoordinator.completeGeneration,
+                onError: loadingCoordinator.setError
+            )
+        }
+    }
+
+    private func processPDFWithProgress(
+        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void,
+        onComplete: @escaping () -> Void,
+        onError: @escaping (String) -> Void
+    ) async {
+        do {
+            // Step 1: Processing (text extraction from PDF)
+            await MainActor.run { updateProgress(.processing(progress: 0.0), 0.0) }
+
+            // If text content is empty, we need to extract it first
+            if viewModel.textContent.isEmpty {
+                // This should not happen since file selection should extract text
+                await MainActor.run { onError("No text content found in PDF") }
+                return
+            }
+
+            await MainActor.run { updateProgress(.processing(progress: 1.0), 1.0) }
+
+            // Step 2: Generating note content
+            await MainActor.run { updateProgress(.generating(progress: 0.0), 0.0) }
+
+            let noteGenerationService = NoteGenerationService()
+
+            // Generate AI content with progress tracking
+            let aiContent = try await noteGenerationService.generateNoteWithProgress(
+                from: viewModel.textContent,
+                detectedLanguage: viewModel.selectedLanguage.code
+            ) { progress in
+                Task { @MainActor in
+                    updateProgress(.generating(progress: progress * 0.7), progress * 0.7) // Use 70% for note generation
+                }
+            }
+
+            // Generate title with progress tracking
+            let title = try await noteGenerationService.generateTitleWithProgress(
+                from: viewModel.textContent,
+                detectedLanguage: viewModel.selectedLanguage.code
+            ) { progress in
+                Task { @MainActor in
+                    updateProgress(.generating(progress: 0.7 + (progress * 0.3)), 0.7 + (progress * 0.3)) // Use remaining 30% for title
+                }
+            }
+
+            await MainActor.run {
+                viewModel.aiGeneratedContent = aiContent.data(using: .utf8) ?? Data()
+                updateProgress(.generating(progress: 1.0), 1.0)
+            }
+
+            // Step 3: Saving
+            await MainActor.run { updateProgress(.saving(progress: 0.0), 0.0) }
+
+            try await saveNoteToDatabase(title: title, content: aiContent, originalContent: viewModel.textContent)
+
+            await MainActor.run { updateProgress(.saving(progress: 1.0), 1.0) }
+
+            await MainActor.run { onComplete() }
+
+        } catch {
+            await MainActor.run { onError(error.localizedDescription) }
+        }
+    }
+
+    private func saveNoteToDatabase(title: String, content: String, originalContent: String) async throws {
+        try await viewModel.viewContext.perform {
+            let note = Note(context: viewModel.viewContext)
+            note.id = UUID()
+            note.title = title
+            note.aiGeneratedContent = content.data(using: .utf8)
+            note.originalContent = originalContent.data(using: .utf8)
+            note.timestamp = Date()
+            note.lastModified = Date()
+            note.transcriptLanguage = viewModel.selectedLanguage.code
+            note.sourceType = "pdf"
+            note.processingStatus = "completed"
+            note.syncStatus = "pending"
+
+            try viewModel.viewContext.save()
+        }
+    }
+
     private func saveDocument() {
         Task {
             do {

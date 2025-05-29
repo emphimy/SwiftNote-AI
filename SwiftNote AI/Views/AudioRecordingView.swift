@@ -439,51 +439,19 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Progress Simulation Helpers
+    // MARK: - Real Progress Helpers
     private func generateNoteWithProgress(
         transcript: String,
         selectedLanguage: Language,
         updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void
     ) async throws -> String {
-        // Start progress simulation task
-        let progressTask = Task {
-            await simulateNoteGenerationProgress(updateProgress: updateProgress)
-        }
-
-        // Start the actual API call
-        let noteContent = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: selectedLanguage.code)
-
-        // Cancel progress simulation since API call completed
-        progressTask.cancel()
-
-        return noteContent
-    }
-
-    private func simulateNoteGenerationProgress(
-        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void
-    ) async {
-        // More realistic progress simulation that continues until API completes
-        // Simulate progress from 5% to 40% over expected duration (8-10 seconds)
-        let progressSteps = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4]
-
-        for (index, progress) in progressSteps.enumerated() {
-            // Variable timing: faster at start, slower towards end
-            let delay: UInt64 = index < 4 ? 500_000_000 : 800_000_000 // 0.5s then 0.8s
-            try? await Task.sleep(nanoseconds: delay)
-
-            await MainActor.run {
+        // Use streaming API for real progress tracking
+        return try await noteGenerationService.generateNoteWithProgress(
+            from: transcript,
+            detectedLanguage: selectedLanguage.code
+        ) { progress in
+            Task { @MainActor in
                 updateProgress(.generating(progress: progress), progress)
-            }
-        }
-
-        // Continue with small increments until cancelled
-        var finalProgress = 0.4
-        while finalProgress < 0.48 {
-            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-            finalProgress += 0.02
-
-            await MainActor.run {
-                updateProgress(.generating(progress: finalProgress), finalProgress)
             }
         }
     }
@@ -493,32 +461,12 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
         selectedLanguage: Language,
         updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void
     ) async throws -> String {
-        // Start progress simulation task
-        let progressTask = Task {
-            await simulateTitleGenerationProgress(updateProgress: updateProgress)
-        }
-
-        // Start the actual API call
-        let title = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: selectedLanguage.code)
-
-        // Cancel progress simulation since API call completed
-        progressTask.cancel()
-
-        return title
-    }
-
-    private func simulateTitleGenerationProgress(
-        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void
-    ) async {
-        // Continue from where note generation left off (around 40-48%)
-        // Small increments to show final progress
-        let progressSteps = [0.50, 0.60, 0.70, 0.80, 0.90, 0.95, 0.99]
-
-        for progress in progressSteps {
-            // Shorter delays for title generation (total ~4 seconds)
-            try? await Task.sleep(nanoseconds: 600_000_000) // 0.6 seconds
-
-            await MainActor.run {
+        // Use streaming API for real progress tracking
+        return try await noteGenerationService.generateTitleWithProgress(
+            from: transcript,
+            detectedLanguage: selectedLanguage.code
+        ) { progress in
+            Task { @MainActor in
                 updateProgress(.generating(progress: progress), progress)
             }
         }

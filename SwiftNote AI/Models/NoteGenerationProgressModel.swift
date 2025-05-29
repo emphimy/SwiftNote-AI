@@ -172,7 +172,7 @@ class NoteGenerationProgressModel: ObservableObject {
         var icon: String {
             switch self {
             case .audioRecording: return "mic.circle.fill"
-            case .audioUpload: return "music.note.list"
+            case .audioUpload: return "waveform.circle.fill"
             case .textScan: return "doc.text.viewfinder"
             case .pdfImport: return "doc.circle.fill"
             case .youtubeVideo: return "play.circle.fill"
@@ -288,6 +288,16 @@ class NoteGenerationProgressModel: ObservableObject {
 
     // MARK: - Helper Methods
     func getStepStatus(for step: GenerationStep) -> StepStatus {
+        // If we're in complete state, all steps should be marked as completed
+        if case .complete = currentStep {
+            return .completed
+        }
+
+        // If we're in error state, mark current step as error
+        if case .error = currentStep, step.id == currentStep.id {
+            return .error
+        }
+
         guard let currentIndex = steps.firstIndex(where: { $0.id == currentStep.id }),
               let stepIndex = steps.firstIndex(where: { $0.id == step.id }) else {
             return .pending

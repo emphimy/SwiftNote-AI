@@ -234,7 +234,169 @@ final class AudioUploadViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Save Note
+    // MARK: - Unified Loading System Integration
+    func processAudioWithProgress(
+        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void,
+        onComplete: @escaping () -> Void,
+        onError: @escaping (String) -> Void
+    ) async {
+        guard let audioURL = originalFileURL else {
+            onError("No audio file selected")
+            return
+        }
+
+        do {
+            // Step 1: Skip uploading since file is already selected, start with transcribing
+            await MainActor.run { updateProgress(.uploading(progress: 1.0), 1.0) }
+            await MainActor.run { updateProgress(.transcribing(progress: 0.0), 0.0) }
+
+            // Start transcription with indeterminate progress
+            let result = try await transcriptionService.transcribeAudioWithTimestamps(fileURL: audioURL, language: selectedLanguage.code)
+            let transcription = result.text
+
+            await MainActor.run {
+                self.transcriptSegments = result.segments
+                self.transcript = transcription
+                updateProgress(.transcribing(progress: 1.0), 1.0)
+            }
+
+            #if DEBUG
+            print("🎵 AudioUploadVM: Successfully transcribed audio with \(transcription.count) characters and \(result.segments.count) segments")
+            #endif
+
+            // Step 2: Generating note content
+            await MainActor.run { updateProgress(.generating(progress: 0.0), 0.0) }
+
+            let noteContent = try await noteGenerationService.generateNoteWithProgress(
+                from: transcription,
+                detectedLanguage: selectedLanguage.code
+            ) { progress in
+                Task { @MainActor in
+                    updateProgress(.generating(progress: progress), progress)
+                }
+            }
+
+            #if DEBUG
+            print("🎵 AudioUploadVM: Successfully generated note content with \(noteContent.count) characters")
+            #endif
+
+            // Generate title
+            let title = try await noteGenerationService.generateTitle(from: transcription, detectedLanguage: selectedLanguage.code)
+
+            #if DEBUG
+            print("🎵 AudioUploadVM: Successfully generated title: \(title)")
+            #endif
+
+            // Step 3: Saving note
+            await MainActor.run { updateProgress(.saving(progress: 0.0), 0.0) }
+
+            try await saveNoteToDatabase(
+                audioURL: audioURL,
+                title: title,
+                noteContent: noteContent,
+                transcription: transcription
+            )
+
+            await MainActor.run { updateProgress(.saving(progress: 1.0), 1.0) }
+
+            #if DEBUG
+            print("🎵 AudioUploadVM: Audio processing completed successfully")
+            #endif
+
+            await MainActor.run { onComplete() }
+
+        } catch {
+            #if DEBUG
+            print("🎵 AudioUploadVM: Error processing audio - \(error)")
+            #endif
+            await MainActor.run { onError(error.localizedDescription) }
+        }
+    }
+
+    private func saveNoteToDatabase(
+        audioURL: URL,
+        title: String,
+        noteContent: String,
+        transcription: String
+    ) async throws {
+        try await viewContext.perform { [weak self] in
+            guard let self = self else { return }
+
+            let note = NSEntityDescription.insertNewObject(forEntityName: "Note", into: self.viewContext)
+
+            // Set required attributes
+            let noteId = UUID()
+            note.setValue(noteId, forKey: "id")
+            note.setValue(title, forKey: "title")
+            note.setValue(Date(), forKey: "timestamp")
+            note.setValue(Date(), forKey: "lastModified")
+            note.setValue("audio", forKey: "sourceType")
+            note.setValue("completed", forKey: "processingStatus")
+            note.setValue("pending", forKey: "syncStatus") // Mark for sync
+
+            // Set audio-specific attributes
+            if let stats = self.stats {
+                note.setValue(stats.duration, forKey: "duration")
+            }
+
+            // Store the transcription and generated note content
+            note.setValue(transcription, forKey: "transcript")
+            note.setValue(noteContent.data(using: .utf8), forKey: "aiGeneratedContent")
+            note.setValue(transcription.data(using: .utf8), forKey: "originalContent")
+
+            // Store language information
+            note.setValue(self.selectedLanguage.code, forKey: "transcriptLanguage")
+
+            // Save the audio file
+            let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            // Preserve the original file extension
+            let originalExtension = audioURL.pathExtension
+            let fileName = "\(noteId).\(originalExtension)"
+            let destinationURL = documentsPath.appendingPathComponent(fileName)
+
+            #if DEBUG
+            print("🎵 AudioUploadVM: Saving final audio file with extension: \(originalExtension)")
+            #endif
+
+            do {
+                // Check if file already exists at destination and remove it
+                if FileManager.default.fileExists(atPath: destinationURL.path) {
+                    try FileManager.default.removeItem(at: destinationURL)
+                }
+
+                try FileManager.default.copyItem(at: audioURL, to: destinationURL)
+
+                // Store the file reference as NSURL
+                note.setValue(destinationURL, forKey: "sourceURL")
+
+                #if DEBUG
+                print("🎵 AudioUploadVM: Audio file copied to \(destinationURL)")
+                #endif
+            } catch {
+                #if DEBUG
+                print("🎵 AudioUploadVM: Failed to copy audio file - \(error)")
+                #endif
+                // Continue saving even if file copy fails
+                note.setValue(nil, forKey: "sourceURL")
+            }
+
+            // Assign to All Notes folder
+            if let allNotesFolder = FolderListViewModel.getAllNotesFolder(context: self.viewContext) {
+                note.setValue(allNotesFolder, forKey: "folder")
+                #if DEBUG
+                print("🎵 AudioUploadVM: Assigned note to All Notes folder")
+                #endif
+            }
+
+            try self.viewContext.save()
+
+            #if DEBUG
+            print("🎵 AudioUploadVM: Note saved successfully with ID: \(note.value(forKey: "id") ?? "unknown") and title: \(title)")
+            #endif
+        }
+    }
+
+    // MARK: - Legacy Save Note (for backward compatibility)
     func saveNote(title: String? = nil) async throws {
         guard let audioURL = originalFileURL else {
             throw AudioUploadError.invalidFormat
@@ -462,6 +624,7 @@ final class AudioUploadViewModel: ObservableObject {
 // MARK: - Audio Upload View
 struct AudioUploadView: View {
     @StateObject private var viewModel: AudioUploadViewModel
+    @StateObject private var loadingCoordinator = NoteGenerationCoordinator()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.toastManager) private var toastManager
     @State private var showingFilePicker = false
@@ -506,7 +669,7 @@ struct AudioUploadView: View {
             ) { result in
                 handleSelectedFile(result)
             }
-
+            .noteGenerationLoading(coordinator: loadingCoordinator)
         }
     }
 
@@ -686,28 +849,14 @@ struct AudioUploadView: View {
     // Removed localStorageToggle
 
     private var importButton: some View {
-        Button(action: { saveAudio() }) {
-            if case .loading(let message) = viewModel.loadingState {
-                HStack(spacing: 12) {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle())
-                        .scaleEffect(0.8)
-
-                    Text(message ?? "Processing...")
-                        .font(Theme.Typography.body)
-                        .fontWeight(.medium)
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                }
-                .frame(minWidth: 200)
-            } else {
-                Text("Import Audio")
-                    .font(Theme.Typography.body)
-                    .fontWeight(.semibold)
+        PrimaryActionButton(
+            title: "Import Audio",
+            isEnabled: viewModel.selectedFileName != nil,
+            isLoading: false,
+            action: {
+                processAudio()
             }
-        }
-        .buttonStyle(LoadingButtonStyle(isLoading: viewModel.loadingState.isLoading))
-        .disabled(viewModel.loadingState.isLoading || viewModel.selectedFileName == nil)
+        )
     }
 
     // Removed recordedFilesPickerView and related methods
@@ -727,6 +876,30 @@ struct AudioUploadView: View {
             } catch {
                 toastManager.show(error.localizedDescription, type: .error)
             }
+        }
+    }
+
+    private func processAudio() {
+        // Start the unified loading experience
+        loadingCoordinator.startGeneration(
+            type: .audioUpload,
+            onComplete: {
+                dismiss()
+                toastManager.show("Audio imported and transcribed successfully", type: .success)
+            },
+            onCancel: {
+                // Reset any processing state if needed
+                viewModel.cleanup()
+            }
+        )
+
+        // Start the actual processing
+        Task {
+            await viewModel.processAudioWithProgress(
+                updateProgress: loadingCoordinator.updateProgress,
+                onComplete: loadingCoordinator.completeGeneration,
+                onError: loadingCoordinator.setError
+            )
         }
     }
 

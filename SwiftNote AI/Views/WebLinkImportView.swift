@@ -100,6 +100,169 @@ final class WebLinkImportViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Unified Loading System Integration
+    func processURLWithProgress(
+        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void,
+        onComplete: @escaping () -> Void,
+        onError: @escaping (String) -> Void
+    ) async {
+        guard !urlInput.isEmpty else {
+            onError("Please enter a URL")
+            return
+        }
+
+        do {
+            // Step 1: Processing (downloading/scraping content)
+            await MainActor.run { updateProgress(.processing(progress: 0.0), 0.0) }
+
+            let (fileURL, content) = try await webLinkService.processContent(from: urlInput) { progress in
+                Task { @MainActor in
+                    self.downloadProgress = progress
+                    updateProgress(.processing(progress: progress * 0.5), progress * 0.5) // Use 50% for download
+                }
+            }
+
+            await MainActor.run { updateProgress(.processing(progress: 0.5), 0.5) }
+
+            // Handle file download case
+            if let fileURL = fileURL {
+                await MainActor.run {
+                    self.downloadedFileURL = fileURL
+                    self.cleanupURL = fileURL
+                }
+
+                #if DEBUG
+                print("🌐 WebLinkImportVM: File download completed successfully")
+                #endif
+
+                // Generate a title for the file
+                let fileName = fileURL.lastPathComponent
+                self.noteTitle = fileName
+
+                await MainActor.run { updateProgress(.processing(progress: 1.0), 1.0) }
+
+                // Step 2: Skip generating for file downloads (no AI processing needed)
+                await MainActor.run { updateProgress(.generating(progress: 1.0), 1.0) }
+
+                // Step 3: Saving
+                await MainActor.run { updateProgress(.saving(progress: 0.0), 0.0) }
+
+                try await saveNoteToDatabase()
+
+                await MainActor.run { updateProgress(.saving(progress: 1.0), 1.0) }
+
+                #if DEBUG
+                print("🌐 WebLinkImportVM: File processing completed successfully")
+                #endif
+
+                await MainActor.run { onComplete() }
+                return
+            }
+
+            // Handle web content scraping case
+            if let scrapedContent = content {
+                await MainActor.run {
+                    self.scrapedContent = scrapedContent
+                    updateProgress(.processing(progress: 1.0), 1.0)
+                }
+
+                #if DEBUG
+                print("🌐 WebLinkImportVM: Web content scraped successfully (\(scrapedContent.count) characters)")
+                #endif
+
+                // Step 2: Generating note with AI
+                await MainActor.run { updateProgress(.generating(progress: 0.0), 0.0) }
+
+                let processedContent = try await noteGenerationService.generateNote(from: scrapedContent, detectedLanguage: selectedLanguage.code)
+
+                await MainActor.run { updateProgress(.generating(progress: 0.5), 0.5) }
+
+                let generatedTitle = try await noteGenerationService.generateTitle(from: scrapedContent, detectedLanguage: selectedLanguage.code)
+
+                await MainActor.run {
+                    self.aiProcessedContent = processedContent
+                    self.noteTitle = generatedTitle
+                    updateProgress(.generating(progress: 1.0), 1.0)
+                }
+
+                // Step 3: Saving
+                await MainActor.run { updateProgress(.saving(progress: 0.0), 0.0) }
+
+                try await saveNoteToDatabase()
+
+                await MainActor.run { updateProgress(.saving(progress: 1.0), 1.0) }
+
+                #if DEBUG
+                print("🌐 WebLinkImportVM: AI processing completed successfully")
+                print("🌐 WebLinkImportVM: Generated title: \(generatedTitle)")
+                #endif
+
+                await MainActor.run { onComplete() }
+            }
+        } catch {
+            #if DEBUG
+            print("🌐 WebLinkImportVM: Error processing URL - \(error)")
+            #endif
+            await MainActor.run { onError(error.localizedDescription) }
+        }
+    }
+
+    private func saveNoteToDatabase() async throws {
+        guard !noteTitle.isEmpty else {
+            throw WebLinkError.processingFailed("Please enter a title")
+        }
+
+        try await viewContext.perform { [weak self] in
+            guard let self = self else { return }
+
+            let note = NSEntityDescription.insertNewObject(forEntityName: "Note", into: self.viewContext)
+            note.setValue(UUID(), forKey: "id")
+            note.setValue(self.noteTitle, forKey: "title")
+            note.setValue(Date(), forKey: "timestamp")
+            note.setValue(Date(), forKey: "lastModified")
+            note.setValue("web", forKey: "sourceType")
+            note.setValue("pending", forKey: "syncStatus")
+            if let url = URL(string: self.urlInput) {
+                note.setValue(url, forKey: "sourceURL")
+            }
+            note.setValue("completed", forKey: "processingStatus")
+
+            // Save content based on what we have
+            if let fileURL = self.downloadedFileURL {
+                // File download case
+                let content = try Data(contentsOf: fileURL)
+                note.setValue(content, forKey: "originalContent")
+            } else if let scrapedContent = self.scrapedContent {
+                // Web scraping case
+                note.setValue(scrapedContent.data(using: .utf8), forKey: "originalContent")
+
+                // If we have AI-processed content, save that too
+                if let aiContent = self.aiProcessedContent {
+                    note.setValue(aiContent.data(using: .utf8), forKey: "aiGeneratedContent")
+                }
+
+                // Store language information
+                note.setValue(self.selectedLanguage.code, forKey: "transcriptLanguage")
+            } else {
+                throw WebLinkError.processingFailed("No content available")
+            }
+
+            // Assign to All Notes folder
+            if let allNotesFolder = FolderListViewModel.getAllNotesFolder(context: self.viewContext) {
+                note.setValue(allNotesFolder, forKey: "folder")
+                #if DEBUG
+                print("🌐 WebLinkImportVM: Assigned note to All Notes folder")
+                #endif
+            }
+
+            try self.viewContext.save()
+
+            #if DEBUG
+            print("🌐 WebLinkImportVM: Note saved successfully")
+            #endif
+        }
+    }
+
     // MARK: - AI Processing
     private func processWithAI(content: String) async {
         do {
@@ -258,6 +421,7 @@ final class WebLinkImportViewModel: ObservableObject {
 // MARK: - Web Link Import View
 struct WebLinkImportView: View {
     @StateObject private var viewModel: WebLinkImportViewModel
+    @StateObject private var loadingCoordinator = NoteGenerationCoordinator()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.toastManager) private var toastManager
     @FocusState private var isURLFieldFocused: Bool
@@ -322,38 +486,13 @@ struct WebLinkImportView: View {
                             title: "Import Content",
                             icon: "arrow.right.circle.fill",
                             isEnabled: !viewModel.urlInput.isEmpty,
-                            isLoading: viewModel.loadingState.isLoading,
+                            isLoading: false,
                             action: {
-                                Task {
-                                    await viewModel.processURL()
-                                }
+                                processWebContent()
                             }
                         )
                     }
                     .padding(.horizontal)
-
-                    // Progress Indicator
-                    if case .loading(let message) = viewModel.loadingState {
-                        VStack(spacing: Theme.Spacing.md) {
-                            ProgressView()
-                                .scaleEffect(1.2)
-                            if let message = message {
-                                Text(message)
-                                    .font(Theme.Typography.caption)
-                                    .foregroundColor(Theme.Colors.secondaryText)
-                            }
-
-                            if viewModel.downloadProgress > 0 {
-                                ProgressView(value: viewModel.downloadProgress)
-                                    .progressViewStyle(.linear)
-                                    .tint(Theme.Colors.primary)
-                            }
-                        }
-                        .padding()
-                        .background(Theme.Colors.secondaryBackground)
-                        .cornerRadius(Theme.Layout.cornerRadius)
-                        .padding(.horizontal)
-                    }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -365,34 +504,31 @@ struct WebLinkImportView: View {
                     }
                 }
             }
-            .onChange(of: viewModel.isProcessingComplete) { isComplete in
-                if isComplete {
-                    // Automatically dismiss the view when processing is complete
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        dismiss()
-                        toastManager.show("Web content imported successfully", type: .success)
-                    }
-                }
-            }
-            .onChange(of: viewModel.loadingState) { state in
-                if case .error(let message) = state {
-                    // Show error message as toast
-                    toastManager.show(message, type: .error)
-                }
-            }
+            .noteGenerationLoading(coordinator: loadingCoordinator)
         }
     }
 
-    // This is now only called for file downloads, not web content
-    private func saveNote() {
-        Task {
-            do {
-                try await viewModel.saveNote()
+    private func processWebContent() {
+        // Start the unified loading experience
+        loadingCoordinator.startGeneration(
+            type: .webLink,
+            onComplete: {
                 dismiss()
                 toastManager.show("Web content imported successfully", type: .success)
-            } catch {
-                toastManager.show(error.localizedDescription, type: .error)
+            },
+            onCancel: {
+                // Reset any processing state if needed
+                viewModel.cleanup()
             }
+        )
+
+        // Start the actual processing
+        Task {
+            await viewModel.processURLWithProgress(
+                updateProgress: loadingCoordinator.updateProgress,
+                onComplete: loadingCoordinator.completeGeneration,
+                onError: loadingCoordinator.setError
+            )
         }
     }
 }

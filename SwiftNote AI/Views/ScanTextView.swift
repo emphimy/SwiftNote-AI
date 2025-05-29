@@ -53,7 +53,9 @@ final class ScanTextViewModel: ObservableObject {
     private let viewContext: NSManagedObjectContext
     private let noteGenerationService = NoteGenerationService()
     private var recognitionTask: Task<Void, Never>?
-    private var combinedText: String = ""
+
+    // MARK: - Public Properties
+    var combinedText: String = ""
 
     // MARK: - Initialization
     init(context: NSManagedObjectContext) {
@@ -153,56 +155,7 @@ final class ScanTextViewModel: ObservableObject {
         scannedPages[index].isExpanded.toggle()
     }
 
-    // MARK: - AI Processing
-    func processWithAI() async {
-        guard !combinedText.isEmpty else {
-            loadingState = .error(message: "No text was found in the scanned document")
-            return
-        }
-        do {
-            loadingState = .loading(message: "Generating note with AI...")
-
-            // Generate note content
-            let processedContent = try await noteGenerationService.generateNote(from: combinedText, detectedLanguage: selectedLanguage.code)
-
-            // Generate title
-            let generatedTitle = try await noteGenerationService.generateTitle(from: combinedText, detectedLanguage: selectedLanguage.code)
-
-            await MainActor.run {
-                self.aiGeneratedContent = processedContent
-                self.noteTitle = generatedTitle
-                self.loadingState = .success(message: "Content processed successfully")
-            }
-
-            // Automatically save the note without user interaction
-            try await saveNote()
-
-            // Only mark as complete if everything succeeded
-            await MainActor.run {
-                self.isProcessingComplete = true
-            }
-
-            #if DEBUG
-            print("📝 ScanTextVM: AI processing completed successfully")
-            print("📝 ScanTextVM: Generated title: \(generatedTitle)")
-            #endif
-        } catch let error as URLError where error.code == .timedOut {
-            #if DEBUG
-            print("📝 ScanTextVM: API timeout error - \(error)")
-            #endif
-            loadingState = .error(message: "The request timed out. Please try again or check your internet connection.")
-        } catch let error as NoteGenerationError {
-            #if DEBUG
-            print("📝 ScanTextVM: Note generation error - \(error)")
-            #endif
-            loadingState = .error(message: "Error generating note: \(error.localizedDescription)")
-        } catch {
-            #if DEBUG
-            print("📝 ScanTextVM: Error processing with AI - \(error)")
-            #endif
-            loadingState = .error(message: "Error processing with AI: \(error.localizedDescription)")
-        }
-    }
+    // MARK: - AI Processing (now handled by unified loading system)
 
     // MARK: - Save Methods
     func saveNote() async throws {
@@ -266,6 +219,16 @@ final class ScanTextViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Reset Processing
+    func resetProcessing() {
+        loadingState = .idle
+        isProcessingComplete = false
+
+        #if DEBUG
+        print("📝 ScanTextVM: Reset processing state")
+        #endif
+    }
+
     // MARK: - Cleanup
     func cleanup() {
         #if DEBUG
@@ -305,6 +268,7 @@ final class ScanTextViewModel: ObservableObject {
 // MARK: - Scan Text View
 struct ScanTextView: View {
     @StateObject private var viewModel: ScanTextViewModel
+    @StateObject private var loadingCoordinator = NoteGenerationCoordinator()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.toastManager) private var toastManager
     @State private var isShowingScanner = false
@@ -318,277 +282,16 @@ struct ScanTextView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
-                ScrollView {
-                    // Add padding at the top to make room for the floating buttons
-                    Spacer()
-                        .frame(height: viewModel.scannedPages.isEmpty ? 0 : 120)
-                    VStack(spacing: Theme.Spacing.xl) {
-                        // Header Section
-                        NoteCreationHeader(
-                            icon: "viewfinder.circle.fill",
-                            title: "Scan Document",
-                            subtitle: "Scan physical documents and convert them to digital notes"
-                        )
-
-                        // Content Section
-                        VStack(spacing: Theme.Spacing.lg) {
-                            if viewModel.scannedPages.isEmpty {
-                                VStack(spacing: Theme.Spacing.md) {
-                                    Button(action: { isShowingScanner = true }) {
-                                        VStack(spacing: Theme.Spacing.md) {
-                                            Image(systemName: "doc.viewfinder")
-                                                .font(.system(size: 40))
-                                            Text("Tap to Scan")
-                                                .font(Theme.Typography.h3)
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                        .padding(Theme.Spacing.xl)
-                                        .background(Theme.Colors.secondaryBackground)
-                                        .foregroundColor(Theme.Colors.primary)
-                                        .cornerRadius(Theme.Layout.cornerRadius)
-                                    }
-
-                                    // Language Picker Section
-                                    StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-                                }
-                            } else {
-                                // Processing Status
-                                if viewModel.isProcessingComplete {
-                                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                                        Text("Note Title: \(viewModel.noteTitle)")
-                                            .font(Theme.Typography.h3)
-                                            .foregroundColor(Theme.Colors.text)
-                                            .padding(.bottom, Theme.Spacing.sm)
-
-                                        Text("Note has been processed and saved automatically.")
-                                            .font(Theme.Typography.body)
-                                            .foregroundColor(Theme.Colors.secondaryText)
-                                    }
-                                    .padding()
-                                    .background(Theme.Colors.secondaryBackground)
-                                    .cornerRadius(Theme.Layout.cornerRadius)
-                                }
-
-                                // Scanned Pages with Accordion
-                                ForEach(viewModel.scannedPages.indices, id: \.self) { index in
-                                    let page = viewModel.scannedPages[index]
-                                    VStack(spacing: Theme.Spacing.md) {
-                                        // Accordion Header
-                                        Button(action: {
-                                            viewModel.togglePageExpansion(at: index)
-                                        }) {
-                                            HStack {
-                                                Text("Page \(index + 1)")
-                                                    .font(Theme.Typography.h3)
-                                                    .foregroundColor(Theme.Colors.text)
-
-                                                Spacer()
-
-                                                // Preview of text content
-                                                if !page.isExpanded && !page.recognizedText.isEmpty {
-                                                    Text(page.recognizedText.prefix(30) + (page.recognizedText.count > 30 ? "..." : ""))
-                                                        .font(Theme.Typography.caption)
-                                                        .foregroundColor(Theme.Colors.secondaryText)
-                                                        .lineLimit(1)
-                                                }
-
-                                                // Expand/collapse icon
-                                                Image(systemName: page.isExpanded ? "chevron.up" : "chevron.down")
-                                                    .foregroundColor(Theme.Colors.primary)
-
-                                                // Delete button
-                                                Button(action: {
-                                                    viewModel.deletePage(at: index)
-                                                }) {
-                                                    Image(systemName: "trash")
-                                                        .foregroundColor(.red)
-                                                }
-                                                .padding(.leading, 8)
-                                            }
-                                        }
-                                        .buttonStyle(PlainButtonStyle())
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 6)
-                                        .background(Theme.Colors.secondaryBackground.opacity(0.5))
-                                        .cornerRadius(Theme.Layout.cornerRadius)
-
-                                        if page.isExpanded {
-                                            VStack(spacing: Theme.Spacing.md) {
-                                                Image(uiImage: page.image)
-                                                    .resizable()
-                                                    .scaledToFit()
-                                                    .cornerRadius(Theme.Layout.cornerRadius)
-
-                                                if !page.recognizedText.isEmpty {
-                                                    TextEditor(text: Binding(
-                                                        get: { page.recognizedText },
-                                                        set: { viewModel.updatePageText(pageId: page.id, newText: $0) }
-                                                    ))
-                                                    .focused($isTextFieldFocused)
-                                                    .font(Theme.Typography.body)
-                                                    .foregroundColor(Theme.Colors.text)
-                                                    .frame(minHeight: 100)
-                                                    .padding()
-                                                    .background(Theme.Colors.secondaryBackground)
-                                                    .cornerRadius(Theme.Layout.cornerRadius)
-                                                }
-                                            }
-                                            .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
-                                        }
-                                    }
-                                    .padding(.bottom, page.isExpanded ? 8 : 2)
-                                    .animation(.easeInOut(duration: 0.3), value: page.isExpanded)
-                                }
-
-                                // Small spacer at the bottom
-                                Spacer()
-                                    .frame(height: 15)
-                            }
-                        }
-                        .padding()
-                    }
-                    .padding(.bottom, 80) // Add padding at the bottom for the floating buttons
-                    .onTapGesture {
-                        // Dismiss keyboard when tapping outside of a text field
-                        isTextFieldFocused = false
-                    }
-
-                    // Floating Action Buttons - positioned at the top
-                    if !viewModel.scannedPages.isEmpty && !viewModel.isProcessingComplete {
-                        VStack(spacing: Theme.Spacing.md) {
-                            // Language Picker Section
-                            StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
-
-                            // Generate Note Button
-                            Button(action: {
-                                isTextFieldFocused = false // Dismiss keyboard
-                                Task {
-                                    await viewModel.processWithAI()
-                                }
-                            }) {
-                                HStack {
-                                    Image(systemName: "wand.and.stars")
-                                    Text("Generate Note with AI")
-                                }
-                                .font(Theme.Typography.body)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(
-                                    LinearGradient(
-                                        colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.8)],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .cornerRadius(Theme.Layout.cornerRadius)
-                            }
-
-                            // Scan More Button
-                            Button(action: {
-                                isTextFieldFocused = false // Dismiss keyboard
-                                isShowingScanner = true
-                            }) {
-                                HStack {
-                                    Image(systemName: "doc.viewfinder")
-                                    Text("Scan More")
-                                }
-                                .font(.headline)
-                                .foregroundColor(Theme.Colors.primary)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.white)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
-                                        .stroke(Theme.Colors.primary, lineWidth: 2)
-                                )
-                                .cornerRadius(Theme.Layout.cornerRadius)
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, Theme.Spacing.md)
-                        .background(
-                            Rectangle()
-                                .fill(Color.white.opacity(0.95))
-                                .shadow(color: Color.black.opacity(0.2), radius: 5, x: 0, y: 3)
-                        )
-                        .zIndex(100)
-                        .ignoresSafeArea(.keyboard)
-                    }
-
-                    // Done Button when processing is complete
-                    if viewModel.isProcessingComplete {
-                        Button(action: { dismiss() }) {
-                            Text("Done")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(
-                                    LinearGradient(
-                                        colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.8)],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .cornerRadius(Theme.Layout.cornerRadius)
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, Theme.Spacing.md)
-                        .background(
-                            Rectangle()
-                                .fill(Color.white.opacity(0.95))
-                                .shadow(color: Color.black.opacity(0.2), radius: 5, x: 0, y: 3)
-                        )
-                        .zIndex(100)
-                        .ignoresSafeArea(.keyboard)
-                    }
-
-                    if case .loading(let message) = viewModel.loadingState {
-                        VStack(spacing: Theme.Spacing.md) {
-                            ProgressView()
-                                .scaleEffect(1.2)
-                            if let message = message {
-                                Text(message)
-                                    .font(.subheadline)
-                                    .foregroundColor(Theme.Colors.secondaryText)
-                            }
-                            if message?.contains("Generating") == true {
-                                // Show AI processing animation
-                                HStack(spacing: 4) {
-                                    ForEach(0..<3) { index in
-                                        Circle()
-                                            .fill(Theme.Colors.primary)
-                                            .frame(width: 8, height: 8)
-                                            .opacity(0.5)
-                                            .animation(
-                                                Animation.easeInOut(duration: 0.5)
-                                                    .repeatForever()
-                                                    .delay(0.2 * Double(index)),
-                                                value: UUID() // Force animation to run continuously
-                                            )
-                                    }
-                                }
-                            } else if viewModel.scanningProgress > 0 {
-                                ProgressView(value: viewModel.scanningProgress)
-                                    .progressViewStyle(.linear)
-                                    .padding(.horizontal)
-                            }
-                        }
-                        .padding()
-                        .background(Theme.Colors.secondaryBackground.opacity(0.9))
-                        .cornerRadius(Theme.Layout.cornerRadius)
-                        .padding()
-                    }
-                }
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button("Cancel") {
-                            viewModel.cleanup()
-                            dismiss()
-                        }
+                mainContentView
+                floatingButtonsView
+                loadingOverlayView
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") {
+                        viewModel.cleanup()
+                        dismiss()
                     }
                 }
             }
@@ -610,23 +313,324 @@ struct ScanTextView: View {
                 }
             }
             .onChange(of: viewModel.loadingState) { state in
-                if case .error(let message) = state {
+                // Only handle OCR errors, not AI processing errors (handled by unified loading system)
+                if case .error(let message) = state, !message.contains("AI") {
                     toastManager.show(message, type: .error)
-                } else if case .success = state, viewModel.isProcessingComplete {
-                    toastManager.show("Note created successfully", type: .success)
-                }
-            }
-            .onChange(of: viewModel.isProcessingComplete) { isComplete in
-                if isComplete {
-                    // Automatically dismiss the view after a delay when processing is complete
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                        dismiss()
-                    }
                 }
             }
         }
+        .noteGenerationLoading(coordinator: loadingCoordinator)
+    }
 
-        // Note is now saved automatically after AI processing
+    // MARK: - View Components
+    private var mainContentView: some View {
+        ScrollView {
+            // Add padding at the top to make room for the floating buttons
+            Spacer()
+                .frame(height: viewModel.scannedPages.isEmpty ? 0 : 120)
+            VStack(spacing: Theme.Spacing.xl) {
+                // Header Section
+                NoteCreationHeader(
+                    icon: "viewfinder.circle.fill",
+                    title: "Scan Document",
+                    subtitle: "Scan physical documents and convert them to digital notes"
+                )
+
+                // Content Section
+                contentSectionView
+            }
+            .padding(.bottom, 80) // Add padding at the bottom for the floating buttons
+            .onTapGesture {
+                // Dismiss keyboard when tapping outside of a text field
+                isTextFieldFocused = false
+            }
+        }
+    }
+
+    private var contentSectionView: some View {
+        VStack(spacing: Theme.Spacing.lg) {
+            if viewModel.scannedPages.isEmpty {
+                emptyStateView
+            } else {
+                scannedPagesView
+            }
+        }
+        .padding()
+    }
+
+    private var emptyStateView: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            Button(action: { isShowingScanner = true }) {
+                VStack(spacing: Theme.Spacing.md) {
+                    Image(systemName: "doc.viewfinder")
+                        .font(.system(size: 40))
+                    Text("Tap to Scan")
+                        .font(Theme.Typography.h3)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(Theme.Spacing.xl)
+                .background(Theme.Colors.secondaryBackground)
+                .foregroundColor(Theme.Colors.primary)
+                .cornerRadius(Theme.Layout.cornerRadius)
+            }
+
+            // Language Picker Section
+            StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+        }
+    }
+
+    private var scannedPagesView: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            // Processing status is now handled by unified loading system
+
+            // Scanned Pages with Accordion
+            ForEach(viewModel.scannedPages.indices, id: \.self) { index in
+                ScannedPageRowView(
+                    page: viewModel.scannedPages[index],
+                    index: index,
+                    onToggleExpansion: { viewModel.togglePageExpansion(at: index) },
+                    onDelete: { viewModel.deletePage(at: index) },
+                    onUpdateText: { newText in
+                        viewModel.updatePageText(pageId: viewModel.scannedPages[index].id, newText: newText)
+                    }
+                )
+            }
+
+            // Small spacer at the bottom
+            Spacer()
+                .frame(height: 15)
+        }
+    }
+
+    private var floatingButtonsView: some View {
+        Group {
+            if !viewModel.scannedPages.isEmpty {
+                VStack(spacing: Theme.Spacing.md) {
+                    // Language Picker Section
+                    StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
+
+                    // Generate Note Button
+                    PrimaryActionButton(
+                        title: "Generate Note with AI",
+                        icon: "viewfinder.circle.fill",
+                        isEnabled: !viewModel.combinedText.isEmpty,
+                        isLoading: false,
+                        action: {
+                            isTextFieldFocused = false // Dismiss keyboard
+                            processScanText()
+                        }
+                    )
+
+                    // Scan More Button
+                    Button(action: {
+                        isTextFieldFocused = false // Dismiss keyboard
+                        isShowingScanner = true
+                    }) {
+                        HStack {
+                            Image(systemName: "doc.viewfinder")
+                            Text("Scan More")
+                        }
+                        .font(.headline)
+                        .foregroundColor(Theme.Colors.primary)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.white)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
+                                .stroke(Theme.Colors.primary, lineWidth: 2)
+                        )
+                        .cornerRadius(Theme.Layout.cornerRadius)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, Theme.Spacing.md)
+                .background(
+                    Rectangle()
+                        .fill(Color.white.opacity(0.95))
+                        .shadow(color: Color.black.opacity(0.2), radius: 5, x: 0, y: 3)
+                )
+                .zIndex(100)
+                .ignoresSafeArea(.keyboard)
+            }
+        }
+    }
+
+    private var loadingOverlayView: some View {
+        Group {
+            // OCR processing progress (only for text recognition, not AI processing)
+            if case .loading(let message) = viewModel.loadingState, !(message?.contains("Generating") ?? false) {
+                VStack(spacing: Theme.Spacing.md) {
+                    ProgressView()
+                        .scaleEffect(1.2)
+                    if let message = message {
+                        Text(message)
+                            .font(.subheadline)
+                            .foregroundColor(Theme.Colors.secondaryText)
+                    }
+                    if viewModel.scanningProgress > 0 {
+                        ProgressView(value: viewModel.scanningProgress)
+                            .progressViewStyle(.linear)
+                            .padding(.horizontal)
+                    }
+                }
+                .padding()
+                .background(Theme.Colors.secondaryBackground.opacity(0.9))
+                .cornerRadius(Theme.Layout.cornerRadius)
+                .padding()
+            }
+        }
+    }
+
+    // MARK: - Helper Methods
+    private func processScanText() {
+        // Start the unified loading experience
+        loadingCoordinator.startGeneration(
+            type: .textScan,
+            onComplete: {
+                dismiss()
+                toastManager.show("Note created successfully", type: .success)
+            },
+            onCancel: {
+                // Reset any processing state if needed
+                viewModel.resetProcessing()
+            }
+        )
+
+        // Start the actual processing
+        Task {
+            await processScanTextWithProgress(
+                updateProgress: loadingCoordinator.updateProgress,
+                onComplete: loadingCoordinator.completeGeneration,
+                onError: loadingCoordinator.setError
+            )
+        }
+    }
+
+    private func processScanTextWithProgress(
+        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void,
+        onComplete: @escaping () -> Void,
+        onError: @escaping (String) -> Void
+    ) async {
+        do {
+            // Step 1: Processing (text is already extracted from scanned images)
+            await MainActor.run { updateProgress(.processing(progress: 1.0), 1.0) }
+
+            // Step 2: Generating note content
+            await MainActor.run { updateProgress(.generating(progress: 0.0), 0.0) }
+
+            let noteGenerationService = NoteGenerationService()
+
+            // Generate AI content with progress tracking
+            let aiContent = try await noteGenerationService.generateNoteWithProgress(
+                from: viewModel.combinedText,
+                detectedLanguage: viewModel.selectedLanguage.code
+            ) { progress in
+                Task { @MainActor in
+                    updateProgress(.generating(progress: progress * 0.7), progress * 0.7) // Use 70% for note generation
+                }
+            }
+
+            // Generate title with progress tracking
+            let title = try await noteGenerationService.generateTitleWithProgress(
+                from: viewModel.combinedText,
+                detectedLanguage: viewModel.selectedLanguage.code
+            ) { progress in
+                Task { @MainActor in
+                    updateProgress(.generating(progress: 0.7 + (progress * 0.3)), 0.7 + (progress * 0.3)) // Use remaining 30% for title
+                }
+            }
+
+            await MainActor.run {
+                viewModel.aiGeneratedContent = aiContent
+                viewModel.noteTitle = title
+                updateProgress(.generating(progress: 1.0), 1.0)
+            }
+
+            // Step 3: Saving
+            await MainActor.run { updateProgress(.saving(progress: 0.0), 0.0) }
+
+            try await viewModel.saveNote()
+
+            await MainActor.run { updateProgress(.saving(progress: 1.0), 1.0) }
+
+            await MainActor.run { onComplete() }
+
+        } catch {
+            await MainActor.run { onError(error.localizedDescription) }
+        }
+    }
+
+    // MARK: - Scanned Page Row View
+    struct ScannedPageRowView: View {
+        let page: ScanPage
+        let index: Int
+        let onToggleExpansion: () -> Void
+        let onDelete: () -> Void
+        let onUpdateText: (String) -> Void
+
+        var body: some View {
+            VStack(spacing: Theme.Spacing.md) {
+                // Accordion Header
+                Button(action: onToggleExpansion) {
+                    HStack {
+                        Text("Page \(index + 1)")
+                            .font(Theme.Typography.h3)
+                            .foregroundColor(Theme.Colors.text)
+
+                        Spacer()
+
+                        // Preview of text content
+                        if !page.isExpanded && !page.recognizedText.isEmpty {
+                            Text(page.recognizedText.prefix(30) + (page.recognizedText.count > 30 ? "..." : ""))
+                                .font(Theme.Typography.caption)
+                                .foregroundColor(Theme.Colors.secondaryText)
+                                .lineLimit(1)
+                        }
+
+                        // Expand/collapse icon
+                        Image(systemName: page.isExpanded ? "chevron.up" : "chevron.down")
+                            .foregroundColor(Theme.Colors.primary)
+
+                        // Delete button
+                        Button(action: onDelete) {
+                            Image(systemName: "trash")
+                                .foregroundColor(.red)
+                        }
+                        .padding(.leading, 8)
+                    }
+                }
+                .buttonStyle(PlainButtonStyle())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(Theme.Colors.secondaryBackground.opacity(0.5))
+                .cornerRadius(Theme.Layout.cornerRadius)
+
+                if page.isExpanded {
+                    VStack(spacing: Theme.Spacing.md) {
+                        Image(uiImage: page.image)
+                            .resizable()
+                            .scaledToFit()
+                            .cornerRadius(Theme.Layout.cornerRadius)
+
+                        if !page.recognizedText.isEmpty {
+                            TextEditor(text: Binding(
+                                get: { page.recognizedText },
+                                set: onUpdateText
+                            ))
+                            .font(Theme.Typography.body)
+                            .foregroundColor(Theme.Colors.text)
+                            .frame(minHeight: 100)
+                            .padding()
+                            .background(Theme.Colors.secondaryBackground)
+                            .cornerRadius(Theme.Layout.cornerRadius)
+                        }
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+                }
+            }
+            .padding(.bottom, page.isExpanded ? 8 : 2)
+            .animation(.easeInOut(duration: 0.3), value: page.isExpanded)
+        }
     }
 
     // MARK: - Document Scanner View

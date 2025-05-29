@@ -316,13 +316,23 @@ struct NoteGenerationHelpers {
             // Step 2: Generating note
             await updateProgress(.generating(progress: 0.0), 0.0)
 
-            let noteContent = try await noteGenerationService.generateNote(from: combinedText, detectedLanguage: selectedLanguage.code)
+            let noteContent = try await noteGenerationService.generateNoteWithProgress(
+                from: combinedText,
+                detectedLanguage: selectedLanguage.code
+            ) { progress in
+                Task { @MainActor in
+                    updateProgress(.generating(progress: progress * 0.7), progress * 0.7) // Use 70% for note generation
+                }
+            }
 
-            await updateProgress(.generating(progress: 0.5), 0.5)
-
-            let title = try await noteGenerationService.generateTitle(from: combinedText, detectedLanguage: selectedLanguage.code)
-
-            await updateProgress(.generating(progress: 1.0), 1.0)
+            let title = try await noteGenerationService.generateTitleWithProgress(
+                from: combinedText,
+                detectedLanguage: selectedLanguage.code
+            ) { progress in
+                Task { @MainActor in
+                    updateProgress(.generating(progress: 0.7 + (progress * 0.3)), 0.7 + (progress * 0.3)) // Use remaining 30% for title
+                }
+            }
 
             // Step 3: Saving
             await updateProgress(.saving(progress: 0.0), 0.0)

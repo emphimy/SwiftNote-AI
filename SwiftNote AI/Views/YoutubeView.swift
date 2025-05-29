@@ -188,30 +188,22 @@ class YouTubeViewModel: ObservableObject {
             // Step 1: Transcribing
             await MainActor.run { updateProgress(.transcribing(progress: 0.0), 0.0) }
             let (transcript, _) = try await youtubeService.getTranscript(videoId: videoId)
-            await MainActor.run { updateProgress(.transcribing(progress: 1.0), 1.0) }
-
-            // Step 2: Generating note
+            // Complete transcribing and move to generating
             await MainActor.run { updateProgress(.generating(progress: 0.0), 0.0) }
 
-            // Generate note content with progress simulation
-            let noteContent = try await generateNoteWithProgress(
-                transcript: transcript,
-                selectedLanguage: selectedLanguage,
-                updateProgress: updateProgress
+            // Generate note content without fake progress tracking
+            let noteContent = try await noteGenerationService.generateNote(
+                from: transcript,
+                detectedLanguage: selectedLanguage.code
             )
 
-            // Don't set fixed 0.5 progress here, let title generation continue from where note generation left off
-
-            // Generate title with progress simulation
-            let title = try await generateTitleWithProgress(
-                transcript: transcript,
-                selectedLanguage: selectedLanguage,
-                updateProgress: updateProgress
+            // Generate title without fake progress tracking
+            let title = try await noteGenerationService.generateTitle(
+                from: transcript,
+                detectedLanguage: selectedLanguage.code
             )
 
-            await MainActor.run { updateProgress(.generating(progress: 1.0), 1.0) }
-
-            // Step 3: Saving
+            // Complete generating and move to saving
             await MainActor.run { updateProgress(.saving(progress: 0.0), 0.0) }
             let context = PersistenceController.shared.container.viewContext
 
@@ -245,14 +237,20 @@ class YouTubeViewModel: ObservableObject {
                 #endif
             }
 
-            await MainActor.run { updateProgress(.saving(progress: 1.0), 1.0) }
-
             #if DEBUG
             print("🎥 YouTubeViewModel: Note generation completed")
             print("- Title: \"\(title)\"")
             print("- Content Length: \(noteContent.count)")
             #endif
 
+            // Mark saving as complete
+            await MainActor.run { updateProgress(.saving(progress: 1.0), 1.0) }
+
+            #if DEBUG
+            print("🎥 YouTubeViewModel: Calling onComplete to trigger navigation")
+            #endif
+
+            // Call completion callback to trigger navigation
             await MainActor.run { onComplete() }
 
         } catch {
@@ -294,90 +292,7 @@ class YouTubeViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Progress Simulation Helpers
-    private func generateNoteWithProgress(
-        transcript: String,
-        selectedLanguage: Language,
-        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void
-    ) async throws -> String {
-        // Start progress simulation task
-        let progressTask = Task {
-            await simulateNoteGenerationProgress(updateProgress: updateProgress)
-        }
 
-        // Start the actual API call
-        let noteContent = try await noteGenerationService.generateNote(from: transcript, detectedLanguage: selectedLanguage.code)
-
-        // Cancel progress simulation since API call completed
-        progressTask.cancel()
-
-        return noteContent
-    }
-
-    private func simulateNoteGenerationProgress(
-        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void
-    ) async {
-        // More realistic progress simulation that continues until API completes
-        // Simulate progress from 5% to 90% over expected duration (10-12 seconds)
-        let progressSteps = [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]
-
-        for (index, progress) in progressSteps.enumerated() {
-            // Variable timing: faster at start, slower towards end (more realistic)
-            let delay: UInt64 = index < 8 ? 500_000_000 : 800_000_000 // 0.5s then 0.8s
-            try? await Task.sleep(nanoseconds: delay)
-
-            await MainActor.run {
-                updateProgress(.generating(progress: progress), progress)
-            }
-        }
-
-        // Continue with small increments until cancelled
-        var finalProgress = 0.9
-        while finalProgress < 0.98 {
-            try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-            finalProgress += 0.02
-
-            await MainActor.run {
-                updateProgress(.generating(progress: finalProgress), finalProgress)
-            }
-        }
-    }
-
-    private func generateTitleWithProgress(
-        transcript: String,
-        selectedLanguage: Language,
-        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void
-    ) async throws -> String {
-        // Start progress simulation task
-        let progressTask = Task {
-            await simulateTitleGenerationProgress(updateProgress: updateProgress)
-        }
-
-        // Start the actual API call
-        let title = try await noteGenerationService.generateTitle(from: transcript, detectedLanguage: selectedLanguage.code)
-
-        // Cancel progress simulation since API call completed
-        progressTask.cancel()
-
-        return title
-    }
-
-    private func simulateTitleGenerationProgress(
-        updateProgress: @escaping (NoteGenerationProgressModel.GenerationStep, Double) -> Void
-    ) async {
-        // Continue from where note generation left off (around 90-98%)
-        // Small increments to show final progress
-        let progressSteps = [0.91, 0.93, 0.95, 0.97, 0.99]
-
-        for progress in progressSteps {
-            // Shorter delays for title generation (total ~3 seconds)
-            try? await Task.sleep(nanoseconds: 600_000_000) // 0.6 seconds
-
-            await MainActor.run {
-                updateProgress(.generating(progress: progress), progress)
-            }
-        }
-    }
 
     private func extractVideoId(from url: String) -> String? {
         let patterns = [
