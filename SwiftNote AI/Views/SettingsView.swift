@@ -19,9 +19,7 @@ final class SettingsViewModel: ObservableObject {
     @AppStorage("autoBackupEnabled") var autoBackupEnabled = true
     @AppStorage("biometricLockEnabled") var biometricLockEnabled = false
     @AppStorage("biometricEnabled") var biometricEnabled = false
-    @AppStorage("twoWaySyncEnabled") var twoWaySyncEnabled = true
-    @AppStorage("autoSyncEnabled") var autoSyncEnabled = true
-    @Published var lastSupabaseSync: Date?
+    // Sync-related properties removed - auto-sync now handles everything automatically
 
     @Published var biometricType: BiometricType = .none
 
@@ -34,8 +32,7 @@ final class SettingsViewModel: ObservableObject {
     // Logout alert removed
     @Published var failedRecordings: [FailedRecording] = []
     @Published var exportURL: ExportURLWrapper?
-    @Published var isSyncing = false
-    @Published var syncResult: (success: Bool, message: String)? = nil
+    // Sync-related published properties removed - auto-sync now handles everything automatically
 
 
     private var cancellables = Set<AnyCancellable>()
@@ -124,82 +121,7 @@ final class SettingsViewModel: ObservableObject {
         // This method is kept for compatibility with existing code
     }
 
-    /// Sync folders and notes with Supabase (bidirectional)
-    /// - Parameter context: The NSManagedObjectContext
-    func syncToSupabase(context: NSManagedObjectContext) {
-        #if DEBUG
-        print("⚙️ SettingsViewModel: Starting Supabase sync - Two-way: \(twoWaySyncEnabled), Binary data: always included")
-        #endif
-
-        // Reset previous result
-        syncResult = nil
-        isSyncing = true
-
-        // Call the sync service with binary data always included and two-way sync options
-        SupabaseSyncService.shared.syncToSupabase(context: context, includeBinaryData: true, twoWaySync: twoWaySyncEnabled) { success, error in
-            self.isSyncing = false
-
-            if success {
-                let syncTypeMessage = self.twoWaySyncEnabled ? "Two-way sync" : "Upload"
-                self.syncResult = (success: true, message: "\(syncTypeMessage) completed successfully")
-                let now = Date()
-                self.lastSupabaseSync = now
-
-                // Save to UserDefaults
-                UserDefaults.standard.set(now.timeIntervalSince1970, forKey: "lastSupabaseSyncDate")
-
-                #if DEBUG
-                print("⚙️ SettingsViewModel: Sync completed successfully")
-                #endif
-            } else {
-                // Provide more detailed error information
-                var errorMessage = "Unknown error"
-                var errorDetails = ""
-
-                if let error = error {
-                    errorMessage = error.localizedDescription
-                    errorDetails = "\(error)"
-
-                    #if DEBUG
-                    print("⚙️ SettingsViewModel: Sync failed with detailed error: \(errorDetails)")
-                    #endif
-
-                    // Check for specific error types (priority order matters)
-                    if let nsError = error as NSError?, nsError.code == 409 {
-                        // Sync lock error (HTTP 409 Conflict) - highest priority
-                        errorMessage = "Another sync is already in progress. Please wait for it to complete."
-                    } else if let nsError = error as NSError?, nsError.code == 401 {
-                        // Token validation/authentication errors (HTTP 401 Unauthorized)
-                        if errorMessage.contains("Session expired") || errorMessage.contains("refresh") {
-                            errorMessage = "Your session has expired. Please sign in again."
-                        } else if errorMessage.contains("Authentication required") {
-                            errorMessage = "Authentication required. Please sign in to sync your data."
-                        } else {
-                            errorMessage = "Authentication failed. Please sign in again."
-                        }
-                    } else if errorMessage.contains("network") || errorMessage.contains("connection") {
-                        errorMessage = "Network connection failed. Please check your internet connection."
-                    } else if errorMessage.contains("CoreData") || errorMessage.contains("save") {
-                        errorMessage = "Failed to save data locally. Please try again."
-                    }
-                }
-
-                self.syncResult = (success: false, message: "Sync failed: \(errorMessage)")
-
-                #if DEBUG
-                print("⚙️ SettingsViewModel: Sync failed - \(errorMessage)")
-                if !errorDetails.isEmpty {
-                    print("⚙️ SettingsViewModel: Full error details: \(errorDetails)")
-                }
-                #endif
-            }
-
-            // Auto-dismiss the result after 5 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-                self.syncResult = nil
-            }
-        }
-    }
+    // Sync method removed - auto-sync now handles everything automatically
 
 
 
@@ -225,37 +147,14 @@ final class SettingsViewModel: ObservableObject {
             FailedRecording(date: Date().addingTimeInterval(-7200), duration: 120, errorMessage: "Insufficient storage")
         ]
 
-        // Load last sync date from UserDefaults
-        if let lastSyncTimeInterval = UserDefaults.standard.object(forKey: "lastSupabaseSyncDate") as? TimeInterval {
-            self.lastSupabaseSync = Date(timeIntervalSince1970: lastSyncTimeInterval)
-
-            #if DEBUG
-            print("⚙️ SettingsViewModel: Loaded last sync date: \(self.lastSupabaseSync!)")
-            #endif
-        }
-
-        // Set up observer for sync progress
-        setupSyncProgressObserver()
+        // Sync-related initialization removed - auto-sync now handles everything automatically
 
         #if DEBUG
         print("⚙️ SettingsViewModel: Initialized with pre-populated data")
         #endif
     }
 
-    /// Set up observer for sync progress
-    private func setupSyncProgressObserver() {
-        // Use Combine to observe changes to syncProgress
-        SupabaseSyncService.shared.$syncProgress
-            .receive(on: RunLoop.main)
-            .sink { [weak self] progress in
-                // Update UI based on progress
-                if progress.overallProgress >= 1.0 {
-                    // Sync completed
-                    self?.isSyncing = false
-                }
-            }
-            .store(in: &cancellables)
-    }
+    // Sync progress observer removed - auto-sync now handles everything automatically
 
     func calculateStorageUsage() {
         #if DEBUG
@@ -447,8 +346,7 @@ struct SettingsView: View {
             privacySection
         case "support":
             supportSection
-        case "sync":
-            syncSection
+        // Sync section removed - auto-sync now handles everything automatically
         default:
             EmptyView()
         }
@@ -629,169 +527,7 @@ struct SettingsView: View {
         }
     }
 
-    private var syncSection: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            // Sync button
-            Button(action: {
-                #if DEBUG
-                print("⚙️ SettingsView: Sync button tapped")
-                #endif
-
-                // Check if sync is already locked before attempting
-                if SupabaseSyncService.shared.isSyncLocked() {
-                    #if DEBUG
-                    print("⚙️ SettingsView: Sync button tapped but sync is locked")
-                    #endif
-                    viewModel.syncResult = (success: false, message: "Another sync is already in progress. Please wait for it to complete.")
-
-                    // Auto-dismiss the result after 3 seconds
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                        viewModel.syncResult = nil
-                    }
-                } else {
-                    viewModel.syncToSupabase(context: viewContext)
-                }
-            }) {
-                HStack(spacing: Theme.Spacing.sm) {
-                    Text(viewModel.twoWaySyncEnabled ? "Two-Way Sync" : "Upload to Cloud")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(Theme.Colors.text)
-                    Spacer()
-                    if viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked() {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle())
-                    } else {
-                        Image(systemName: viewModel.twoWaySyncEnabled ? "arrow.triangle.2.circlepath" : "arrow.up.circle")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(Theme.Colors.primary)
-                    }
-                }
-                .padding(.vertical, Theme.Spacing.xs)
-            }
-            .disabled(viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked())
-
-            // Sync description
-            VStack(spacing: Theme.Spacing.xs) {
-                Text(viewModel.twoWaySyncEnabled ? "Syncs folders and notes bidirectionally with conflict resolution" : "Uploads local folders and notes to the cloud")
-                    .font(.system(size: 13))
-                    .foregroundColor(Theme.Colors.secondaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                // Two-way sync toggle
-                Toggle("Enable two-way sync", isOn: $viewModel.twoWaySyncEnabled)
-                    .font(.system(size: 15, weight: .medium))
-                    .disabled(viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked())
-
-                // Two-way sync description
-                Text("Downloads remote changes and resolves conflicts using 'Last Write Wins' strategy")
-                    .font(.system(size: 13))
-                    .foregroundColor(Theme.Colors.secondaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // Auto-sync toggle
-            VStack(spacing: Theme.Spacing.xs) {
-                Toggle("Enable automatic sync", isOn: $viewModel.autoSyncEnabled)
-                    .font(.system(size: 15, weight: .medium))
-                    .disabled(viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked())
-                    .onChange(of: viewModel.autoSyncEnabled) { isEnabled in
-                        if isEnabled {
-                            AutoSyncManager.shared.startAutoSync()
-                        } else {
-                            AutoSyncManager.shared.stopAutoSync()
-                        }
-                    }
-
-                // Auto-sync description
-                Text("Automatically syncs changes in the background and when app becomes active")
-                    .font(.system(size: 13))
-                    .foregroundColor(Theme.Colors.secondaryText)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-
-
-            // Auto-sync status
-            if viewModel.autoSyncEnabled {
-                HStack {
-                    Text("Auto-sync status:")
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.secondaryText)
-                    Spacer()
-                    Text(AutoSyncManager.shared.autoSyncStatus)
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(AutoSyncManager.shared.autoSyncStatus == "Error" ? Theme.Colors.error : Theme.Colors.success)
-                }
-            }
-
-            // Last sync time
-            if let lastSync = viewModel.lastSupabaseSync {
-                HStack {
-                    Text("Last synced:")
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.secondaryText)
-                    Spacer()
-                    Text(lastSync, style: .relative)
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.secondaryText)
-                }
-            }
-
-            // Sync progress
-            if viewModel.isSyncing {
-                VStack(spacing: 4) {
-                    // Progress bar
-                    ProgressView(value: SupabaseSyncService.shared.syncProgress.overallProgress)
-                        .progressViewStyle(LinearProgressViewStyle())
-                        .frame(height: 4)
-
-                    // Status text
-                    Text(SupabaseSyncService.shared.syncProgress.currentStatus)
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.secondaryText)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    // Detailed progress for two-way sync
-                    if viewModel.twoWaySyncEnabled {
-                        let progress = SupabaseSyncService.shared.syncProgress
-                        HStack {
-                            Text("↑ \(progress.syncedFolders)/\(progress.totalFolders) folders, \(progress.syncedNotes)/\(progress.totalNotes) notes")
-                                .font(Theme.Typography.caption)
-                                .foregroundColor(Theme.Colors.secondaryText)
-                            Spacer()
-                            if progress.isDownloadPhase {
-                                Text("↓ \(progress.downloadedFolders)/\(progress.totalFolders) folders, \(progress.downloadedNotes)/\(progress.totalNotes) notes")
-                                    .font(Theme.Typography.caption)
-                                    .foregroundColor(Theme.Colors.secondaryText)
-                            }
-                        }
-
-                        // Conflict resolution info
-                        if progress.resolvedConflicts > 0 {
-                            Text("⚡ Resolved \(progress.resolvedConflicts) conflicts")
-                                .font(Theme.Typography.caption)
-                                .foregroundColor(Theme.Colors.warning)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                    }
-                }
-            }
-
-            // Sync result message
-            if let result = viewModel.syncResult {
-                HStack {
-                    Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundColor(result.success ? Theme.Colors.success : Theme.Colors.error)
-                    Text(result.message)
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(result.success ? Theme.Colors.success : Theme.Colors.error)
-                }
-                .padding(.top, 4)
-            }
-
-
-        }
-    }
+    // Sync section removed - auto-sync now handles everything automatically
 
     private var accountActionsSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.sm) {

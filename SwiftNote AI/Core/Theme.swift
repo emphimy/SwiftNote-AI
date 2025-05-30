@@ -218,17 +218,12 @@ enum Theme {
                 color: Colors.error
             ),
             .init(
-                id: "sync",
-                title: "Cloud Sync",
-                icon: "cloud.fill",
-                color: Colors.primary
-            ),
-            .init(
                 id: "support",
                 title: "Help & Support",
                 icon: "questionmark.circle.fill",
                 color: Colors.success
             ),
+            // Sync section removed - auto-sync now handles everything automatically
             // Account and Storage sections removed
         ]
     }
