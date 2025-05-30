@@ -454,8 +454,6 @@ struct WebLinkImportView: View {
 
                     // URL Input Section
                     VStack(spacing: Theme.Spacing.md) {
-                        // Language Picker Section
-                        StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
                         HStack(spacing: Theme.Spacing.sm) {
                             Image(systemName: "link")
                                 .foregroundColor(isURLFieldFocused ? Theme.Colors.primary : .gray)
@@ -491,6 +489,9 @@ struct WebLinkImportView: View {
                                 .stroke(isURLFieldFocused ? Theme.Colors.primary : Color.clear, lineWidth: 1)
                         )
                         .animation(.easeInOut, value: isURLFieldFocused)
+
+                        // Language Picker Section
+                        StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
 
                         PrimaryActionButton(
                             title: "Import Content",
