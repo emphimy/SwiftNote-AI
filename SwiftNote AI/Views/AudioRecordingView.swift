@@ -171,9 +171,10 @@ final class AudioRecordingViewModel: NSObject, ObservableObject {
     private func createRecordingSettings() -> [String: Any] {
         return [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44100.0,
+            AVSampleRateKey: 22050.0,  // Reduced from 44.1kHz - still excellent for speech
             AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,  // Reduced from high
+            AVEncoderBitRateKey: 32000  // 32 kbps - optimal for speech transcription
         ]
     }
 
@@ -594,9 +595,12 @@ struct ClassicWaveformView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Background
+                // Background - adaptive for dark mode visibility
                 RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.black.opacity(0.03))
+                    .fill(Theme.Colors.adaptiveColor(
+                        light: Color.black.opacity(0.03),
+                        dark: Color.white.opacity(0.08)
+                    ))
 
                 // Classic waveform visualization with vertical bars
                 HStack(spacing: 4) {
@@ -701,46 +705,16 @@ struct AudioRecordingView: View {
 
                         // Audio Visualizer
                         ClassicWaveformView(audioLevel: viewModel.audioLevel)
-                            .frame(height: 180)
+                            .frame(height: 120)
                             .padding(.horizontal)
 
                         // Language Picker Section
                         StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
                             .padding(.horizontal)
 
-                        // Recording Controls
-                        VStack(spacing: Theme.Spacing.md) {
-                            // Timer Display
-                            HStack(spacing: 4) {
-                                Image(systemName: viewModel.isRecording ? "record.circle" : "timer")
-                                    .foregroundColor(viewModel.isRecording ? Theme.Colors.error : Theme.Colors.secondaryText)
-                                    .font(.system(size: 18))
-                                    .opacity(viewModel.isRecording ? 1.0 : 0.7)
-
-                                Text(formatDuration(viewModel.recordingDuration))
-                                    .font(.system(size: 24, weight: .medium, design: .monospaced))
-                                    .foregroundColor(Theme.Colors.text)
-                            }
-                            .padding(.vertical, Theme.Spacing.sm)
-                            .padding(.horizontal, Theme.Spacing.md)
-                            .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.black.opacity(0.05))
-                            )
-
-                            // Primary Recording Controls
-                            if viewModel.recordingState == .initial || viewModel.recordingState == .recording {
-                                recordingControlButtons
-                            } else if viewModel.recordingState == .paused {
-                                pausedRecordingButtons
-                            } else if viewModel.recordingState == .finished {
-                                finishedRecordingButtons
-                            }
-                        }
-                        .padding()
-                        .background(Theme.Colors.secondaryBackground)
-                        .cornerRadius(Theme.Layout.cornerRadius)
-                        .padding(.horizontal)
+                        // Compact Recording Controls
+                        compactRecorderSection
+                            .padding(.horizontal)
                     }
                     .padding(.bottom, Theme.Spacing.xl)
                 }
@@ -789,6 +763,143 @@ struct AudioRecordingView: View {
     }
 
 
+
+    private var compactRecorderSection: some View {
+        VStack(spacing: Theme.Spacing.md) {
+            // Recording Status and Timer
+            VStack(spacing: 8) {
+                Text(viewModel.isRecording ? "Recording" : "Ready")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(Theme.Colors.text)
+
+                Text(formatDuration(viewModel.recordingDuration))
+                    .font(.system(size: 32, weight: .bold, design: .monospaced))
+                    .foregroundColor(Theme.Colors.text)
+            }
+
+            // Horizontal Control Layout
+            HStack(spacing: 50) {
+                // Cancel Button
+                Button(action: {
+                    dismiss()
+                }) {
+                    VStack(spacing: 8) {
+                        ZStack {
+                            Circle()
+                                .fill(Theme.Colors.adaptiveColor(
+                                    light: Color.gray.opacity(0.15),
+                                    dark: Color.gray.opacity(0.25)
+                                ))
+                                .frame(width: 56, height: 56)
+
+                            Image(systemName: "xmark")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(Theme.Colors.adaptiveColor(
+                                    light: Color.gray,
+                                    dark: Color.gray
+                                ))
+                        }
+
+                        Text("Cancel")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Theme.Colors.secondaryText)
+                    }
+                }
+
+                // Main Record/Pause Button
+                Button(action: {
+                    if viewModel.isRecording {
+                        viewModel.pauseRecording()
+                    } else {
+                        viewModel.startRecording()
+                    }
+                }) {
+                    VStack(spacing: 8) {
+                        ZStack {
+                            // Pulsing background for recording state
+                            if viewModel.isRecording {
+                                Circle()
+                                    .fill(Color.red.opacity(0.15))
+                                    .frame(width: 80, height: 80)
+                                    .scaleEffect(viewModel.isRecording ? 1.1 : 1.0)
+                                    .animation(
+                                        viewModel.isRecording ?
+                                            Animation.easeInOut(duration: 1.0).repeatForever(autoreverses: true) :
+                                            .default,
+                                        value: viewModel.isRecording
+                                    )
+                            }
+
+                            Circle()
+                                .fill(viewModel.isRecording ?
+                                    Color(red: 0.8, green: 0.1, blue: 0.1) : // Darker red for recording
+                                    Color(red: 0.9, green: 0.3, blue: 0.3) // Lighter red for ready state
+                                )
+                                .frame(width: 68, height: 68)
+
+                            if viewModel.isRecording {
+                                RoundedRectangle(cornerRadius: 4)
+                                    .fill(.white)
+                                    .frame(width: 20, height: 20)
+                            } else {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(.white)
+                                    .frame(width: 24, height: 24)
+                            }
+                        }
+
+                        Text(viewModel.isRecording ? "Pause" : "Record")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Theme.Colors.secondaryText)
+                    }
+                }
+
+                // Done Button (only show when there's a recording)
+                Button(action: {
+                    viewModel.generateNote()
+                }) {
+                    VStack(spacing: 8) {
+                        ZStack {
+                            Circle()
+                                .fill(viewModel.recordingDuration > 0 ?
+                                    Theme.Colors.primary :
+                                    Theme.Colors.adaptiveColor(
+                                        light: Color.gray.opacity(0.15),
+                                        dark: Color.gray.opacity(0.25)
+                                    )
+                                )
+                                .frame(width: 56, height: 56)
+
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 20, weight: .semibold))
+                                .foregroundColor(viewModel.recordingDuration > 0 ?
+                                    .white :
+                                    Theme.Colors.adaptiveColor(
+                                        light: Color.gray,
+                                        dark: Color.gray
+                                    )
+                                )
+                        }
+
+                        Text("Done")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(Theme.Colors.secondaryText)
+                    }
+                }
+                .disabled(viewModel.recordingDuration == 0)
+            }
+            .padding(.vertical, Theme.Spacing.md)
+        }
+        .padding(.vertical, Theme.Spacing.xl)
+        .padding(.horizontal, Theme.Spacing.lg)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(Theme.Colors.adaptiveColor(
+                    light: Color.white,
+                    dark: Color.black.opacity(0.3)
+                ))
+        )
+    }
 
     private var recordingControlButtons: some View {
         VStack(spacing: Theme.Spacing.md) {
