@@ -187,9 +187,15 @@ class YouTubeViewModel: ObservableObject {
 
             // Step 1: Transcribing
             await MainActor.run { updateProgress(.transcribing(progress: 0.0), 0.0) }
-            let (transcript, _) = try await youtubeService.getTranscript(videoId: videoId)
+            let (transcript, detectedLanguage) = try await youtubeService.getTranscript(videoId: videoId, preferredLanguage: selectedLanguage.code)
             // Complete transcribing and move to generating
             await MainActor.run { updateProgress(.generating(progress: 0.0), 0.0) }
+
+            #if DEBUG
+            print("🎥 YouTubeViewModel: Transcript fetched successfully")
+            print("🎥 YouTubeViewModel: Detected language: \(detectedLanguage ?? "unknown")")
+            print("🎥 YouTubeViewModel: User selected language: \(selectedLanguage.code)")
+            #endif
 
             // Generate note content without fake progress tracking
             let noteContent = try await noteGenerationService.generateNote(
@@ -220,7 +226,7 @@ class YouTubeViewModel: ObservableObject {
                 note.isFavorite = false
                 note.processingStatus = "completed"
                 note.syncStatus = "pending"
-                note.transcriptLanguage = selectedLanguage.code
+                note.transcriptLanguage = detectedLanguage ?? selectedLanguage.code
                 note.videoId = videoId
 
                 // Assign to All Notes folder

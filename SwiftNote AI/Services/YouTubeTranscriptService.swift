@@ -42,9 +42,12 @@ final class YouTubeTranscriptService {
     }
 
     // MARK: - Public Methods
-    func getTranscript(videoId: String) async throws -> (transcript: String, language: String?) {
+    func getTranscript(videoId: String, preferredLanguage: String? = nil) async throws -> (transcript: String, language: String?) {
         #if DEBUG
         print("📺 YouTubeTranscriptService: Fetching transcript for video: \(videoId)")
+        if let preferredLang = preferredLanguage {
+            print("📺 YouTubeTranscriptService: Preferred language: \(preferredLang)")
+        }
         #endif
 
         do {
@@ -52,7 +55,7 @@ final class YouTubeTranscriptService {
             let playerResponse = try await fetchPlayerResponse(videoId: videoId)
 
             // Then get the transcript using the context
-            return try await fetchTranscript(videoId: videoId, playerResponse: playerResponse)
+            return try await fetchTranscript(videoId: videoId, playerResponse: playerResponse, preferredLanguage: preferredLanguage)
         } catch {
             #if DEBUG
             print("📺 YouTubeTranscriptService: Error fetching transcript: \(error.localizedDescription)")
@@ -84,7 +87,7 @@ final class YouTubeTranscriptService {
                     #endif
 
                     // Try the direct approach
-                    return try await fetchTranscriptDirect(videoId: videoId)
+                    return try await fetchTranscriptDirect(videoId: videoId, preferredLanguage: preferredLanguage)
                 } else if case .emptyData = youtubeError {
                     #if DEBUG
                     print("📺 YouTubeTranscriptService: Trying alternative direct transcript approach for empty data...")
@@ -92,7 +95,7 @@ final class YouTubeTranscriptService {
 
                     // Try the direct approach
                     do {
-                        return try await fetchTranscriptDirect(videoId: videoId)
+                        return try await fetchTranscriptDirect(videoId: videoId, preferredLanguage: preferredLanguage)
                     } catch {
                         // If direct approach fails, try the alternative URL approach
                         #if DEBUG
@@ -100,7 +103,7 @@ final class YouTubeTranscriptService {
                         #endif
 
                         do {
-                            return try await fetchTranscriptAlternativeURL(videoId: videoId)
+                            return try await fetchTranscriptAlternativeURL(videoId: videoId, preferredLanguage: preferredLanguage)
                         } catch {
                             // If alternative URL approach fails, try the transcript list approach
                             #if DEBUG
@@ -108,14 +111,14 @@ final class YouTubeTranscriptService {
                             #endif
 
                             do {
-                                return try await fetchTranscriptFromList(videoId: videoId)
+                                return try await fetchTranscriptFromList(videoId: videoId, preferredLanguage: preferredLanguage)
                             } catch {
                                 // If transcript list approach fails, try the browser simulation approach
                                 #if DEBUG
                                 print("📺 YouTubeTranscriptService: Transcript list approach failed, trying browser simulation approach...")
                                 #endif
 
-                                return try await fetchTranscriptWithBrowserSimulation(videoId: videoId)
+                                return try await fetchTranscriptWithBrowserSimulation(videoId: videoId, preferredLanguage: preferredLanguage)
                             }
                         }
                     }
@@ -128,9 +131,12 @@ final class YouTubeTranscriptService {
     }
 
     // Direct transcript fetching approach based on the article
-    private func fetchTranscriptDirect(videoId: String) async throws -> (transcript: String, language: String?) {
+    private func fetchTranscriptDirect(videoId: String, preferredLanguage: String? = nil) async throws -> (transcript: String, language: String?) {
         #if DEBUG
         print("📺 YouTubeTranscriptService: Using direct transcript fetching approach")
+        if let preferredLang = preferredLanguage {
+            print("📺 YouTubeTranscriptService: Looking for preferred language: \(preferredLang)")
+        }
         #endif
 
         // First, get the video page
@@ -148,30 +154,107 @@ final class YouTubeTranscriptService {
             throw YouTubeTranscriptError.invalidResponse
         }
 
-        // Extract the caption URL directly using regex
-        let pattern = "\"captionTracks\":\\[\\{\"baseUrl\":\"(.*?)\".*?\"languageCode\":\"(.*?)\""
+        // Extract all available caption tracks using regex
+        let pattern = "\"captionTracks\":\\[(.*?)\\]"
 
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
             throw YouTubeTranscriptError.parsingError("Failed to create regex for direct transcript")
         }
 
-        guard let match = regex.firstMatch(in: htmlString, range: NSRange(htmlString.startIndex..., in: htmlString)) else {
+        guard let match = regex.firstMatch(in: htmlString, range: NSRange(htmlString.startIndex..., in: htmlString)),
+              let captionTracksRange = Range(match.range(at: 1), in: htmlString) else {
             throw YouTubeTranscriptError.transcriptNotAvailable
         }
 
-        guard let baseUrlRange = Range(match.range(at: 1), in: htmlString),
-              let languageCodeRange = Range(match.range(at: 2), in: htmlString) else {
-            throw YouTubeTranscriptError.parsingError("Failed to extract caption URL")
+        let captionTracksString = String(htmlString[captionTracksRange])
+
+        // Parse individual caption tracks
+        let trackPattern = "\\{\"baseUrl\":\"(.*?)\".*?\"languageCode\":\"(.*?)\".*?\\}"
+        guard let trackRegex = try? NSRegularExpression(pattern: trackPattern, options: [.dotMatchesLineSeparators]) else {
+            throw YouTubeTranscriptError.parsingError("Failed to create track regex")
         }
 
-        var baseUrl = String(htmlString[baseUrlRange])
-        let language = String(htmlString[languageCodeRange])
+        let trackMatches = trackRegex.matches(in: captionTracksString, range: NSRange(captionTracksString.startIndex..., in: captionTracksString))
+
+        #if DEBUG
+        print("📺 YouTubeTranscriptService: Found \(trackMatches.count) caption tracks")
+        #endif
+
+        // Find the best matching caption track
+        var selectedBaseUrl: String?
+        var selectedLanguage: String?
+
+        // First, try to find exact match for preferred language
+        if let preferredLang = preferredLanguage {
+            for trackMatch in trackMatches {
+                guard let baseUrlRange = Range(trackMatch.range(at: 1), in: captionTracksString),
+                      let languageCodeRange = Range(trackMatch.range(at: 2), in: captionTracksString) else {
+                    continue
+                }
+
+                let baseUrl = String(captionTracksString[baseUrlRange])
+                let language = String(captionTracksString[languageCodeRange])
+
+                #if DEBUG
+                print("📺 YouTubeTranscriptService: Found track: \(language)")
+                #endif
+
+                if language == preferredLang {
+                    selectedBaseUrl = baseUrl
+                    selectedLanguage = language
+                    #if DEBUG
+                    print("📺 YouTubeTranscriptService: ✅ Found exact match for preferred language: \(language)")
+                    #endif
+                    break
+                }
+            }
+        }
+
+        // If no exact match, try English as fallback
+        if selectedBaseUrl == nil {
+            for trackMatch in trackMatches {
+                guard let baseUrlRange = Range(trackMatch.range(at: 1), in: captionTracksString),
+                      let languageCodeRange = Range(trackMatch.range(at: 2), in: captionTracksString) else {
+                    continue
+                }
+
+                let baseUrl = String(captionTracksString[baseUrlRange])
+                let language = String(captionTracksString[languageCodeRange])
+
+                if language == "en" {
+                    selectedBaseUrl = baseUrl
+                    selectedLanguage = language
+                    #if DEBUG
+                    print("📺 YouTubeTranscriptService: ✅ Using English fallback: \(language)")
+                    #endif
+                    break
+                }
+            }
+        }
+
+        // If still no match, use the first available
+        if selectedBaseUrl == nil, let firstMatch = trackMatches.first {
+            guard let baseUrlRange = Range(firstMatch.range(at: 1), in: captionTracksString),
+                  let languageCodeRange = Range(firstMatch.range(at: 2), in: captionTracksString) else {
+                throw YouTubeTranscriptError.parsingError("Failed to extract first caption URL")
+            }
+
+            selectedBaseUrl = String(captionTracksString[baseUrlRange])
+            selectedLanguage = String(captionTracksString[languageCodeRange])
+            #if DEBUG
+            print("📺 YouTubeTranscriptService: ⚠️ Using first available language: \(selectedLanguage ?? "unknown")")
+            #endif
+        }
+
+        guard var baseUrl = selectedBaseUrl, let language = selectedLanguage else {
+            throw YouTubeTranscriptError.transcriptNotAvailable
+        }
 
         // Unescape the URL
         baseUrl = baseUrl.replacingOccurrences(of: "\\u0026", with: "&")
 
         #if DEBUG
-        print("📺 YouTubeTranscriptService: Direct approach - Found caption URL")
+        print("📺 YouTubeTranscriptService: Direct approach - Selected caption")
         print("📺 YouTubeTranscriptService: Language: \(language)")
         #endif
 
@@ -513,9 +596,12 @@ final class YouTubeTranscriptService {
         }
     }
 
-    private func fetchTranscript(videoId: String, playerResponse: [String: Any]) async throws -> (transcript: String, language: String?) {
+    private func fetchTranscript(videoId: String, playerResponse: [String: Any], preferredLanguage: String? = nil) async throws -> (transcript: String, language: String?) {
         #if DEBUG
         print("📺 YouTubeTranscriptService: Extracting caption data from player response")
+        if let preferredLang = preferredLanguage {
+            print("📺 YouTubeTranscriptService: Looking for preferred language: \(preferredLang)")
+        }
 
         // Debug: Check if captions exist
         if playerResponse["captions"] == nil {
@@ -555,29 +641,75 @@ final class YouTubeTranscriptService {
 
         #if DEBUG
         print("📺 YouTubeTranscriptService: Found \(captionTracks.count) caption tracks")
+        for (index, track) in captionTracks.enumerated() {
+            let langCode = track["languageCode"] as? String ?? "unknown"
+            let name = track["name"] as? [String: Any]
+            let displayName = name?["simpleText"] as? String ?? "unknown"
+            print("📺 YouTubeTranscriptService: Track \(index): \(langCode) - \(displayName)")
+        }
         #endif
 
-        guard let firstCaption = captionTracks.first else {
+        // Find the best matching caption track
+        var selectedCaption: [String: Any]?
+
+        // First, try to find exact match for preferred language
+        if let preferredLang = preferredLanguage {
+            for caption in captionTracks {
+                let langCode = caption["languageCode"] as? String
+                if langCode == preferredLang {
+                    selectedCaption = caption
+                    #if DEBUG
+                    print("📺 YouTubeTranscriptService: ✅ Found exact match for preferred language: \(langCode ?? "unknown")")
+                    #endif
+                    break
+                }
+            }
+        }
+
+        // If no exact match, try English as fallback
+        if selectedCaption == nil {
+            for caption in captionTracks {
+                let langCode = caption["languageCode"] as? String
+                if langCode == "en" {
+                    selectedCaption = caption
+                    #if DEBUG
+                    print("📺 YouTubeTranscriptService: ✅ Using English fallback: \(langCode ?? "unknown")")
+                    #endif
+                    break
+                }
+            }
+        }
+
+        // If still no match, use the first available
+        if selectedCaption == nil {
+            selectedCaption = captionTracks.first
+            let langCode = selectedCaption?["languageCode"] as? String
+            #if DEBUG
+            print("📺 YouTubeTranscriptService: ⚠️ Using first available language: \(langCode ?? "unknown")")
+            #endif
+        }
+
+        guard let finalCaption = selectedCaption else {
             throw YouTubeTranscriptError.transcriptNotAvailable
         }
 
         #if DEBUG
         // Debug: Check if baseUrl exists
-        if firstCaption["baseUrl"] == nil {
-            print("📺 YouTubeTranscriptService: ERROR - 'baseUrl' key not found in first caption")
-            print("📺 YouTubeTranscriptService: Available keys: \(firstCaption.keys.joined(separator: ", "))")
+        if finalCaption["baseUrl"] == nil {
+            print("📺 YouTubeTranscriptService: ERROR - 'baseUrl' key not found in selected caption")
+            print("📺 YouTubeTranscriptService: Available keys: \(finalCaption.keys.joined(separator: ", "))")
         }
         #endif
 
-        guard let baseUrl = firstCaption["baseUrl"] as? String else {
+        guard let baseUrl = finalCaption["baseUrl"] as? String else {
             throw YouTubeTranscriptError.transcriptNotAvailable
         }
 
-        // Extract language code from the first caption
-        let language = (firstCaption["languageCode"] as? String) ?? (firstCaption["vssId"] as? String)?.components(separatedBy: ".").first
+        // Extract language code from the selected caption
+        let language = (finalCaption["languageCode"] as? String) ?? (finalCaption["vssId"] as? String)?.components(separatedBy: ".").first
 
         #if DEBUG
-        print("📺 YouTubeTranscriptService: Detected language: \(language ?? "unknown")")
+        print("📺 YouTubeTranscriptService: Selected language: \(language ?? "unknown")")
         print("📺 YouTubeTranscriptService: Caption base URL: \(baseUrl)")
         #endif
 
@@ -698,9 +830,12 @@ final class YouTubeTranscriptService {
     }
 
     // Transcript list approach - first get available transcripts, then fetch the appropriate one
-    private func fetchTranscriptFromList(videoId: String) async throws -> (transcript: String, language: String?) {
+    private func fetchTranscriptFromList(videoId: String, preferredLanguage: String? = nil) async throws -> (transcript: String, language: String?) {
         #if DEBUG
         print("📺 YouTubeTranscriptService: Using transcript list approach")
+        if let preferredLang = preferredLanguage {
+            print("📺 YouTubeTranscriptService: Looking for preferred language: \(preferredLang)")
+        }
         #endif
 
         // First, get the list of available transcripts
@@ -749,35 +884,70 @@ final class YouTubeTranscriptService {
             throw YouTubeTranscriptError.transcriptNotAvailable
         }
 
-        // Try to find English transcript first, then fall back to any available transcript
+        // Find the best matching transcript based on preferred language
         var selectedLangCode = ""
         var selectedName = ""
 
-        for match in matches {
-            guard let langCodeRange = Range(match.range(at: 3), in: xmlString),
-                  let nameRange = Range(match.range(at: 2), in: xmlString) else {
-                continue
+        // First, try to find exact match for preferred language
+        if let preferredLang = preferredLanguage {
+            for match in matches {
+                guard let langCodeRange = Range(match.range(at: 3), in: xmlString),
+                      let nameRange = Range(match.range(at: 2), in: xmlString) else {
+                    continue
+                }
+
+                let langCode = String(xmlString[langCodeRange])
+                let name = String(xmlString[nameRange])
+
+                #if DEBUG
+                print("📺 YouTubeTranscriptService: Found transcript: \(name) (\(langCode))")
+                #endif
+
+                if langCode == preferredLang {
+                    selectedLangCode = langCode
+                    selectedName = name
+                    #if DEBUG
+                    print("📺 YouTubeTranscriptService: ✅ Found exact match for preferred language: \(langCode)")
+                    #endif
+                    break
+                }
+            }
+        }
+
+        // If no exact match, try English as fallback
+        if selectedLangCode.isEmpty {
+            for match in matches {
+                guard let langCodeRange = Range(match.range(at: 3), in: xmlString),
+                      let nameRange = Range(match.range(at: 2), in: xmlString) else {
+                    continue
+                }
+
+                let langCode = String(xmlString[langCodeRange])
+                let name = String(xmlString[nameRange])
+
+                if langCode == "en" {
+                    selectedLangCode = langCode
+                    selectedName = name
+                    #if DEBUG
+                    print("📺 YouTubeTranscriptService: ✅ Using English fallback: \(langCode)")
+                    #endif
+                    break
+                }
+            }
+        }
+
+        // If still no match, use the first available
+        if selectedLangCode.isEmpty, let firstMatch = matches.first {
+            guard let langCodeRange = Range(firstMatch.range(at: 3), in: xmlString),
+                  let nameRange = Range(firstMatch.range(at: 2), in: xmlString) else {
+                throw YouTubeTranscriptError.parsingError("Failed to extract first transcript info")
             }
 
-            let langCode = String(xmlString[langCodeRange])
-            let name = String(xmlString[nameRange])
-
+            selectedLangCode = String(xmlString[langCodeRange])
+            selectedName = String(xmlString[nameRange])
             #if DEBUG
-            print("📺 YouTubeTranscriptService: Found transcript: \(name) (\(langCode))")
+            print("📺 YouTubeTranscriptService: ⚠️ Using first available language: \(selectedLangCode)")
             #endif
-
-            // Prefer English
-            if langCode == "en" {
-                selectedLangCode = langCode
-                selectedName = name
-                break
-            }
-
-            // Otherwise take the first one
-            if selectedLangCode.isEmpty {
-                selectedLangCode = langCode
-                selectedName = name
-            }
         }
 
         if selectedLangCode.isEmpty {
@@ -874,14 +1044,18 @@ final class YouTubeTranscriptService {
     }
 
     // Alternative URL approach for fetching transcripts
-    private func fetchTranscriptAlternativeURL(videoId: String) async throws -> (transcript: String, language: String?) {
+    private func fetchTranscriptAlternativeURL(videoId: String, preferredLanguage: String? = nil) async throws -> (transcript: String, language: String?) {
         #if DEBUG
         print("📺 YouTubeTranscriptService: Using alternative URL approach")
+        if let preferredLang = preferredLanguage {
+            print("📺 YouTubeTranscriptService: Trying preferred language: \(preferredLang)")
+        }
         #endif
 
         // Try the alternative timedtext API format
-        // This is a different endpoint that sometimes works when the standard one doesn't
-        let alternativeUrl = "https://www.youtube.com/api/timedtext?lang=en&v=\(videoId)"
+        // Use preferred language if available, otherwise default to English
+        let language = preferredLanguage ?? "en"
+        let alternativeUrl = "https://www.youtube.com/api/timedtext?lang=\(language)&v=\(videoId)"
 
         #if DEBUG
         print("📺 YouTubeTranscriptService: Alternative URL: \(alternativeUrl)")
@@ -966,7 +1140,7 @@ final class YouTubeTranscriptService {
             print(formattedTranscript.prefix(500))
             #endif
 
-            return (formattedTranscript, "en") // Assume English for alternative URL
+            return (formattedTranscript, language) // Return the language we requested
         } catch {
             #if DEBUG
             print("📺 YouTubeTranscriptService: Error parsing alternative XML: \(error.localizedDescription)")
@@ -976,9 +1150,12 @@ final class YouTubeTranscriptService {
     }
 
     // Browser simulation approach - use more browser-like headers and cookies
-    private func fetchTranscriptWithBrowserSimulation(videoId: String) async throws -> (transcript: String, language: String?) {
+    private func fetchTranscriptWithBrowserSimulation(videoId: String, preferredLanguage: String? = nil) async throws -> (transcript: String, language: String?) {
         #if DEBUG
         print("📺 YouTubeTranscriptService: Using browser simulation approach")
+        if let preferredLang = preferredLanguage {
+            print("📺 YouTubeTranscriptService: Looking for preferred language: \(preferredLang)")
+        }
         #endif
 
         // First, get the video page with browser-like headers
@@ -1019,30 +1196,107 @@ final class YouTubeTranscriptService {
         print("📺 YouTubeTranscriptService: Received HTML response of length: \(htmlString.count)")
         #endif
 
-        // Try to extract the transcript URL using a more specific pattern
-        let pattern = "\"captionTracks\":\\[\\{.*?\"baseUrl\":\"(.*?)\".*?\"languageCode\":\"(.*?)\".*?\\}\\]"
+        // Extract all available caption tracks using regex
+        let pattern = "\"captionTracks\":\\[(.*?)\\]"
 
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else {
             throw YouTubeTranscriptError.parsingError("Failed to create regex for browser simulation")
         }
 
-        guard let match = regex.firstMatch(in: htmlString, range: NSRange(htmlString.startIndex..., in: htmlString)) else {
+        guard let match = regex.firstMatch(in: htmlString, range: NSRange(htmlString.startIndex..., in: htmlString)),
+              let captionTracksRange = Range(match.range(at: 1), in: htmlString) else {
             throw YouTubeTranscriptError.transcriptNotAvailable
         }
 
-        guard let baseUrlRange = Range(match.range(at: 1), in: htmlString),
-              let languageCodeRange = Range(match.range(at: 2), in: htmlString) else {
-            throw YouTubeTranscriptError.parsingError("Failed to extract caption URL")
+        let captionTracksString = String(htmlString[captionTracksRange])
+
+        // Parse individual caption tracks
+        let trackPattern = "\\{\"baseUrl\":\"(.*?)\".*?\"languageCode\":\"(.*?)\".*?\\}"
+        guard let trackRegex = try? NSRegularExpression(pattern: trackPattern, options: [.dotMatchesLineSeparators]) else {
+            throw YouTubeTranscriptError.parsingError("Failed to create track regex for browser simulation")
         }
 
-        var baseUrl = String(htmlString[baseUrlRange])
-        let language = String(htmlString[languageCodeRange])
+        let trackMatches = trackRegex.matches(in: captionTracksString, range: NSRange(captionTracksString.startIndex..., in: captionTracksString))
+
+        #if DEBUG
+        print("📺 YouTubeTranscriptService: Browser simulation - Found \(trackMatches.count) caption tracks")
+        #endif
+
+        // Find the best matching caption track
+        var selectedBaseUrl: String?
+        var selectedLanguage: String?
+
+        // First, try to find exact match for preferred language
+        if let preferredLang = preferredLanguage {
+            for trackMatch in trackMatches {
+                guard let baseUrlRange = Range(trackMatch.range(at: 1), in: captionTracksString),
+                      let languageCodeRange = Range(trackMatch.range(at: 2), in: captionTracksString) else {
+                    continue
+                }
+
+                let baseUrl = String(captionTracksString[baseUrlRange])
+                let language = String(captionTracksString[languageCodeRange])
+
+                #if DEBUG
+                print("📺 YouTubeTranscriptService: Browser simulation - Found track: \(language)")
+                #endif
+
+                if language == preferredLang {
+                    selectedBaseUrl = baseUrl
+                    selectedLanguage = language
+                    #if DEBUG
+                    print("📺 YouTubeTranscriptService: ✅ Browser simulation - Found exact match for preferred language: \(language)")
+                    #endif
+                    break
+                }
+            }
+        }
+
+        // If no exact match, try English as fallback
+        if selectedBaseUrl == nil {
+            for trackMatch in trackMatches {
+                guard let baseUrlRange = Range(trackMatch.range(at: 1), in: captionTracksString),
+                      let languageCodeRange = Range(trackMatch.range(at: 2), in: captionTracksString) else {
+                    continue
+                }
+
+                let baseUrl = String(captionTracksString[baseUrlRange])
+                let language = String(captionTracksString[languageCodeRange])
+
+                if language == "en" {
+                    selectedBaseUrl = baseUrl
+                    selectedLanguage = language
+                    #if DEBUG
+                    print("📺 YouTubeTranscriptService: ✅ Browser simulation - Using English fallback: \(language)")
+                    #endif
+                    break
+                }
+            }
+        }
+
+        // If still no match, use the first available
+        if selectedBaseUrl == nil, let firstMatch = trackMatches.first {
+            guard let baseUrlRange = Range(firstMatch.range(at: 1), in: captionTracksString),
+                  let languageCodeRange = Range(firstMatch.range(at: 2), in: captionTracksString) else {
+                throw YouTubeTranscriptError.parsingError("Failed to extract first caption URL in browser simulation")
+            }
+
+            selectedBaseUrl = String(captionTracksString[baseUrlRange])
+            selectedLanguage = String(captionTracksString[languageCodeRange])
+            #if DEBUG
+            print("📺 YouTubeTranscriptService: ⚠️ Browser simulation - Using first available language: \(selectedLanguage ?? "unknown")")
+            #endif
+        }
+
+        guard var baseUrl = selectedBaseUrl, let language = selectedLanguage else {
+            throw YouTubeTranscriptError.transcriptNotAvailable
+        }
 
         // Unescape the URL
         baseUrl = baseUrl.replacingOccurrences(of: "\\u0026", with: "&")
 
         #if DEBUG
-        print("📺 YouTubeTranscriptService: Browser simulation - Found caption URL")
+        print("📺 YouTubeTranscriptService: Browser simulation - Selected caption")
         print("📺 YouTubeTranscriptService: Language: \(language)")
         #endif
 
