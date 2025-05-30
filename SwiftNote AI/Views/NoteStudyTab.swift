@@ -1103,7 +1103,8 @@ private struct ContentBlockView: View {
                     .foregroundColor(Theme.Colors.text)
                     .lineSpacing(3)
             }
-            .padding(Theme.Spacing.md)
+            .padding(.vertical, Theme.Spacing.md)
+            .padding(.horizontal, Theme.Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(.orange.opacity(0.05))
@@ -1112,7 +1113,8 @@ private struct ContentBlockView: View {
                             .stroke(.orange.opacity(0.2), lineWidth: 1)
                     )
             )
-            .padding(.horizontal, Theme.Spacing.md) // Match the menu padding
+            .padding(.horizontal, -Theme.Spacing.xs)
+            .padding(.vertical, 8)
         case .formattedText(let style):
             switch style {
             case .bold:
