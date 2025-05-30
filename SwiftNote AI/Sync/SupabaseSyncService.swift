@@ -169,11 +169,33 @@ class SupabaseSyncService {
                 syncProgress.currentStatus = "Checking authentication..."
             }
 
-            // Validate token and refresh if necessary
+            // CRITICAL SECURITY FIX: Validate authentication state before sync
             await MainActor.run {
                 syncProgress.currentStatus = "Validating authentication..."
             }
 
+            // Check if user is actually authenticated
+            let isAuthenticated = await supabaseService.isSignedIn()
+            guard isAuthenticated else {
+                #if DEBUG
+                print("🔄 SupabaseSyncService: SECURITY ABORT - User not authenticated, cancelling sync")
+                #endif
+
+                await MainActor.run {
+                    syncProgress.currentStatus = "Authentication required"
+                }
+
+                let authError = NSError(domain: "SupabaseSyncService", code: 401, userInfo: [
+                    NSLocalizedDescriptionKey: "User not authenticated - sync cancelled for security"
+                ])
+
+                DispatchQueue.main.async {
+                    completion(false, authError)
+                }
+                return
+            }
+
+            // Validate token and refresh if necessary
             do {
                 _ = try await networkRecoveryManager.executeWithRetry(
                     operation: {

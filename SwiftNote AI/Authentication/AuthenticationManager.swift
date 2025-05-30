@@ -4,6 +4,7 @@ import Combine
 import AuthenticationServices
 import PostgREST
 import GoogleSignIn
+import CoreData
 
 /// Manages authentication state and operations
 @MainActor
@@ -656,6 +657,81 @@ class AuthenticationManager: ObservableObject {
         isLoading = false
     }
 
+    // MARK: - Data Security Methods
+
+    /// Clear all user data from Core Data to prevent cross-user data leakage
+    /// This is a critical security measure that must be called during logout
+    private func clearAllUserData() async {
+        #if DEBUG
+        print("🔐 AuthenticationManager: Starting Core Data cleanup for security")
+        #endif
+
+        let context = PersistenceController.shared.container.viewContext
+
+        await MainActor.run {
+            do {
+                // Clear all notes
+                let noteRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Note")
+                let deleteNotesRequest = NSBatchDeleteRequest(fetchRequest: noteRequest)
+                try context.execute(deleteNotesRequest)
+
+                // Clear all folders
+                let folderRequest = NSFetchRequest<NSFetchRequestResult>(entityName: "Folder")
+                let deleteFoldersRequest = NSBatchDeleteRequest(fetchRequest: folderRequest)
+                try context.execute(deleteFoldersRequest)
+
+                // Reset the context to reflect the changes
+                context.reset()
+
+                // Save the context to persist the changes
+                try context.save()
+
+                #if DEBUG
+                print("🔐 AuthenticationManager: Successfully cleared all Core Data for security")
+                #endif
+
+                // Post notification to refresh any views
+                NotificationCenter.default.post(name: .init("RefreshNotes"), object: nil)
+
+            } catch {
+                #if DEBUG
+                print("🔐 AuthenticationManager: Error clearing Core Data - \(error)")
+                #endif
+
+                // If batch delete fails, try individual deletion as fallback
+                do {
+                    // Fallback: Delete notes individually
+                    let noteRequest = NSFetchRequest<Note>(entityName: "Note")
+                    let notes = try context.fetch(noteRequest)
+                    for note in notes {
+                        context.delete(note)
+                    }
+
+                    // Fallback: Delete folders individually
+                    let folderRequest = NSFetchRequest<Folder>(entityName: "Folder")
+                    let folders = try context.fetch(folderRequest)
+                    for folder in folders {
+                        context.delete(folder)
+                    }
+
+                    try context.save()
+
+                    #if DEBUG
+                    print("🔐 AuthenticationManager: Successfully cleared Core Data using fallback method")
+                    #endif
+
+                    // Post notification to refresh any views
+                    NotificationCenter.default.post(name: .init("RefreshNotes"), object: nil)
+
+                } catch {
+                    #if DEBUG
+                    print("🔐 AuthenticationManager: CRITICAL ERROR - Failed to clear Core Data even with fallback: \(error)")
+                    #endif
+                }
+            }
+        }
+    }
+
     // MARK: - User Profile
 
     /// Fetch the current user's profile
@@ -767,6 +843,9 @@ class AuthenticationManager: ObservableObject {
         isLoading = true
         setErrorMessage(nil)
 
+        // CRITICAL SECURITY FIX: Clear any existing data before new user login
+        await clearAllUserData()
+
         // Store the email for later use
         lastEmail = email
 
@@ -782,6 +861,18 @@ class AuthenticationManager: ObservableObject {
 
             // Record that we signed in with email/password
             recordAuthProvider(provider: "email")
+
+            // SECURITY: Start auto-sync only after successful authentication
+            await MainActor.run {
+                // Check if auto-sync is enabled (default to true for new users)
+                let autoSyncEnabled = UserDefaults.standard.object(forKey: "autoSyncEnabled") as? Bool ?? true
+                if autoSyncEnabled {
+                    AutoSyncManager.shared.startAutoSync()
+                    #if DEBUG
+                    print("🔐 AuthenticationManager: Started auto-sync after successful login")
+                    #endif
+                }
+            }
 
             #if DEBUG
             print("🔐 AuthenticationManager: Sign in successful")
@@ -888,6 +979,9 @@ class AuthenticationManager: ObservableObject {
         isLoading = true
         setErrorMessage(nil)
 
+        // CRITICAL SECURITY FIX: Clear any existing data before new user login
+        await clearAllUserData()
+
         do {
             switch result {
             case .success(let authorization):
@@ -918,6 +1012,18 @@ class AuthenticationManager: ObservableObject {
 
                 // Clear the nonce after successful sign-in
                 currentNonce = nil
+
+                // SECURITY: Start auto-sync only after successful authentication
+                await MainActor.run {
+                    // Check if auto-sync is enabled (default to true for new users)
+                    let autoSyncEnabled = UserDefaults.standard.object(forKey: "autoSyncEnabled") as? Bool ?? true
+                    if autoSyncEnabled {
+                        AutoSyncManager.shared.startAutoSync()
+                        #if DEBUG
+                        print("🔐 AuthenticationManager: Started auto-sync after successful Apple login")
+                        #endif
+                    }
+                }
 
                 #if DEBUG
                 print("🔐 AuthenticationManager: Apple sign in successful")
@@ -961,6 +1067,9 @@ class AuthenticationManager: ObservableObject {
         isLoading = true
         setErrorMessage(nil)
 
+        // CRITICAL SECURITY FIX: Clear any existing data before new user login
+        await clearAllUserData()
+
         do {
             // Sign in with Supabase using the Google ID token
             _ = try await supabaseService.signInWithGoogle(idToken: idToken)
@@ -973,6 +1082,18 @@ class AuthenticationManager: ObservableObject {
 
             // Record that we signed in with Google
             recordAuthProvider(provider: "google")
+
+            // SECURITY: Start auto-sync only after successful authentication
+            await MainActor.run {
+                // Check if auto-sync is enabled (default to true for new users)
+                let autoSyncEnabled = UserDefaults.standard.object(forKey: "autoSyncEnabled") as? Bool ?? true
+                if autoSyncEnabled {
+                    AutoSyncManager.shared.startAutoSync()
+                    #if DEBUG
+                    print("🔐 AuthenticationManager: Started auto-sync after successful Google login")
+                    #endif
+                }
+            }
 
             #if DEBUG
             print("🔐 AuthenticationManager: Google sign in successful")
@@ -1079,6 +1200,14 @@ class AuthenticationManager: ObservableObject {
         isLoading = true
         setErrorMessage(nil)
 
+        // CRITICAL SECURITY FIX: Stop auto-sync before logout to prevent race conditions
+        await MainActor.run {
+            AutoSyncManager.shared.stopAutoSync()
+            #if DEBUG
+            print("🔐 AuthenticationManager: Stopped auto-sync before logout")
+            #endif
+        }
+
         // Clear any stored nonce
         currentNonce = nil
 
@@ -1112,6 +1241,9 @@ class AuthenticationManager: ObservableObject {
         // Then also try a local sign-out as a fallback
         // This is especially important for social logins like Apple Sign In
         await supabaseService.signOut(scope: .local)
+
+        // CRITICAL SECURITY FIX: Clear all Core Data to prevent cross-user data leakage
+        await clearAllUserData()
 
         // Always update local auth state regardless of server response
         authState = .signedOut

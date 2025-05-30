@@ -434,17 +434,8 @@ struct ContentView: View {
             print("🏠 ContentView: Supabase initialized")
             #endif
 
-            // Initialize AutoSyncManager after Supabase is ready
-            await MainActor.run {
-                // Check if auto-sync is enabled (default to true for new users)
-                let autoSyncEnabled = UserDefaults.standard.object(forKey: "autoSyncEnabled") as? Bool ?? true
-                if autoSyncEnabled {
-                    AutoSyncManager.shared.startAutoSync()
-                    #if DEBUG
-                    print("🏠 ContentView: AutoSyncManager started")
-                    #endif
-                }
-            }
+            // NOTE: AutoSyncManager is now started by AuthenticationManager after successful login
+            // This prevents auto-sync from running before authentication is complete
         }
     }
 
