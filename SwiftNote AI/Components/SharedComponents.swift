@@ -27,7 +27,7 @@ struct HomeHeaderView: View {
                     isSearchFocused = true
                 }
             }
-            .padding(.horizontal, Theme.Spacing.lg)
+            .padding(.horizontal, Theme.Spacing.md)
 
             HStack {
                 Spacer()

@@ -53,7 +53,10 @@ struct NoteListCard: View {
                         // Date positioned under title
                         Text(configuration.date, style: .date)
                             .font(Theme.Typography.small)
-                            .foregroundColor(Color(red: 0.4, green: 0.2, blue: 0.1)) // Dark brown color
+                            .foregroundColor(Theme.Colors.adaptiveColor(
+                                light: Color(red: 0.4, green: 0.2, blue: 0.1), // Dark brown for light mode
+                                dark: Color(red: 0.8, green: 0.6, blue: 0.4)   // Light brown for dark mode
+                            ))
                     }
                 }
             }
@@ -127,7 +130,10 @@ struct NoteGridCard: View {
                         // Date positioned under title
                         Text(configuration.date, style: .date)
                             .font(Theme.Typography.caption)
-                            .foregroundColor(Color(red: 0.4, green: 0.2, blue: 0.1)) // Dark brown color
+                            .foregroundColor(Theme.Colors.adaptiveColor(
+                                light: Color(red: 0.4, green: 0.2, blue: 0.1), // Dark brown for light mode
+                                dark: Color(red: 0.8, green: 0.6, blue: 0.4)   // Light brown for dark mode
+                            ))
                     }
                 }
 

@@ -498,8 +498,9 @@ struct NoteDetailsView: View {
                 Spacer()
             }
 
-            // Metadata row with better spacing and styling
+            // Metadata row aligned with header text, not icon
             HStack(spacing: Theme.Spacing.lg) {
+                // Add spacing to align with header text (icon width + spacing)
                 HStack(spacing: Theme.Spacing.xs) {
                     Image(systemName: "calendar")
                         .font(.system(size: 12, weight: .medium))
@@ -509,6 +510,7 @@ struct NoteDetailsView: View {
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(Theme.Colors.secondaryText)
                 }
+                .padding(.leading, 32 + Theme.Spacing.md) // Icon width + spacing to align with title
 
                 if let language = viewModel.note.language {
                     HStack(spacing: Theme.Spacing.xs) {

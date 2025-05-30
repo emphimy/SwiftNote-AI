@@ -1103,26 +1103,16 @@ private struct ContentBlockView: View {
                     .foregroundColor(Theme.Colors.text)
                     .lineSpacing(3)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
+            .padding(Theme.Spacing.md)
             .background(
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color.orange.opacity(0.08),
-                                Color.orange.opacity(0.04)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                    .fill(.orange.opacity(0.05))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                            .stroke(.orange.opacity(0.2), lineWidth: 1)
                     )
             )
-            .padding(.vertical, 6)
+            .padding(.horizontal, Theme.Spacing.md) // Match the menu padding
         case .formattedText(let style):
             switch style {
             case .bold:

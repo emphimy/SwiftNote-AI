@@ -7,7 +7,7 @@ enum InputState {
     case active
     case error
     case disabled
-    
+
     var borderColor: Color {
         switch self {
         case .normal: return Theme.Colors.tertiaryBackground
@@ -27,9 +27,9 @@ struct CustomTextField: View {
     let errorMessage: String?
     let isSecure: Bool
     let isEnabled: Bool
-    
+
     @State private var isEditing: Bool = false
-    
+
     init(
         placeholder: String,
         text: Binding<String>,
@@ -46,12 +46,12 @@ struct CustomTextField: View {
         self.errorMessage = errorMessage
         self.isSecure = isSecure
         self.isEnabled = isEnabled
-        
+
         #if DEBUG
         print("📝 TextField: Creating text field with placeholder: \(placeholder), enabled: \(isEnabled)")
         #endif
     }
-    
+
     private var inputState: InputState {
         if !isEnabled {
             return .disabled
@@ -61,7 +61,7 @@ struct CustomTextField: View {
         }
         return isEditing ? .active : .normal
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
             Group {
@@ -87,7 +87,7 @@ struct CustomTextField: View {
                     isEditing = true
                 }
             }
-            
+
             if let error = errorMessage {
                 Text(error)
                     .font(Theme.Typography.small)
@@ -113,31 +113,41 @@ struct SearchBar: View {
     var placeholder: String
     var onCancel: (() -> Void)? = nil
     @FocusState private var isFocused: Bool
-    
+
     init(text: Binding<String>, placeholder: String = "Search", onCancel: (() -> Void)? = nil) {
         self._text = text
         self.placeholder = placeholder
         self.onCancel = onCancel
-        
+
         #if DEBUG
         print("🔍 SearchBar: Initializing with placeholder: \(placeholder)")
         #endif
     }
-    
+
     var body: some View {
         HStack {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(Theme.Colors.secondaryText)
-                
+
                 TextField(placeholder, text: $text)
                     .focused($isFocused)
+                    .foregroundColor(Theme.Colors.text)
+                    .onAppear {
+                        // Make placeholder text darker
+                        UITextField.appearance().attributedPlaceholder = NSAttributedString(
+                            string: placeholder,
+                            attributes: [
+                                .foregroundColor: UIColor(Theme.Colors.text.opacity(0.6))
+                            ]
+                        )
+                    }
                     .onChange(of: text) { newValue in
                         #if DEBUG
                         print("🔍 SearchBar: Search text changed to: \(newValue)")
                         #endif
                     }
-                
+
                 if !text.isEmpty {
                     Button(action: {
                         #if DEBUG
@@ -153,13 +163,13 @@ struct SearchBar: View {
             .padding(Theme.Spacing.sm)
             .background(Theme.Colors.secondaryBackground)
             .cornerRadius(Theme.Layout.cornerRadius)
-            
+
             if isFocused {
                 Button("Cancel") {
                     #if DEBUG
                     print("🔍 SearchBar: Cancel button tapped")
                     #endif
-                    
+
                     withAnimation {
                         isFocused = false
                         text = ""
@@ -185,7 +195,7 @@ struct CustomInput_Previews: PreviewProvider {
                 text: .constant(""),
                 errorMessage: nil
             )
-            
+
             CustomTextField(
                 placeholder: "Password",
                 text: .constant(""),
@@ -193,13 +203,13 @@ struct CustomInput_Previews: PreviewProvider {
                 errorMessage: "Invalid password",
                 isSecure: true
             )
-            
+
             CustomTextField(
                 placeholder: "Disabled Input",
                 text: .constant(""),
                 isEnabled: false
             )
-            
+
             SearchBar(
                 text: .constant(""),
                 placeholder: "Search",
