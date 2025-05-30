@@ -379,7 +379,7 @@ struct NoteDetailsView: View {
                                 handleFavoriteToggle()
                             }) {
                                 Label(viewModel.note.isFavorite ? "Remove from Favorites" : "Add to Favorites",
-                                      systemImage: viewModel.note.isFavorite ? "star.fill" : "star")
+                                      systemImage: viewModel.note.isFavorite ? "heart.fill" : "heart")
                             }
 
                             Divider()

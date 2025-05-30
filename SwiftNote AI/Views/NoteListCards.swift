@@ -16,38 +16,45 @@ struct NoteListCard: View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                 // Header
-                HStack {
+                HStack(alignment: .center, spacing: Theme.Spacing.md) {
+                    // Icon with rounded square background
                     configuration.sourceType.icon
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundColor(configuration.sourceType.color)
+                        .frame(width: 40, height: 40)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(configuration.sourceType.color.opacity(0.1))
+                        )
 
-                    Text(configuration.title)
-                        .font(Theme.Typography.caption.weight(.medium))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                        // Title and favorite on same line
+                        HStack {
+                            Text(configuration.title)
+                                .font(Theme.Typography.caption.weight(.medium))
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
 
-                    Spacer()
+                            Spacer()
 
-                    Button(action: {
+                            Button(action: {
 #if DEBUG
-                        print("📝 NoteListCard: Favorite button tapped")
+                                print("📝 NoteListCard: Favorite button tapped")
 #endif
-                        actions.onFavorite()
-                    }) {
-                        Image(systemName: configuration.isFavorite ? "star.fill" : "star")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(configuration.isFavorite ? Theme.Colors.warning : Theme.Colors.secondaryText)
+                                actions.onFavorite()
+                            }) {
+                                Image(systemName: configuration.isFavorite ? "heart.fill" : "heart")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(configuration.isFavorite ? .red : Theme.Colors.secondaryText)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+
+                        // Date positioned under title
+                        Text(configuration.date, style: .date)
+                            .font(Theme.Typography.small)
+                            .foregroundColor(Color(red: 0.4, green: 0.2, blue: 0.1)) // Dark brown color
                     }
-                    .buttonStyle(PlainButtonStyle())
-                }
-
-                // Footer
-                HStack {
-                    Text(configuration.date, style: .date)
-                        .font(Theme.Typography.small)
-                        .foregroundColor(Theme.Colors.tertiaryText)
-
-                    Spacer()
                 }
             }
             .padding(Theme.Spacing.md)
@@ -83,41 +90,48 @@ struct NoteGridCard: View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                 // Header with source icon and favorite
-                HStack {
+                HStack(alignment: .center, spacing: Theme.Spacing.md) {
+                    // Icon with rounded square background
                     configuration.sourceType.icon
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: 20, weight: .bold))
                         .foregroundColor(configuration.sourceType.color)
+                        .frame(width: 40, height: 40)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(configuration.sourceType.color.opacity(0.1))
+                        )
 
-                    Text(configuration.title)
-                        .font(Theme.Typography.caption.weight(.medium))
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                        // Title and favorite on same line
+                        HStack {
+                            Text(configuration.title)
+                                .font(Theme.Typography.caption.weight(.medium))
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
 
-                    Spacer()
+                            Spacer()
 
-                    Button(action: {
+                            Button(action: {
 #if DEBUG
-                        print("📝 NoteGridCard: Favorite button tapped")
+                                print("📝 NoteGridCard: Favorite button tapped")
 #endif
-                        actions.onFavorite()
-                    }) {
-                        Image(systemName: configuration.isFavorite ? "star.fill" : "star")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(configuration.isFavorite ? Theme.Colors.warning : Theme.Colors.secondaryText)
+                                actions.onFavorite()
+                            }) {
+                                Image(systemName: configuration.isFavorite ? "heart.fill" : "heart")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(configuration.isFavorite ? .red : Theme.Colors.secondaryText)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+
+                        // Date positioned under title
+                        Text(configuration.date, style: .date)
+                            .font(Theme.Typography.caption)
+                            .foregroundColor(Color(red: 0.4, green: 0.2, blue: 0.1)) // Dark brown color
                     }
-                    .buttonStyle(PlainButtonStyle())
                 }
 
                 Spacer()
-
-                // Date and actions
-                HStack {
-                    Text(configuration.date, style: .date)
-                        .font(Theme.Typography.caption)
-                        .foregroundColor(Theme.Colors.tertiaryText)
-
-                    Spacer()
-                }
             }
             .padding(Theme.Spacing.md)
             .background(Theme.Colors.cardBackground)

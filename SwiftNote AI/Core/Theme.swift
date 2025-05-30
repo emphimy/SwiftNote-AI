@@ -150,7 +150,7 @@ enum Theme {
 
     // MARK: - Layout
     enum Layout {
-        static let cornerRadius: CGFloat = 12
+        static let cornerRadius: CGFloat = 8
         static let buttonHeight: CGFloat = 44
         static let iconSize: CGFloat = 24
         static let maxWidth: CGFloat = 414 // iPhone 12 Pro Max width
