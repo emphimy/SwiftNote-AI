@@ -208,7 +208,7 @@ class AutoSyncManager: ObservableObject {
         #endif
     }
 
-    /// Setup notification observers for app lifecycle events
+    /// Setup notification observers for app lifecycle events and data changes
     private func setupNotificationObservers() {
         // App lifecycle notifications
         NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)
@@ -227,8 +227,42 @@ class AutoSyncManager: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Core Data change notifications
+        setupCoreDataObservers()
+
         #if DEBUG
         print("🔄 AutoSyncManager: Notification observers setup complete")
+        #endif
+    }
+
+    /// Setup Core Data observers to detect data changes
+    private func setupCoreDataObservers() {
+        guard let context = PersistenceController.shared.container.viewContext as NSManagedObjectContext? else {
+            #if DEBUG
+            print("🔄 AutoSyncManager: Warning - Could not get managed object context for observers")
+            #endif
+            return
+        }
+
+        // Observe context save notifications
+        NotificationCenter.default.publisher(for: .NSManagedObjectContextDidSave)
+            .compactMap { notification in
+                // Only process notifications from our main context
+                guard let notificationContext = notification.object as? NSManagedObjectContext,
+                      notificationContext == context else {
+                    return nil
+                }
+                return notification
+            }
+            .sink { [weak self] notification in
+                Task { @MainActor in
+                    self?.handleCoreDataChanges(notification)
+                }
+            }
+            .store(in: &cancellables)
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Core Data observers setup complete")
         #endif
     }
 
@@ -252,6 +286,97 @@ class AutoSyncManager: ObservableObject {
         // Stop timers to save battery
         stopPeriodicSync()
         stopDebounceTimer()
+    }
+
+    /// Handle Core Data context save notifications
+    private func handleCoreDataChanges(_ notification: Notification) {
+        guard configuration.syncOnDataChanges else { return }
+
+        // Don't trigger sync if we're currently syncing (prevents infinite loops)
+        guard !isSyncInProgress else {
+            #if DEBUG
+            print("🔄 AutoSyncManager: Ignoring data changes during sync operation")
+            #endif
+            return
+        }
+
+        let userInfo = notification.userInfo ?? [:]
+        var hasRelevantChanges = false
+        var changedEntities: Set<String> = []
+
+        // Check for inserted objects
+        if let insertedObjects = userInfo[NSInsertedObjectsKey] as? Set<NSManagedObject> {
+            for object in insertedObjects {
+                if let entityName = object.entity.name,
+                   isRelevantEntity(entityName),
+                   isUserInitiatedChange(object) {
+                    hasRelevantChanges = true
+                    changedEntities.insert(entityName)
+
+                    #if DEBUG
+                    print("🔄 AutoSyncManager: Detected inserted \(entityName)")
+                    #endif
+                }
+            }
+        }
+
+        // Check for updated objects
+        if let updatedObjects = userInfo[NSUpdatedObjectsKey] as? Set<NSManagedObject> {
+            for object in updatedObjects {
+                if let entityName = object.entity.name,
+                   isRelevantEntity(entityName),
+                   isUserInitiatedChange(object) {
+                    hasRelevantChanges = true
+                    changedEntities.insert(entityName)
+
+                    #if DEBUG
+                    print("🔄 AutoSyncManager: Detected updated \(entityName)")
+                    #endif
+                }
+            }
+        }
+
+        // Check for deleted objects
+        if let deletedObjects = userInfo[NSDeletedObjectsKey] as? Set<NSManagedObject> {
+            for object in deletedObjects {
+                if let entityName = object.entity.name,
+                   isRelevantEntity(entityName),
+                   isUserInitiatedChange(object) {
+                    hasRelevantChanges = true
+                    changedEntities.insert(entityName)
+
+                    #if DEBUG
+                    print("🔄 AutoSyncManager: Detected deleted \(entityName)")
+                    #endif
+                }
+            }
+        }
+
+        // Trigger sync if we have relevant changes
+        if hasRelevantChanges {
+            for entityName in changedEntities {
+                let event = AutoSyncEvent.dataChanged(entityName: entityName)
+                triggerSync(event: event)
+            }
+        }
+    }
+
+    /// Check if an entity is relevant for auto-sync
+    private func isRelevantEntity(_ entityName: String) -> Bool {
+        return entityName == "Note" || entityName == "Folder"
+    }
+
+    /// Check if a change is user-initiated (not from sync operations)
+    private func isUserInitiatedChange(_ object: NSManagedObject) -> Bool {
+        // Check if the object has syncStatus = "pending" which indicates user changes
+        if let note = object as? Note {
+            return note.syncStatus == "pending"
+        } else if let folder = object as? Folder {
+            return folder.syncStatus == "pending"
+        }
+
+        // For new objects without syncStatus set, consider them user-initiated
+        return true
     }
 
     /// Start periodic sync timer
