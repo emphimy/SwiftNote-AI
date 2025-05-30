@@ -19,8 +19,8 @@ final class SettingsViewModel: ObservableObject {
     @AppStorage("autoBackupEnabled") var autoBackupEnabled = true
     @AppStorage("biometricLockEnabled") var biometricLockEnabled = false
     @AppStorage("biometricEnabled") var biometricEnabled = false
-    @AppStorage("syncBinaryDataEnabled") var syncBinaryDataEnabled = false
     @AppStorage("twoWaySyncEnabled") var twoWaySyncEnabled = true
+    @AppStorage("autoSyncEnabled") var autoSyncEnabled = true
     @Published var lastSupabaseSync: Date?
 
     @Published var biometricType: BiometricType = .none
@@ -128,21 +128,20 @@ final class SettingsViewModel: ObservableObject {
     /// - Parameter context: The NSManagedObjectContext
     func syncToSupabase(context: NSManagedObjectContext) {
         #if DEBUG
-        print("⚙️ SettingsViewModel: Starting Supabase sync - Two-way: \(twoWaySyncEnabled), Binary data: \(syncBinaryDataEnabled)")
+        print("⚙️ SettingsViewModel: Starting Supabase sync - Two-way: \(twoWaySyncEnabled), Binary data: always included")
         #endif
 
         // Reset previous result
         syncResult = nil
         isSyncing = true
 
-        // Call the sync service with binary data and two-way sync options
-        SupabaseSyncService.shared.syncToSupabase(context: context, includeBinaryData: syncBinaryDataEnabled, twoWaySync: twoWaySyncEnabled) { success, error in
+        // Call the sync service with binary data always included and two-way sync options
+        SupabaseSyncService.shared.syncToSupabase(context: context, includeBinaryData: true, twoWaySync: twoWaySyncEnabled) { success, error in
             self.isSyncing = false
 
             if success {
                 let syncTypeMessage = self.twoWaySyncEnabled ? "Two-way sync" : "Upload"
-                let binaryDataMessage = self.syncBinaryDataEnabled ? " with binary data" : ""
-                self.syncResult = (success: true, message: "\(syncTypeMessage) completed successfully\(binaryDataMessage)")
+                self.syncResult = (success: true, message: "\(syncTypeMessage) completed successfully")
                 let now = Date()
                 self.lastSupabaseSync = now
 
@@ -690,17 +689,39 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // Include binary data toggle
+            // Auto-sync toggle
             VStack(spacing: Theme.Spacing.xs) {
-                Toggle("Include binary data (notes content)", isOn: $viewModel.syncBinaryDataEnabled)
+                Toggle("Enable automatic sync", isOn: $viewModel.autoSyncEnabled)
                     .font(.system(size: 15, weight: .medium))
                     .disabled(viewModel.isSyncing || SupabaseSyncService.shared.isSyncLocked())
+                    .onChange(of: viewModel.autoSyncEnabled) { isEnabled in
+                        if isEnabled {
+                            AutoSyncManager.shared.startAutoSync()
+                        } else {
+                            AutoSyncManager.shared.stopAutoSync()
+                        }
+                    }
 
-                // Binary data description
-                Text("Syncs full note content including text, formatting, and attachments")
+                // Auto-sync description
+                Text("Automatically syncs changes in the background and when app becomes active")
                     .font(.system(size: 13))
                     .foregroundColor(Theme.Colors.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+
+
+            // Auto-sync status
+            if viewModel.autoSyncEnabled {
+                HStack {
+                    Text("Auto-sync status:")
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(Theme.Colors.secondaryText)
+                    Spacer()
+                    Text(AutoSyncManager.shared.autoSyncStatus)
+                        .font(Theme.Typography.caption)
+                        .foregroundColor(AutoSyncManager.shared.autoSyncStatus == "Error" ? Theme.Colors.error : Theme.Colors.success)
+                }
             }
 
             // Last sync time
