@@ -640,6 +640,12 @@ struct TextUploadView: View {
             .sheet(isPresented: $showingFilePicker) {
                 DocumentPicker(types: viewModel.supportedTypes, onResult: handleSelectedFile)
             }
+            .gesture(
+                TapGesture()
+                    .onEnded { _ in
+                        isURLFieldFocused = false
+                    }
+            )
             .noteGenerationLoading(coordinator: loadingCoordinator)
         }
     }

@@ -514,6 +514,12 @@ struct WebLinkImportView: View {
                     }
                 }
             }
+            .gesture(
+                TapGesture()
+                    .onEnded { _ in
+                        isURLFieldFocused = false
+                    }
+            )
             .noteGenerationLoading(coordinator: loadingCoordinator)
         }
     }

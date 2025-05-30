@@ -97,6 +97,12 @@ struct YouTubeView: View {
             } message: {
                 Text(errorMessage)
             }
+            .gesture(
+                TapGesture()
+                    .onEnded { _ in
+                        isURLFieldFocused = false
+                    }
+            )
             .onChange(of: viewModel.isProcessingComplete) { isComplete in
                 if isComplete {
                     // Start the new loading experience

@@ -467,6 +467,13 @@ struct ContentView: View {
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
+            .gesture(
+                TapGesture()
+                    .onEnded { _ in
+                        // Dismiss keyboard when tapping outside search field
+                        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                    }
+            )
             .fullScreenCover(isPresented: $viewModel.isShowingSettings) {
                 NavigationView {
                     SettingsView()
