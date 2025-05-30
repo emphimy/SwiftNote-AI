@@ -1,5 +1,19 @@
 import SwiftUI
 
+// MARK: - Helper Functions
+private func isSystemSymbol(_ iconName: String) -> Bool {
+    // Known custom assets
+    let customAssets = ["PdfIcon"]
+
+    // If it's in our custom assets list, it's not a system symbol
+    if customAssets.contains(iconName) {
+        return false
+    }
+
+    // Otherwise, assume it's a system symbol
+    return true
+}
+
 // MARK: - Note List Card
 struct NoteListCard: View {
     let configuration: NoteCardConfiguration
@@ -18,14 +32,23 @@ struct NoteListCard: View {
                 // Header
                 HStack(alignment: .center, spacing: Theme.Spacing.md) {
                     // Icon with rounded square background
-                    configuration.sourceType.icon
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(configuration.sourceType.color)
-                        .frame(width: 40, height: 40)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(configuration.sourceType.color.opacity(0.1))
-                        )
+                    Group {
+                        if configuration.sourceType.isCustomIcon {
+                            configuration.sourceType.icon
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 23, height: 23)
+                        } else {
+                            configuration.sourceType.icon
+                                .font(.system(size: 20, weight: .bold))
+                        }
+                    }
+                    .foregroundColor(configuration.sourceType.color)
+                    .frame(width: 40, height: 40)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(configuration.sourceType.color.opacity(0.1))
+                    )
 
                     VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                         // Title and favorite on same line
@@ -95,14 +118,23 @@ struct NoteGridCard: View {
                 // Header with source icon and favorite
                 HStack(alignment: .center, spacing: Theme.Spacing.md) {
                     // Icon with rounded square background
-                    configuration.sourceType.icon
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(configuration.sourceType.color)
-                        .frame(width: 40, height: 40)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(configuration.sourceType.color.opacity(0.1))
-                        )
+                    Group {
+                        if configuration.sourceType.isCustomIcon {
+                            configuration.sourceType.icon
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 23, height: 23)
+                        } else {
+                            configuration.sourceType.icon
+                                .font(.system(size: 20, weight: .bold))
+                        }
+                    }
+                    .foregroundColor(configuration.sourceType.color)
+                    .frame(width: 40, height: 40)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(configuration.sourceType.color.opacity(0.1))
+                    )
 
                     VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
                         // Title and favorite on same line
@@ -183,11 +215,23 @@ struct ActionCard: View {
                         }
                     }) {
                         VStack(spacing: Theme.Spacing.sm) {
-                            Image(systemName: item.icon)
-                                .font(.system(size: 32, weight: .medium))
-                                .foregroundColor(item.color)
-                                .frame(height: 40)
-                                .accessibility(label: Text(item.title))
+                            // Handle both system symbols and custom assets
+                            Group {
+                                if isSystemSymbol(item.icon) {
+                                    // System symbol
+                                    Image(systemName: item.icon)
+                                        .font(.system(size: 32, weight: .medium))
+                                } else {
+                                    // Custom asset
+                                    Image(item.icon)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: 32, height: 32)
+                                }
+                            }
+                            .foregroundColor(item.color)
+                            .frame(height: 40)
+                            .accessibility(label: Text(item.title))
 
                             Text(item.title)
                                 .font(Theme.Typography.body.weight(.medium))

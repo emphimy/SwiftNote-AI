@@ -1,23 +1,49 @@
 import SwiftUI
 
+// MARK: - Helper Functions
+private func isSystemSymbol(_ iconName: String) -> Bool {
+    // Known custom assets
+    let customAssets = ["PdfIcon"]
+
+    // If it's in our custom assets list, it's not a system symbol
+    if customAssets.contains(iconName) {
+        return false
+    }
+
+    // Otherwise, assume it's a system symbol
+    return true
+}
+
 // MARK: - Note Creation Header Component
 struct NoteCreationHeader: View {
     let icon: String
     let title: String
     let subtitle: String
-    
+
     var body: some View {
         VStack(spacing: Theme.Spacing.sm) {
-            Image(systemName: icon)
-                .font(.system(size: 60))
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
+            // Handle both system symbols and custom assets
+            Group {
+                if isSystemSymbol(icon) {
+                    // System symbol
+                    Image(systemName: icon)
+                        .font(.system(size: 60))
+                } else {
+                    // Custom asset
+                    Image(icon)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 60, height: 60)
+                }
+            }
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
-                .padding(.top, Theme.Spacing.xl)
+            )
+            .padding(.top, Theme.Spacing.xl)
 
             Text(title)
                 .font(Theme.Typography.h2)
@@ -45,7 +71,7 @@ struct NoteCreationHeader_Previews: PreviewProvider {
             .padding()
             .previewLayout(.sizeThatFits)
             .previewDisplayName("Audio Recording")
-            
+
             NoteCreationHeader(
                 icon: "play.circle.fill",
                 title: "YouTube Notes",
@@ -54,7 +80,7 @@ struct NoteCreationHeader_Previews: PreviewProvider {
             .padding()
             .previewLayout(.sizeThatFits)
             .previewDisplayName("YouTube")
-            
+
             NoteCreationHeader(
                 icon: "doc.circle.fill",
                 title: "Import PDF",

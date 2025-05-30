@@ -425,6 +425,7 @@ struct SettingsView: View {
     @State private var noteTitle: String = ""
     @State private var refreshToggle = false
     @State private var showingSignOutAlert = false
+    @State private var showingDeleteAccountAlert = false
     @State private var profileUpdateCounter = 0
 
     var body: some View {
@@ -472,6 +473,9 @@ struct SettingsView: View {
             ForEach(Theme.Settings.sections) { section in
                 sectionView(for: section)
             }
+
+            // Account actions at the end
+            accountActionsSection
         }
         .padding(.horizontal)
         .padding(.top, Theme.Spacing.xs) // Small top padding
@@ -626,24 +630,6 @@ struct SettingsView: View {
                 }
 
                 Spacer()
-            }
-
-            // Sign out button
-            Button(action: {
-                showingSignOutAlert = true
-            }) {
-                HStack(spacing: Theme.Spacing.sm) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(Theme.Colors.error)
-
-                    Text("Sign Out")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(Theme.Colors.error)
-
-                    Spacer()
-                }
-                .padding(.vertical, Theme.Spacing.xs)
             }
         }
         .alert("Sign Out", isPresented: $showingSignOutAlert) {
@@ -926,6 +912,90 @@ struct SettingsView: View {
                 .font(Theme.Typography.caption)
                 .foregroundColor(Theme.Colors.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var accountActionsSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            // Section Header
+            HStack(spacing: Theme.Spacing.sm) {
+                Image(systemName: "person.crop.circle.badge.exclamationmark")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(Theme.Colors.error)
+                    .frame(width: 24, height: 24)
+
+                Text("Account")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(Theme.Colors.text)
+            }
+            .padding(.horizontal, Theme.Spacing.xs)
+
+            // Section Content
+            VStack(spacing: 0) {
+                // Sign out button
+                Button(action: {
+                    showingSignOutAlert = true
+                }) {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Theme.Colors.error)
+
+                        Text("Sign Out")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(Theme.Colors.error)
+
+                        Spacer()
+                    }
+                    .padding(.vertical, Theme.Spacing.md)
+                    .padding(.horizontal, Theme.Spacing.md)
+                }
+
+                Divider()
+                    .padding(.horizontal, Theme.Spacing.md)
+
+                // Delete account button
+                Button(action: {
+                    showingDeleteAccountAlert = true
+                }) {
+                    HStack(spacing: Theme.Spacing.sm) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(Theme.Colors.error)
+
+                        Text("Delete Account")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(Theme.Colors.error)
+
+                        Spacer()
+                    }
+                    .padding(.vertical, Theme.Spacing.md)
+                    .padding(.horizontal, Theme.Spacing.md)
+                }
+            }
+            .background(Theme.Colors.secondaryBackground)
+            .cornerRadius(Theme.Settings.cornerRadius)
+        }
+        .alert("Sign Out", isPresented: $showingSignOutAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Sign Out", role: .destructive) {
+                Task {
+                    await authManager.signOut()
+                }
+            }
+        } message: {
+            Text("Are you sure you want to sign out?")
+        }
+        .alert("Delete Account", isPresented: $showingDeleteAccountAlert) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                Task {
+                    // Add delete account functionality here
+                    toastManager.show("Account deletion is not yet implemented", type: .error)
+                }
+            }
+        } message: {
+            Text("This action cannot be undone. All your data will be permanently deleted.")
         }
     }
 

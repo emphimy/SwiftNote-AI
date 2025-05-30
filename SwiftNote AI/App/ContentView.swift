@@ -287,15 +287,15 @@ private struct AddNoteActionSheet: View {
                     viewModel.isShowingAudioUpload = true
                 },
 
-                ActionCardItem(title: "Scan Text", icon: "viewfinder.circle", color: .blue) {
+                ActionCardItem(title: "YouTube Video", icon: "play.circle.fill", color: .red) {
                     #if DEBUG
-                    print("🏠 AddNoteSheet: Scan text selected")
+                    print("🏠 AddNoteSheet: YouTube video selected")
                     #endif
                     viewModel.isShowingAddNote = false
-                    viewModel.isShowingTextScan = true
+                    viewModel.isShowingYouTubeInput = true
                 },
 
-                ActionCardItem(title: "Import PDF", icon: "doc", color: .blue) {
+                ActionCardItem(title: "Import PDF", icon: "PdfIcon", color: .blue) {
                     #if DEBUG
                     print("🏠 AddNoteSheet: Upload text selected")
                     #endif
@@ -303,12 +303,12 @@ private struct AddNoteActionSheet: View {
                     viewModel.isShowingTextUpload = true
                 },
 
-                ActionCardItem(title: "YouTube Video", icon: "play.circle.fill", color: .red) {
+                ActionCardItem(title: "Scan Text", icon: "viewfinder.circle", color: .blue) {
                     #if DEBUG
-                    print("🏠 AddNoteSheet: YouTube video selected")
+                    print("🏠 AddNoteSheet: Scan text selected")
                     #endif
                     viewModel.isShowingAddNote = false
-                    viewModel.isShowingYouTubeInput = true
+                    viewModel.isShowingTextScan = true
                 },
 
                 ActionCardItem(title: "Web Link", icon: "link", color: .blue) {

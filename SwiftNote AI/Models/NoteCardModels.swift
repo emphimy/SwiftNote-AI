@@ -373,6 +373,7 @@ enum NoteSourceType: String {
     case upload = "upload"
     case recording = "recording"
     case web = "web"
+    case pdf = "pdf"
 
     var icon: Image {
         let iconName: String = {
@@ -383,9 +384,32 @@ enum NoteSourceType: String {
             case .video: return "play.circle.fill"
             case .upload: return "viewfinder.circle"
             case .web: return "link"
+            case .pdf: return "PdfIcon"
             }
         }()
-        return Image(systemName: iconName)
+
+        // Handle custom assets vs system symbols
+        if iconName == "PdfIcon" {
+            return Image(iconName)
+        } else {
+            return Image(systemName: iconName)
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .audio: return "waveform"
+        case .recording: return "mic"
+        case .text: return "doc"
+        case .video: return "play.circle.fill"
+        case .upload: return "viewfinder.circle"
+        case .web: return "link"
+        case .pdf: return "PdfIcon"
+        }
+    }
+
+    var isCustomIcon: Bool {
+        return self == .pdf
     }
 
     var color: Color {
@@ -396,6 +420,7 @@ enum NoteSourceType: String {
         case .video: return .red
         case .upload: return .blue
         case .web: return .blue
+        case .pdf: return .blue
         }
     }
 }

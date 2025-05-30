@@ -1,5 +1,19 @@
 import SwiftUI
 
+// MARK: - Helper Functions
+private func isSystemSymbol(_ iconName: String) -> Bool {
+    // Known custom assets
+    let customAssets = ["PdfIcon"]
+
+    // If it's in our custom assets list, it's not a system symbol
+    if customAssets.contains(iconName) {
+        return false
+    }
+
+    // Otherwise, assume it's a system symbol
+    return true
+}
+
 // MARK: - Primary Action Button Component
 struct PrimaryActionButton: View {
     let title: String
@@ -7,7 +21,7 @@ struct PrimaryActionButton: View {
     let isEnabled: Bool
     let isLoading: Bool
     let action: () -> Void
-    
+
     init(
         title: String,
         icon: String? = nil,
@@ -21,7 +35,7 @@ struct PrimaryActionButton: View {
         self.isLoading = isLoading
         self.action = action
     }
-    
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: Theme.Spacing.sm) {
@@ -30,10 +44,22 @@ struct PrimaryActionButton: View {
                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         .scaleEffect(0.8)
                 } else if let icon = icon {
-                    Image(systemName: icon)
-                        .font(.system(size: 16, weight: .medium))
+                    // Handle both system symbols and custom assets
+                    Group {
+                        if isSystemSymbol(icon) {
+                            // System symbol
+                            Image(systemName: icon)
+                                .font(.system(size: 16, weight: .medium))
+                        } else {
+                            // Custom asset
+                            Image(icon)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 16, height: 16)
+                        }
+                    }
                 }
-                
+
                 Text(title)
                     .font(Theme.Typography.button)
                     .fontWeight(.medium)
@@ -65,19 +91,19 @@ struct PrimaryActionButton_Previews: PreviewProvider {
                     icon: "mic.fill",
                     action: {}
                 )
-                
+
                 PrimaryActionButton(
                     title: "Processing...",
                     isLoading: true,
                     action: {}
                 )
-                
+
                 PrimaryActionButton(
                     title: "Disabled Button",
                     isEnabled: false,
                     action: {}
                 )
-                
+
                 PrimaryActionButton(
                     title: "Import File",
                     icon: "doc.fill",
@@ -87,14 +113,14 @@ struct PrimaryActionButton_Previews: PreviewProvider {
             .padding()
             .previewLayout(.sizeThatFits)
             .previewDisplayName("Light Mode")
-            
+
             VStack(spacing: 16) {
                 PrimaryActionButton(
                     title: "Generate Note",
                     icon: "wand.and.stars",
                     action: {}
                 )
-                
+
                 PrimaryActionButton(
                     title: "Loading...",
                     isLoading: true,

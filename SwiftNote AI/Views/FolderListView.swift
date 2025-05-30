@@ -660,11 +660,6 @@ private struct NewFolderSheet: View {
                 Section(header: Text("Folder Details")) {
                     TextField("Folder Name", text: $viewModel.newFolderName)
 
-                    Text("Color")
-                        .font(Theme.Typography.body)
-                        .foregroundColor(Theme.Colors.text)
-                        .padding(.top, Theme.Spacing.sm)
-
                     // Color grid
                     LazyVGrid(columns: [
                         GridItem(.flexible()),

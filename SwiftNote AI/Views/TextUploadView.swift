@@ -602,7 +602,7 @@ struct TextUploadView: View {
     // MARK: - View Components
     private var headerSection: some View {
         NoteCreationHeader(
-            icon: "doc.circle.fill",
+            icon: "PdfIcon",
             title: "Import PDF",
             subtitle: "Import and convert PDF documents to notes"
         )
@@ -1016,7 +1016,7 @@ struct TextUploadView: View {
     private var importButton: some View {
         PrimaryActionButton(
             title: "Import PDF",
-            icon: "doc.circle.fill",
+            icon: viewModel.textContent.isEmpty ? "PdfIcon" : nil,
             isEnabled: !viewModel.textContent.isEmpty,
             isLoading: false,
             action: {
