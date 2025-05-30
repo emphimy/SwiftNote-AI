@@ -2,6 +2,8 @@ import Foundation
 import CoreData
 import Combine
 import UIKit
+import Network
+import BackgroundTasks
 
 // MARK: - Auto Sync Configuration
 
@@ -105,6 +107,16 @@ class AutoSyncManager: ObservableObject {
     /// Whether a sync operation is currently in progress
     private var isSyncInProgress: Bool = false
 
+    /// Network monitoring
+    private let networkMonitor = NWPathMonitor()
+    private let networkQueue = DispatchQueue(label: "AutoSyncNetworkMonitor")
+    private var isNetworkAvailable = true
+    private var networkType: NWInterface.InterfaceType?
+
+    /// Background task management
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    private var backgroundSyncTimer: Timer?
+
     // MARK: - Initialization
 
     private init() {
@@ -116,6 +128,7 @@ class AutoSyncManager: ObservableObject {
 
         loadConfiguration()
         setupNotificationObservers()
+        setupNetworkMonitoring()
     }
 
     // MARK: - Public Methods
@@ -156,8 +169,22 @@ class AutoSyncManager: ObservableObject {
         stopPeriodicSync()
         stopDebounceTimer()
 
+        // End any background tasks
+        endBackgroundTask()
+
         // Clear pending events
         pendingSyncEvents.removeAll()
+    }
+
+    /// Cleanup resources (called when app terminates)
+    func cleanup() {
+        #if DEBUG
+        print("🔄 AutoSyncManager: Cleaning up resources")
+        #endif
+
+        stopAutoSync()
+        networkMonitor.cancel()
+        cancellables.removeAll()
     }
 
     /// Update auto-sync configuration
@@ -283,9 +310,12 @@ class AutoSyncManager: ObservableObject {
         print("🔄 AutoSyncManager: App entered background")
         #endif
 
-        // Stop timers to save battery
+        // Stop foreground timers to save battery
         stopPeriodicSync()
         stopDebounceTimer()
+
+        // Schedule background sync if there are pending changes
+        scheduleBackgroundSync()
     }
 
     /// Handle Core Data context save notifications
@@ -379,6 +409,136 @@ class AutoSyncManager: ObservableObject {
         return true
     }
 
+    /// Setup network monitoring
+    private func setupNetworkMonitoring() {
+        networkMonitor.pathUpdateHandler = { [weak self] path in
+            Task { @MainActor in
+                self?.handleNetworkChange(path)
+            }
+        }
+
+        networkMonitor.start(queue: networkQueue)
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Network monitoring started")
+        #endif
+    }
+
+    /// Handle network connectivity changes
+    private func handleNetworkChange(_ path: NWPath) {
+        let wasNetworkAvailable = isNetworkAvailable
+        isNetworkAvailable = path.status == .satisfied
+
+        // Determine network type
+        if path.usesInterfaceType(.wifi) {
+            networkType = .wifi
+        } else if path.usesInterfaceType(.cellular) {
+            networkType = .cellular
+        } else {
+            networkType = nil
+        }
+
+        #if DEBUG
+        let networkTypeString: String
+        if let type = networkType {
+            switch type {
+            case .wifi: networkTypeString = "wifi"
+            case .cellular: networkTypeString = "cellular"
+            case .wiredEthernet: networkTypeString = "ethernet"
+            case .loopback: networkTypeString = "loopback"
+            case .other: networkTypeString = "other"
+            @unknown default: networkTypeString = "unknown"
+            }
+        } else {
+            networkTypeString = "none"
+        }
+        print("🔄 AutoSyncManager: Network status changed - Available: \(isNetworkAvailable), Type: \(networkTypeString)")
+        #endif
+
+        // If network became available and we have pending changes, trigger sync
+        if !wasNetworkAvailable && isNetworkAvailable && !pendingSyncEvents.isEmpty {
+            #if DEBUG
+            print("🔄 AutoSyncManager: Network reconnected, triggering sync")
+            #endif
+            triggerSync(event: .networkReconnected)
+        }
+    }
+
+    /// Schedule background sync for pending changes
+    private func scheduleBackgroundSync() {
+        guard !pendingSyncEvents.isEmpty else {
+            #if DEBUG
+            print("🔄 AutoSyncManager: No pending changes for background sync")
+            #endif
+            return
+        }
+
+        guard isNetworkAvailable else {
+            #if DEBUG
+            print("🔄 AutoSyncManager: Network unavailable, skipping background sync")
+            #endif
+            return
+        }
+
+        // Start background task
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "AutoSync") { [weak self] in
+            #if DEBUG
+            print("🔄 AutoSyncManager: Background task expired")
+            #endif
+            self?.endBackgroundTask()
+        }
+
+        guard backgroundTaskID != .invalid else {
+            #if DEBUG
+            print("🔄 AutoSyncManager: Failed to start background task")
+            #endif
+            return
+        }
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Started background sync task")
+        #endif
+
+        // Schedule background sync with a short delay
+        backgroundSyncTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.performBackgroundSync()
+            }
+        }
+    }
+
+    /// Perform sync in background
+    private func performBackgroundSync() {
+        guard backgroundTaskID != .invalid else { return }
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Performing background sync")
+        #endif
+
+        // Use the existing performSync method but with background context
+        performSync()
+
+        // End background task after a delay to allow sync to complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) { [weak self] in
+            self?.endBackgroundTask()
+        }
+    }
+
+    /// End background task
+    private func endBackgroundTask() {
+        guard backgroundTaskID != .invalid else { return }
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Ending background task")
+        #endif
+
+        backgroundSyncTimer?.invalidate()
+        backgroundSyncTimer = nil
+
+        UIApplication.shared.endBackgroundTask(backgroundTaskID)
+        backgroundTaskID = .invalid
+    }
+
     /// Start periodic sync timer
     private func startPeriodicSync() {
         stopPeriodicSync() // Stop existing timer
@@ -428,9 +588,17 @@ class AutoSyncManager: ObservableObject {
 
     /// Check if sync should happen immediately
     private func shouldSyncImmediately(for event: AutoSyncEvent) -> Bool {
+        // Don't sync if network is unavailable
+        guard isNetworkAvailable else {
+            #if DEBUG
+            print("🔄 AutoSyncManager: Network unavailable, deferring sync")
+            #endif
+            return false
+        }
+
         // Always sync immediately for certain events
         switch event {
-        case .appDidBecomeActive, .userInitiated, .syncRetry:
+        case .appDidBecomeActive, .userInitiated, .syncRetry, .networkReconnected:
             return true
         default:
             break
