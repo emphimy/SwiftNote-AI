@@ -30,6 +30,7 @@ final class NoteDetailsViewModel: ObservableObject {
     @Published var exportURL: ExportURLWrapper?
     @Published var isShowingFolderPicker = false
     @Published var availableFolders: [Folder] = []
+    @Published var isShowingDeleteConfirmation = false
 
     private let _viewContext: NSManagedObjectContext
     private let pdfExportService = PDFExportService()
@@ -188,6 +189,125 @@ final class NoteDetailsViewModel: ObservableObject {
             throw error
         }
     }
+
+    func toggleFavorite() async throws {
+        #if DEBUG
+        print("📝 NoteDetailsViewModel: Toggling favorite for note: \(note.title)")
+        #endif
+
+        isLoading = true
+        defer { isLoading = false }
+
+        let request = NSFetchRequest<NSManagedObject>(entityName: "Note")
+        request.predicate = NSPredicate(format: "id == %@", note.id as CVarArg)
+
+        do {
+            guard let noteObject = try _viewContext.fetch(request).first else {
+                throw NSError(domain: "NoteDetails", code: 404,
+                            userInfo: [NSLocalizedDescriptionKey: "Note not found"])
+            }
+
+            let currentValue = noteObject.value(forKey: "isFavorite") as? Bool ?? false
+            noteObject.setValue(!currentValue, forKey: "isFavorite")
+            noteObject.setValue(Date(), forKey: "lastModified")
+            noteObject.setValue("pending", forKey: "syncStatus")
+
+            try _viewContext.save()
+
+            // Update the local note configuration by creating a new instance
+            note = NoteCardConfiguration(
+                id: note.id,
+                title: note.title,
+                date: note.date,
+                preview: note.preview,
+                sourceType: note.sourceType,
+                isFavorite: !currentValue,
+                tags: note.tags,
+                folder: note.folder,
+                metadata: note.metadata,
+                sourceURL: note.sourceURL,
+                languageCode: note.languageCode
+            )
+
+            #if DEBUG
+            print("📝 NoteDetailsViewModel: Successfully toggled favorite")
+            #endif
+        } catch {
+            #if DEBUG
+            print("📝 NoteDetailsViewModel: Error toggling favorite - \(error.localizedDescription)")
+            #endif
+            throw error
+        }
+    }
+
+    func deleteNote() async throws {
+        #if DEBUG
+        print("📝 NoteDetailsViewModel: Deleting note: \(note.title)")
+        #endif
+
+        isLoading = true
+        defer { isLoading = false }
+
+        let request = NSFetchRequest<Note>(entityName: "Note")
+        request.predicate = NSPredicate(format: "id == %@", note.id as CVarArg)
+
+        do {
+            guard let noteObject = try _viewContext.fetch(request).first else {
+                throw NSError(domain: "NoteDetails", code: 404,
+                            userInfo: [NSLocalizedDescriptionKey: "Note not found"])
+            }
+
+            try PersistenceController.shared.deleteNote(noteObject)
+            PersistenceController.shared.saveContext()
+
+            // Notify other views that a note was deleted
+            NotificationCenter.default.post(name: .init("NoteDeleted"), object: nil)
+
+            #if DEBUG
+            print("📝 NoteDetailsViewModel: Successfully deleted note")
+            #endif
+        } catch {
+            #if DEBUG
+            print("📝 NoteDetailsViewModel: Error deleting note - \(error.localizedDescription)")
+            #endif
+            throw error
+        }
+    }
+
+    func shareNote() {
+        #if DEBUG
+        print("📝 NoteDetailsViewModel: Sharing note: \(note.title)")
+        #endif
+
+        // Create share content
+        var shareText = "📝 \(note.title)\n\n"
+        shareText += note.preview
+
+        if !note.tags.isEmpty {
+            shareText += "\n\n🏷️ Tags: \(note.tags.joined(separator: ", "))"
+        }
+
+        shareText += "\n\n📅 Created: \(DateFormatter.localizedString(from: note.date, dateStyle: .medium, timeStyle: .short))"
+
+        // Present share sheet
+        DispatchQueue.main.async {
+            let activityVC = UIActivityViewController(activityItems: [shareText], applicationActivities: nil)
+
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+               let window = windowScene.windows.first,
+               let rootViewController = window.rootViewController {
+
+                // For iPad, set popover presentation
+                if let popover = activityVC.popoverPresentationController {
+                    popover.sourceView = window
+                    popover.sourceRect = CGRect(x: window.bounds.midX, y: window.bounds.midY, width: 0, height: 0)
+                    popover.permittedArrowDirections = []
+                }
+
+                rootViewController.present(activityVC, animated: true)
+            }
+        }
+    }
 }
 
 // MARK: - Note Details View
@@ -241,19 +361,50 @@ struct NoteDetailsView: View {
                                 .foregroundColor(Theme.Colors.primary)
                         }
 
-                        Button(action: {
-                            #if DEBUG
-                            print("📄 NoteDetailsView: Export button tapped")
-                            #endif
-                            handleExport()
-                        }) {
-                            Image(systemName: "square.and.arrow.up")
-                                .foregroundColor(Theme.Colors.primary)
-                        }
-                        .disabled(viewModel.isExporting)
+                        // Menu button with actions
+                        Menu {
+                            Button(action: {
+                                #if DEBUG
+                                print("📝 NoteDetailsView: Change title tapped")
+                                #endif
+                                handleEditSave()
+                            }) {
+                                Label(viewModel.isEditing ? "Save Title" : "Change Title", systemImage: "pencil")
+                            }
 
-                        Button(viewModel.isEditing ? "Save" : "Edit") {
-                            handleEditSave()
+                            Button(action: {
+                                #if DEBUG
+                                print("📝 NoteDetailsView: Add to favorite tapped")
+                                #endif
+                                handleFavoriteToggle()
+                            }) {
+                                Label(viewModel.note.isFavorite ? "Remove from Favorites" : "Add to Favorites",
+                                      systemImage: viewModel.note.isFavorite ? "star.fill" : "star")
+                            }
+
+                            Divider()
+
+                            Button(action: {
+                                #if DEBUG
+                                print("📄 NoteDetailsView: Export PDF tapped")
+                                #endif
+                                handleExport()
+                            }) {
+                                Label("Export PDF", systemImage: "doc.text")
+                            }
+                            .disabled(viewModel.isExporting)
+
+                            Button(role: .destructive, action: {
+                                #if DEBUG
+                                print("📝 NoteDetailsView: Delete tapped")
+                                #endif
+                                viewModel.isShowingDeleteConfirmation = true
+                            }) {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .foregroundColor(Theme.Colors.primary)
                         }
                     }
                 }
@@ -277,6 +428,14 @@ struct NoteDetailsView: View {
             }
             .sheet(item: $viewModel.exportURL) { wrapper in
                 ShareSheet(items: [wrapper.url])
+            }
+            .alert("Delete Note", isPresented: $viewModel.isShowingDeleteConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    handleDelete()
+                }
+            } message: {
+                Text("Are you sure you want to delete this note? This action cannot be undone.")
             }
         }
         .onAppear {
@@ -433,6 +592,44 @@ struct NoteDetailsView: View {
         }
     }
 
+    private func handleFavoriteToggle() {
+        Task {
+            do {
+                try await viewModel.toggleFavorite()
+                await MainActor.run {
+                    let message = viewModel.note.isFavorite ? "Added to favorites" : "Removed from favorites"
+                    toastManager.show(message, type: .success)
+                }
+            } catch {
+                #if DEBUG
+                print("📝 NoteDetailsView: Error toggling favorite - \(error.localizedDescription)")
+                #endif
+                await MainActor.run {
+                    toastManager.show("Failed to update favorite status", type: .error)
+                }
+            }
+        }
+    }
+
+    private func handleDelete() {
+        Task {
+            do {
+                try await viewModel.deleteNote()
+                await MainActor.run {
+                    toastManager.show("Note deleted successfully", type: .success)
+                    dismiss()
+                }
+            } catch {
+                #if DEBUG
+                print("📝 NoteDetailsView: Error deleting note - \(error.localizedDescription)")
+                #endif
+                await MainActor.run {
+                    toastManager.show("Failed to delete note", type: .error)
+                }
+            }
+        }
+    }
+
     private func refreshNoteAudioURL() async {
         #if DEBUG
         print("📝 NoteDetailsView: Refreshing note audio URL")
@@ -471,9 +668,19 @@ struct NoteDetailsView: View {
 
                     // Update the note configuration with the correct URL
                     await MainActor.run {
-                        var updatedNote = viewModel.note
-                        updatedNote.sourceURL = sourceURL
-                        viewModel.note = updatedNote
+                        viewModel.note = NoteCardConfiguration(
+                            id: viewModel.note.id,
+                            title: viewModel.note.title,
+                            date: viewModel.note.date,
+                            preview: viewModel.note.preview,
+                            sourceType: viewModel.note.sourceType,
+                            isFavorite: viewModel.note.isFavorite,
+                            tags: viewModel.note.tags,
+                            folder: viewModel.note.folder,
+                            metadata: viewModel.note.metadata,
+                            sourceURL: sourceURL,
+                            languageCode: viewModel.note.languageCode
+                        )
                     }
                 } else {
                     #if DEBUG
@@ -527,9 +734,19 @@ struct NoteDetailsView: View {
 
                             // Update the note configuration
                             await MainActor.run {
-                                var updatedNote = viewModel.note
-                                updatedNote.sourceURL = alternativeURL
-                                viewModel.note = updatedNote
+                                viewModel.note = NoteCardConfiguration(
+                                    id: viewModel.note.id,
+                                    title: viewModel.note.title,
+                                    date: viewModel.note.date,
+                                    preview: viewModel.note.preview,
+                                    sourceType: viewModel.note.sourceType,
+                                    isFavorite: viewModel.note.isFavorite,
+                                    tags: viewModel.note.tags,
+                                    folder: viewModel.note.folder,
+                                    metadata: viewModel.note.metadata,
+                                    sourceURL: alternativeURL,
+                                    languageCode: viewModel.note.languageCode
+                                )
                             }
 
                             // Found a working file, no need to try more

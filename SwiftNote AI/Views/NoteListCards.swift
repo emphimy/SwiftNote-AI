@@ -48,32 +48,6 @@ struct NoteListCard: View {
                         .foregroundColor(Theme.Colors.tertiaryText)
 
                     Spacer()
-
-                    HStack(spacing: Theme.Spacing.md) {
-                        Button(action: {
-#if DEBUG
-                            print("📝 NoteListCard: Share button tapped")
-#endif
-                            actions.onShare()
-                        }) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(Theme.Colors.primary)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-
-                        Button(action: {
-#if DEBUG
-                            print("📝 NoteListCard: Delete button tapped")
-#endif
-                            actions.onDelete()
-                        }) {
-                            Image(systemName: "trash.fill")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(Theme.Colors.error)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                    }
                 }
             }
             .padding(Theme.Spacing.md)
@@ -143,28 +117,6 @@ struct NoteGridCard: View {
                         .foregroundColor(Theme.Colors.tertiaryText)
 
                     Spacer()
-
-                    HStack(spacing: Theme.Spacing.sm) {
-                        Button(action: {
-#if DEBUG
-                            print("📝 NoteGridCard: Share button tapped")
-#endif
-                            actions.onShare()
-                        }) {
-                            Image(systemName: "square.and.arrow.up")
-                                .foregroundColor(Theme.Colors.secondaryText)
-                        }
-
-                        Button(action: {
-#if DEBUG
-                            print("📝 NoteGridCard: Delete button tapped")
-#endif
-                            actions.onDelete()
-                        }) {
-                            Image(systemName: "trash")
-                                .foregroundColor(Theme.Colors.error)
-                        }
-                    }
                 }
             }
             .padding(Theme.Spacing.md)

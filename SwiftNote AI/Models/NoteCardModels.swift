@@ -95,7 +95,7 @@ struct NoteCardConfiguration: Identifiable {
         return nil
     }
 
-    private var folder: Folder?
+    var folder: Folder?
 
     var folderName: String? {
         folder?.name
