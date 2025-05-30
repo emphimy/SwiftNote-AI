@@ -132,6 +132,10 @@ class NotePersistenceManager {
                     note.id = id
                     note.title = title
                     note.originalContent = content
+                    // Store content as transcript for consistency
+                    if let textContent = String(data: content, encoding: .utf8) {
+                        note.transcript = textContent
+                    }
                     note.sourceType = sourceType
                     note.timestamp = timestamp
                     note.lastModified = noteData["lastModified"] as? Date ?? Date()

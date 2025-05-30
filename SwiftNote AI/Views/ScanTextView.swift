@@ -186,6 +186,9 @@ final class ScanTextViewModel: ObservableObject {
                 let originalContent = self.combinedText
                 note.setValue(originalContent.data(using: .utf8), forKey: "originalContent")
 
+                // Store the full scanned text in the transcript field
+                note.setValue(originalContent, forKey: "transcript")
+
                 // Save AI-generated content if available
                 if let aiContent = self.aiGeneratedContent {
                     note.setValue(aiContent.data(using: .utf8), forKey: "aiGeneratedContent")

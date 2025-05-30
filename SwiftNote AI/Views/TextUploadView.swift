@@ -385,9 +385,8 @@ final class TextUploadViewModel: ObservableObject {
             // Store language information
             note.setValue(self.selectedLanguage.code, forKey: "transcriptLanguage")
 
-            // Create a preview from the first few lines
-            let preview = String(textContent.prefix(500))
-            note.setValue(preview, forKey: "transcript") // Using transcript for preview
+            // Store the full extracted text in the transcript field
+            note.setValue(textContent, forKey: "transcript") // Store full content, not just preview
 
             // We don't save the original file locally anymore
 
@@ -1120,6 +1119,7 @@ struct TextUploadView: View {
             note.title = title
             note.aiGeneratedContent = content.data(using: .utf8)
             note.originalContent = originalContent.data(using: .utf8)
+            note.transcript = originalContent // Store full extracted text in transcript field
             note.timestamp = Date()
             note.lastModified = Date()
             note.transcriptLanguage = viewModel.selectedLanguage.code

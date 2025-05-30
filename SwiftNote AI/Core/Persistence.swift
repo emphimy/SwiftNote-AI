@@ -306,6 +306,7 @@ extension PersistenceController {
         let note = Note(context: context)
         note.title = title
         note.originalContent = content.data(using: .utf8) // Convert String to Data
+        note.transcript = content // Store content in transcript field for consistency
         note.sourceType = sourceType
         note.timestamp = Date()
         note.lastModified = Date()

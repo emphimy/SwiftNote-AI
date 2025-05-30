@@ -232,9 +232,14 @@ final class WebLinkImportViewModel: ObservableObject {
                 // File download case
                 let content = try Data(contentsOf: fileURL)
                 note.setValue(content, forKey: "originalContent")
+                // For file downloads, store the content as transcript if it's text
+                if let textContent = String(data: content, encoding: .utf8) {
+                    note.setValue(textContent, forKey: "transcript")
+                }
             } else if let scrapedContent = self.scrapedContent {
                 // Web scraping case
                 note.setValue(scrapedContent.data(using: .utf8), forKey: "originalContent")
+                note.setValue(scrapedContent, forKey: "transcript") // Store scraped content in transcript field
 
                 // If we have AI-processed content, save that too
                 if let aiContent = self.aiProcessedContent {
@@ -327,9 +332,14 @@ final class WebLinkImportViewModel: ObservableObject {
                     // File download case
                     let content = try Data(contentsOf: fileURL)
                     note.setValue(content, forKey: "originalContent")
+                    // For file downloads, store the content as transcript if it's text
+                    if let textContent = String(data: content, encoding: .utf8) {
+                        note.setValue(textContent, forKey: "transcript")
+                    }
                 } else if let scrapedContent = self.scrapedContent {
                     // Web scraping case
                     note.setValue(scrapedContent.data(using: .utf8), forKey: "originalContent")
+                    note.setValue(scrapedContent, forKey: "transcript") // Store scraped content in transcript field
 
                     // If we have AI-processed content, save that too
                     if let aiContent = self.aiProcessedContent {
