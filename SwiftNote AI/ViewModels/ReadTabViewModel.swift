@@ -133,14 +133,17 @@ final class ReadTabViewModel: ObservableObject {
                 tableRows = []
             }
 
-            // Handle Feynman simplifications first (before regular headers)
+            // Handle Swift Summary simplifications first (before regular headers)
             if (trimmed.contains("**###** 💡 1 Paragraph Simplification") ||
                 trimmed.contains("💡 1 Paragraph Simplification") ||
                 trimmed.contains("💡1 Paragraph Simplification") ||
+                trimmed.contains("**###** 💡 Swift Summary") ||
+                trimmed.contains("💡 Swift Summary") ||
+                trimmed.contains("💡Swift Summary") ||
                 trimmed.contains("**###** 💡 Feynman Simplification") ||
                 trimmed.contains("💡 Feynman Simplification") ||
                 trimmed.contains("💡Feynman Simplification")) {
-                // Mark that the next paragraph should be treated as a Feynman simplification
+                // Mark that the next paragraph should be treated as a Swift Summary
                 isNextParagraphFeynman = true
                 continue
             }
@@ -180,7 +183,7 @@ final class ReadTabViewModel: ObservableObject {
             }
             // Handle formatted text
             else {
-                // Check if this paragraph should be a Feynman simplification
+                // Check if this paragraph should be a Swift Summary
                 if isNextParagraphFeynman {
                     blocks.append(ContentBlock(type: .feynmanSimplification, content: trimmed))
                     isNextParagraphFeynman = false

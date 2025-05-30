@@ -62,8 +62,8 @@ struct NoteStudyTabs: View {
                     .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
             )
             .padding(.horizontal, Theme.Spacing.xs)
-            .padding(.top, 0)
-            .padding(.bottom, Theme.Spacing.md)
+            .padding(.top, 5)
+            .padding(.bottom, 17)
 
             // Content Area with smooth transitions
             ZStack {
@@ -212,13 +212,12 @@ struct ReadTabView: View {
                 }
                 .padding()
             } else if let content = viewModel.content {
-                VStack(alignment: .leading, spacing: Theme.Spacing.lg) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
                     // Show video player if it's a YouTube note
                     if note.sourceType == .video,
                        let metadata = note.metadata,
                        let videoId = metadata["videoId"] as? String {
                         YouTubeVideoPlayerView(videoId: videoId)
-                            .padding(.bottom, Theme.Spacing.sm)
                             .padding(.horizontal, -Theme.Spacing.xs) // Extend beyond the normal content padding
                     }
 
@@ -226,7 +225,6 @@ struct ReadTabView: View {
                     if (note.sourceType == .audio || note.sourceType == .recording), let audioURL = note.audioURL {
                         CompactAudioPlayerView(audioURL: audioURL)
                             .id("audio-player-\(audioURL.lastPathComponent)-\(UUID())") // Force recreation on each appearance
-                            .padding(.bottom, Theme.Spacing.sm)
                             .padding(.horizontal, -Theme.Spacing.xs) // Extend beyond the normal content padding
                             .onAppear {
 #if DEBUG
@@ -235,10 +233,8 @@ struct ReadTabView: View {
                             }
                     }
 
-                    VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
-                        ForEach(content.formattedContent) { block in
-                            ContentBlockView(block: block, fontSize: viewModel.textSize)
-                        }
+                    ForEach(content.formattedContent) { block in
+                        ContentBlockView(block: block, fontSize: viewModel.textSize)
                     }
                 }
                 .padding(.horizontal, Theme.Spacing.md)
@@ -1091,7 +1087,7 @@ private struct ContentBlockView: View {
                         .font(.system(size: fontSize * 1.2, weight: .medium))
                         .foregroundColor(.orange)
 
-                    Text("Feynman Simplification")
+                    Text("Swift Summary")
                         .font(.system(size: fontSize * 1.1, weight: .bold))
                         .foregroundColor(.orange)
                 }

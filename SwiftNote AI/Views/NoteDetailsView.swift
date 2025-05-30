@@ -534,7 +534,7 @@ struct NoteDetailsView: View {
             // Study Tabs
             NoteStudyTabs(note: viewModel.note)
         }
-        .padding(.top, Theme.Spacing.md)
+        .padding(.top, 5)
     }
 
     // MARK: - Helper Methods
