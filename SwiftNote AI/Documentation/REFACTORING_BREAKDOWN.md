@@ -86,8 +86,8 @@ The SupabaseSyncService.swift file was originally ~3,007 lines and needed to be 
   - `deleteNoteFromSupabase()` - Delete notes from Supabase with file cleanup
   - `cleanupDeletedNotes()` - Clean up notes marked as deleted from Supabase
   - `cleanupOldDeletedNotes()` - Clean up old soft-deleted notes (30+ days)
-  - `fixAudioNoteSyncStatus()` - Fix audio notes with incorrect sync status
-  - `fixPendingNotesInSupabase()` - Fix remote notes with pending sync status
+  - ~~`fixAudioNoteSyncStatus()` - Fix audio notes with incorrect sync status~~ ✅ **REMOVED**
+  - ~~`fixPendingNotesInSupabase()` - Fix remote notes with pending sync status~~ ✅ **REMOVED**
 - **Integration**: Fully integrated with SupabaseSyncService using closure-based progress updates
 - **Dependencies**: SupabaseService, SyncTransactionManager, NetworkRecoveryManager, ProgressUpdateCoordinator
 

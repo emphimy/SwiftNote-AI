@@ -452,34 +452,7 @@ class SupabaseSyncService {
 
 
 
-    /// Fix existing notes and folders in Supabase that have incorrect sync_status = "pending"
-    /// This utility method updates remote records to have sync_status = "synced"
-    /// - Returns: Tuple with (notes fixed, folders fixed)
-    func fixRemoteSyncStatus() async throws -> (notesFix: Int, foldersFix: Int) {
-        #if DEBUG
-        print("🔧 SupabaseSyncService: Starting remote sync status fix")
-        #endif
 
-        // Fix notes with sync_status = "pending" in Supabase using NoteSyncManager
-        let notesFixed = try await noteSyncManager.fixPendingNotesInSupabase()
-
-        // Fix folders with sync_status = "pending" in Supabase using FolderSyncManager
-        let foldersFixed = try await folderSyncManager.fixPendingFoldersInSupabase()
-
-        #if DEBUG
-        print("🔧 SupabaseSyncService: Remote sync status fix completed - Notes: \(notesFixed), Folders: \(foldersFixed)")
-        #endif
-
-        return (notesFix: notesFixed, foldersFix: foldersFixed)
-    }
-
-    /// Fix existing audio notes that may have incorrect syncStatus
-    /// This utility method marks audio notes with "synced" status as "pending" for sync
-    /// - Parameter context: The NSManagedObjectContext to update notes in
-    /// - Returns: Number of notes that were fixed
-    func fixAudioNoteSyncStatus(context: NSManagedObjectContext) async throws -> Int {
-        return try await noteSyncManager.fixAudioNoteSyncStatus(context: context)
-    }
 
     // MARK: - Download Methods (Phase 4: Two-Way Sync)
 

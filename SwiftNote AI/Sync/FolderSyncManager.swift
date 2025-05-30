@@ -319,48 +319,7 @@ class FolderSyncManager {
         }
     }
 
-    /// Fix folders with pending sync status in Supabase
-    /// - Returns: Number of folders fixed
-    func fixPendingFoldersInSupabase() async throws -> Int {
-        // Get current user ID
-        let session = try await supabaseService.getSession()
-        let userId = session.user.id
 
-        var foldersFixed = 0
-
-        #if DEBUG
-        print("🔧 FolderSyncManager: Fixing folders with pending sync status for user: \(userId)")
-        #endif
-
-        // Fix folders with sync_status = "pending" in Supabase with network recovery
-        do {
-            let response = try await networkRecoveryManager.executeWithRetry(
-                operation: {
-                    try await self.supabaseService.client.from("folders")
-                        .update(["sync_status": "synced"])
-                        .eq("user_id", value: userId.uuidString)
-                        .eq("sync_status", value: "pending")
-                        .execute()
-                },
-                operationName: "Fix Folders Sync Status"
-            )
-
-            // Parse the response to count affected rows
-            if let jsonArray = try? JSONSerialization.jsonObject(with: response.data) as? [[String: Any]] {
-                foldersFixed = jsonArray.count
-            }
-
-            #if DEBUG
-            print("🔧 FolderSyncManager: Fixed \(foldersFixed) folders in Supabase")
-            #endif
-        } catch {
-            #if DEBUG
-            print("🔧 FolderSyncManager: Error fixing folders in Supabase: \(error)")
-            #endif
-        }
-
-        return foldersFixed
-    }
 
     // MARK: - Private Helper Methods
 
