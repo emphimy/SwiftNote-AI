@@ -52,7 +52,10 @@ enum AutoSyncEvent {
     case periodicSync
     case userInitiated
     case networkReconnected
-    case syncRetry
+    case syncRetry(attempt: Int)
+    case conflictDetected(entityName: String)
+    case emergencySync
+    case batchSync(eventCount: Int)
 
     var description: String {
         switch self {
@@ -66,8 +69,37 @@ enum AutoSyncEvent {
             return "User initiated"
         case .networkReconnected:
             return "Network reconnected"
+        case .syncRetry(let attempt):
+            return "Sync retry (attempt \(attempt))"
+        case .conflictDetected(let entityName):
+            return "Conflict detected: \(entityName)"
+        case .emergencySync:
+            return "Emergency sync"
+        case .batchSync(let eventCount):
+            return "Batch sync (\(eventCount) events)"
+        }
+    }
+
+    var priority: Int {
+        switch self {
+        case .emergencySync:
+            return 100
+        case .userInitiated:
+            return 90
+        case .conflictDetected:
+            return 80
+        case .appDidBecomeActive:
+            return 70
+        case .networkReconnected:
+            return 60
         case .syncRetry:
-            return "Sync retry"
+            return 50
+        case .dataChanged:
+            return 40
+        case .batchSync:
+            return 30
+        case .periodicSync:
+            return 10
         }
     }
 }
@@ -116,6 +148,23 @@ class AutoSyncManager: ObservableObject {
     /// Background task management
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private var backgroundSyncTimer: Timer?
+
+    /// Enhanced error tracking and retry logic
+    private var consecutiveFailures: Int = 0
+    private var lastSyncError: Error?
+    private var retryAttempts: Int = 0
+    private var maxRetryAttempts: Int = 5
+    private var retryDelayMultiplier: Double = 2.0
+    private var baseRetryDelay: TimeInterval = 5.0
+
+    /// Conflict resolution tracking
+    private var detectedConflicts: Set<String> = []
+    private var conflictResolutionInProgress: Bool = false
+
+    /// Real-time sync optimization
+    private var batchedEvents: [AutoSyncEvent] = []
+    private var lastBatchTime: Date?
+    private let batchWindow: TimeInterval = 3.0
 
     // MARK: - Initialization
 
@@ -185,6 +234,16 @@ class AutoSyncManager: ObservableObject {
         stopAutoSync()
         networkMonitor.cancel()
         cancellables.removeAll()
+
+        // Clear all state
+        batchedEvents.removeAll()
+        detectedConflicts.removeAll()
+        pendingSyncEvents.removeAll()
+
+        // Reset tracking variables
+        consecutiveFailures = 0
+        retryAttempts = 0
+        conflictResolutionInProgress = false
     }
 
     /// Update auto-sync configuration
@@ -572,10 +631,50 @@ class AutoSyncManager: ObservableObject {
         debounceTimer = nil
     }
 
-    /// Schedule a sync operation with debouncing
+    /// Schedule a sync operation with priority-based handling and batching
     private func scheduleSync(for event: AutoSyncEvent) {
-        // Add event to pending list
+        #if DEBUG
+        print("🔄 AutoSyncManager: Scheduling sync for event: \(event.description) (priority: \(event.priority))")
+        #endif
+
+        // Handle high-priority events immediately
+        if event.priority >= 80 {
+            // Clear any batched events and process immediately
+            if !batchedEvents.isEmpty {
+                let batchEvent = AutoSyncEvent.batchSync(eventCount: batchedEvents.count)
+                pendingSyncEvents.append(batchEvent)
+                batchedEvents.removeAll()
+            }
+
+            pendingSyncEvents.append(event)
+            performSync()
+            return
+        }
+
+        // Handle conflict detection
+        if case .conflictDetected(let entityName) = event {
+            detectedConflicts.insert(entityName)
+            if !conflictResolutionInProgress {
+                conflictResolutionInProgress = true
+                pendingSyncEvents.append(event)
+                performSync()
+                return
+            }
+        }
+
+        // Batch low-priority events for efficiency
+        if event.priority <= 40 {
+            batchedEvents.append(event)
+            lastBatchTime = Date()
+
+            // Start batch timer if not already running
+            startBatchTimer()
+            return
+        }
+
+        // Add event to pending list with priority sorting
         pendingSyncEvents.append(event)
+        pendingSyncEvents.sort { $0.priority > $1.priority }
 
         // Check if we should sync immediately or wait
         if shouldSyncImmediately(for: event) {
@@ -588,23 +687,28 @@ class AutoSyncManager: ObservableObject {
 
     /// Check if sync should happen immediately
     private func shouldSyncImmediately(for event: AutoSyncEvent) -> Bool {
-        // Don't sync if network is unavailable
-        guard isNetworkAvailable else {
+        // Don't sync if network is unavailable (except for emergency sync)
+        guard isNetworkAvailable || event.priority >= 100 else {
             #if DEBUG
             print("🔄 AutoSyncManager: Network unavailable, deferring sync")
             #endif
             return false
         }
 
-        // Always sync immediately for certain events
+        // Always sync immediately for high-priority events
         switch event {
-        case .appDidBecomeActive, .userInitiated, .syncRetry, .networkReconnected:
+        case .emergencySync, .userInitiated, .conflictDetected:
             return true
+        case .appDidBecomeActive, .networkReconnected:
+            return true
+        case .syncRetry(let attempt):
+            // Immediate retry for first few attempts, then use exponential backoff
+            return attempt <= 2
         default:
             break
         }
 
-        // Check minimum interval
+        // Check minimum interval for regular events
         if let lastSync = lastSyncAttempt {
             let timeSinceLastSync = Date().timeIntervalSince(lastSync)
             return timeSinceLastSync >= configuration.minimumSyncInterval
@@ -622,6 +726,39 @@ class AutoSyncManager: ObservableObject {
                 self?.performSync()
             }
         }
+    }
+
+    /// Start batch timer for collecting low-priority events
+    private func startBatchTimer() {
+        // Don't start a new timer if one is already running
+        guard backgroundSyncTimer == nil else { return }
+
+        backgroundSyncTimer = Timer.scheduledTimer(withTimeInterval: batchWindow, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.processBatchedEvents()
+            }
+        }
+    }
+
+    /// Process batched events as a single sync operation
+    private func processBatchedEvents() {
+        guard !batchedEvents.isEmpty else { return }
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Processing \(batchedEvents.count) batched events")
+        #endif
+
+        let batchEvent = AutoSyncEvent.batchSync(eventCount: batchedEvents.count)
+        batchedEvents.removeAll()
+        lastBatchTime = nil
+
+        // Stop the batch timer
+        backgroundSyncTimer?.invalidate()
+        backgroundSyncTimer = nil
+
+        // Schedule the batch sync
+        pendingSyncEvents.append(batchEvent)
+        performSync()
     }
 
     /// Perform the actual sync operation
@@ -683,11 +820,20 @@ class AutoSyncManager: ObservableObject {
         }
     }
 
-    /// Handle successful sync
+    /// Handle successful sync with enhanced tracking
     private func handleSyncSuccess() {
         isSyncInProgress = false
         lastAutoSyncDate = Date()
         autoSyncStatus = "Synced"
+
+        // Reset error tracking
+        consecutiveFailures = 0
+        retryAttempts = 0
+        lastSyncError = nil
+
+        // Clear conflict resolution state
+        conflictResolutionInProgress = false
+        detectedConflicts.removeAll()
 
         #if DEBUG
         print("🔄 AutoSyncManager: Sync completed successfully")
@@ -701,22 +847,377 @@ class AutoSyncManager: ObservableObject {
         }
     }
 
-    /// Handle sync failure
+    /// Handle sync failure with intelligent retry logic
     private func handleSyncFailure(error: Error) {
         isSyncInProgress = false
-        autoSyncStatus = "Error"
+        consecutiveFailures += 1
+        lastSyncError = error
+
+        let errorMessage = error.localizedDescription
+        autoSyncStatus = "Error: \(errorMessage)"
 
         #if DEBUG
-        print("🔄 AutoSyncManager: Sync failed - \(error.localizedDescription)")
+        print("🔄 AutoSyncManager: Sync failed (failure #\(consecutiveFailures)): \(error)")
         #endif
 
-        // Schedule retry after delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30.0) {
-            if self.autoSyncStatus == "Error" {
-                self.triggerSync(event: .syncRetry)
-                self.autoSyncStatus = "Active"
+        // Analyze error type for appropriate response
+        let shouldRetry = shouldRetryAfterError(error)
+
+        if shouldRetry && retryAttempts < maxRetryAttempts {
+            retryAttempts += 1
+
+            // Schedule intelligent retry with exponential backoff
+            scheduleIntelligentRetry()
+        } else {
+            // Max retries reached or non-retryable error
+            #if DEBUG
+            print("🔄 AutoSyncManager: Max retries reached or non-retryable error")
+            #endif
+
+            // Reset retry state
+            retryAttempts = 0
+
+            // For critical errors, trigger emergency sync after a longer delay
+            if isCriticalError(error) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 300) { // 5 minutes
+                    self.triggerSync(event: .emergencySync)
+                }
+            } else {
+                // Regular retry after extended delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + 60.0) {
+                    if self.autoSyncStatus.hasPrefix("Error") {
+                        self.triggerSync(event: .syncRetry(attempt: 1))
+                        self.autoSyncStatus = "Active"
+                    }
+                }
             }
         }
+    }
+
+    // MARK: - Advanced Error Handling & Conflict Resolution
+
+    /// Determine if an error should trigger a retry
+    private func shouldRetryAfterError(_ error: Error) -> Bool {
+        // Network-related errors are usually retryable
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost, .timedOut:
+                return true
+            case .badServerResponse, .cannotFindHost, .cannotConnectToHost:
+                return true
+            default:
+                return false
+            }
+        }
+
+        // Supabase-specific errors
+        if error.localizedDescription.contains("network") ||
+           error.localizedDescription.contains("timeout") ||
+           error.localizedDescription.contains("connection") {
+            return true
+        }
+
+        // Authentication errors might be retryable after token refresh
+        if error.localizedDescription.contains("unauthorized") ||
+           error.localizedDescription.contains("authentication") {
+            return true
+        }
+
+        return false
+    }
+
+    /// Determine if an error is critical and requires emergency handling
+    private func isCriticalError(_ error: Error) -> Bool {
+        // Data corruption or integrity errors
+        if error.localizedDescription.contains("corruption") ||
+           error.localizedDescription.contains("integrity") ||
+           error.localizedDescription.contains("constraint") {
+            return true
+        }
+
+        // Multiple consecutive failures indicate a critical issue
+        return consecutiveFailures >= 3
+    }
+
+    /// Schedule intelligent retry with exponential backoff
+    private func scheduleIntelligentRetry() {
+        let delay = baseRetryDelay * pow(retryDelayMultiplier, Double(retryAttempts - 1))
+        let maxDelay: TimeInterval = 300 // 5 minutes max
+        let actualDelay = min(delay, maxDelay)
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Scheduling retry #\(retryAttempts) in \(actualDelay) seconds")
+        #endif
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + actualDelay) {
+            self.triggerSync(event: .syncRetry(attempt: self.retryAttempts))
+        }
+    }
+
+    /// Perform conflict resolution before sync
+    private func performConflictResolution() async throws {
+        #if DEBUG
+        print("🔄 AutoSyncManager: Performing conflict resolution for entities: \(detectedConflicts)")
+        #endif
+
+        // For now, use "Last Write Wins" strategy as mentioned in user preferences
+        // This could be enhanced with more sophisticated conflict resolution
+
+        for entityName in detectedConflicts {
+            try await resolveConflictsForEntity(entityName)
+        }
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Conflict resolution completed")
+        #endif
+    }
+
+    /// Resolve conflicts for a specific entity using Last Write Wins
+    private func resolveConflictsForEntity(_ entityName: String) async throws {
+        let context = PersistenceController.shared.container.viewContext
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Resolving conflicts for \(entityName) using Last Write Wins")
+        #endif
+
+        switch entityName {
+        case "Note":
+            try await resolveNoteConflicts(context: context)
+        case "Folder":
+            try await resolveFolderConflicts(context: context)
+        default:
+            #if DEBUG
+            print("🔄 AutoSyncManager: Unknown entity type for conflict resolution: \(entityName)")
+            #endif
+        }
+    }
+
+    /// Resolve Note conflicts using Last Write Wins strategy
+    private func resolveNoteConflicts(context: NSManagedObjectContext) async throws {
+        // Fetch all notes with pending sync status (potential conflicts)
+        let fetchRequest: NSFetchRequest<Note> = Note.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "syncStatus == %@", "pending")
+
+        let pendingNotes = try context.fetch(fetchRequest)
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Found \(pendingNotes.count) notes with potential conflicts")
+        #endif
+
+        for note in pendingNotes {
+            guard let noteId = note.id else { continue }
+
+            // Fetch the corresponding remote note to compare timestamps
+            if let remoteNote = try await fetchRemoteNote(id: noteId) {
+                let localModified = note.lastModified ?? note.timestamp ?? Date.distantPast
+                let remoteModified = remoteNote.lastModified
+
+                #if DEBUG
+                print("🔄 AutoSyncManager: Note \(noteId) - Local: \(localModified), Remote: \(remoteModified)")
+                #endif
+
+                // Last Write Wins: Compare timestamps
+                if remoteModified > localModified {
+                    // Remote is newer - update local with remote data
+                    #if DEBUG
+                    print("🔄 AutoSyncManager: Remote note is newer, updating local")
+                    #endif
+                    try await updateLocalNote(note: note, with: remoteNote, context: context)
+                } else {
+                    // Local is newer or same - keep local, mark as resolved
+                    #if DEBUG
+                    print("🔄 AutoSyncManager: Local note is newer or same, keeping local")
+                    #endif
+                    note.syncStatus = "synced"
+                }
+            }
+        }
+
+        try context.save()
+    }
+
+    /// Resolve Folder conflicts using Last Write Wins strategy
+    private func resolveFolderConflicts(context: NSManagedObjectContext) async throws {
+        // Fetch all folders with pending sync status (potential conflicts)
+        let fetchRequest: NSFetchRequest<Folder> = Folder.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "syncStatus == %@", "pending")
+
+        let pendingFolders = try context.fetch(fetchRequest)
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Found \(pendingFolders.count) folders with potential conflicts")
+        #endif
+
+        for folder in pendingFolders {
+            guard let folderId = folder.id else { continue }
+
+            // Fetch the corresponding remote folder to compare timestamps
+            if let remoteFolder = try await fetchRemoteFolder(id: folderId) {
+                let localModified = folder.updatedAt ?? folder.timestamp ?? Date.distantPast
+                let remoteModified = remoteFolder.updatedAt ?? remoteFolder.timestamp
+
+                #if DEBUG
+                print("🔄 AutoSyncManager: Folder \(folderId) - Local: \(localModified), Remote: \(remoteModified)")
+                #endif
+
+                // Last Write Wins: Compare timestamps
+                if remoteModified > localModified {
+                    // Remote is newer - update local with remote data
+                    #if DEBUG
+                    print("🔄 AutoSyncManager: Remote folder is newer, updating local")
+                    #endif
+                    try await updateLocalFolder(folder: folder, with: remoteFolder, context: context)
+                } else {
+                    // Local is newer or same - keep local, mark as resolved
+                    #if DEBUG
+                    print("🔄 AutoSyncManager: Local folder is newer or same, keeping local")
+                    #endif
+                    folder.syncStatus = "synced"
+                }
+            }
+        }
+
+        try context.save()
+    }
+
+    // MARK: - Remote Data Fetching
+
+    /// Fetch a remote note by ID from Supabase
+    private func fetchRemoteNote(id: UUID) async throws -> SimpleSupabaseNote? {
+        // Get current user session
+        let session = try await SupabaseService.shared.getSession()
+        let userId = session.user.id
+
+        do {
+            let response: [SimpleSupabaseNote] = try await SupabaseService.shared.fetch(
+                from: "notes",
+                filters: { query in
+                    query.eq("id", value: id.uuidString)
+                        .eq("user_id", value: userId.uuidString)
+                }
+            )
+
+            return response.first
+        } catch {
+            #if DEBUG
+            print("🔄 AutoSyncManager: Failed to fetch remote note \(id): \(error)")
+            #endif
+            return nil
+        }
+    }
+
+    /// Fetch a remote folder by ID from Supabase
+    private func fetchRemoteFolder(id: UUID) async throws -> SimpleSupabaseFolder? {
+        // Get current user session
+        let session = try await SupabaseService.shared.getSession()
+        let userId = session.user.id
+
+        do {
+            let response: [SimpleSupabaseFolder] = try await SupabaseService.shared.fetch(
+                from: "folders",
+                filters: { query in
+                    query.eq("id", value: id.uuidString)
+                        .eq("user_id", value: userId.uuidString)
+                }
+            )
+
+            return response.first
+        } catch {
+            #if DEBUG
+            print("🔄 AutoSyncManager: Failed to fetch remote folder \(id): \(error)")
+            #endif
+            return nil
+        }
+    }
+
+    // MARK: - Local Data Updates
+
+    /// Update local note with remote data (remote wins)
+    private func updateLocalNote(note: Note, with remoteNote: SimpleSupabaseNote, context: NSManagedObjectContext) async throws {
+        #if DEBUG
+        print("🔄 AutoSyncManager: Updating local note \(note.id?.uuidString ?? "unknown") with remote data")
+        #endif
+
+        // Update basic fields
+        note.title = remoteNote.title
+        note.sourceType = remoteNote.sourceType
+        note.timestamp = remoteNote.timestamp
+        note.lastModified = remoteNote.lastModified
+        note.isFavorite = remoteNote.isFavorite
+        note.processingStatus = remoteNote.processingStatus
+
+        // Update optional fields
+        note.keyPoints = remoteNote.keyPoints
+        note.citations = remoteNote.citations
+        note.duration = remoteNote.duration ?? 0.0
+        if let sourceURLString = remoteNote.sourceURL {
+            note.sourceURL = URL(string: sourceURLString)
+        } else {
+            note.sourceURL = nil
+        }
+        note.tags = remoteNote.tags
+        note.transcript = remoteNote.transcript
+        note.videoId = remoteNote.videoId
+
+        // Update folder relationship if needed
+        if let remoteFolderId = remoteNote.folderId {
+            let folderFetch: NSFetchRequest<Folder> = Folder.fetchRequest()
+            folderFetch.predicate = NSPredicate(format: "id == %@", remoteFolderId as CVarArg)
+            if let folder = try context.fetch(folderFetch).first {
+                note.folder = folder
+            }
+        } else {
+            note.folder = nil
+        }
+
+        // Mark as synced
+        note.syncStatus = "synced"
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Successfully updated local note with remote data")
+        #endif
+    }
+
+    /// Update local folder with remote data (remote wins)
+    private func updateLocalFolder(folder: Folder, with remoteFolder: SimpleSupabaseFolder, context: NSManagedObjectContext) async throws {
+        #if DEBUG
+        print("🔄 AutoSyncManager: Updating local folder \(folder.id?.uuidString ?? "unknown") with remote data")
+        #endif
+
+        // Update basic fields
+        folder.name = remoteFolder.name
+        folder.color = remoteFolder.color
+        folder.timestamp = remoteFolder.timestamp
+        folder.sortOrder = remoteFolder.sortOrder
+        folder.updatedAt = remoteFolder.updatedAt ?? remoteFolder.timestamp
+
+        // Mark as synced
+        folder.syncStatus = "synced"
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Successfully updated local folder with remote data")
+        #endif
+    }
+
+    /// Detect potential conflicts during data changes
+    func detectConflict(for entityName: String, objectID: NSManagedObjectID) {
+        guard !conflictResolutionInProgress else { return }
+
+        #if DEBUG
+        print("🔄 AutoSyncManager: Potential conflict detected for \(entityName)")
+        #endif
+
+        detectedConflicts.insert(entityName)
+        triggerSync(event: .conflictDetected(entityName: entityName))
+    }
+
+    /// Public method to trigger emergency sync
+    func triggerEmergencySync() {
+        #if DEBUG
+        print("🔄 AutoSyncManager: Emergency sync triggered")
+        #endif
+
+        triggerSync(event: .emergencySync)
     }
 }
 
