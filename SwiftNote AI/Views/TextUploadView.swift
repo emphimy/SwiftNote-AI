@@ -767,12 +767,12 @@ struct TextUploadView: View {
 
     // MARK: - File Selection Section
     private var fileSelectionSection: some View {
-        VStack(spacing: Theme.Spacing.md) {
-            // Local file selection
+        VStack(spacing: Theme.Spacing.sm) {
+            // Local file selection - more compact horizontal layout
             Button(action: { showingFilePicker = true }) {
-                VStack(spacing: Theme.Spacing.md) {
+                HStack(spacing: Theme.Spacing.md) {
                     Image(systemName: "doc.badge.plus")
-                        .font(.system(size: 48))
+                        .font(.system(size: 24))
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [Theme.Colors.primary, Theme.Colors.primary.opacity(0.7)],
@@ -784,9 +784,16 @@ struct TextUploadView: View {
                     Text("Select PDF from Files")
                         .font(Theme.Typography.body)
                         .foregroundColor(Theme.Colors.primary)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(Theme.Colors.primary.opacity(0.6))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, Theme.Spacing.xl)
+                .padding(.horizontal, Theme.Spacing.md)
+                .padding(.vertical, Theme.Spacing.md)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Layout.cornerRadius)
                         .fill(Theme.Colors.secondaryBackground)
@@ -797,14 +804,26 @@ struct TextUploadView: View {
                 )
             }
 
-            // URL input section
-            VStack(spacing: Theme.Spacing.sm) {
-                Text("Or Import from URL")
-                    .font(Theme.Typography.body)
-                    .foregroundColor(Theme.Colors.secondaryText)
-                    .padding(.top, Theme.Spacing.sm)
+            // Divider with text
+            HStack {
+                Rectangle()
+                    .fill(Theme.Colors.tertiaryBackground)
+                    .frame(height: 1)
 
-                // URL Input Field with YouTube-style
+                Text("or")
+                    .font(Theme.Typography.caption)
+                    .foregroundColor(Theme.Colors.secondaryText)
+                    .padding(.horizontal, Theme.Spacing.sm)
+
+                Rectangle()
+                    .fill(Theme.Colors.tertiaryBackground)
+                    .frame(height: 1)
+            }
+            .padding(.vertical, Theme.Spacing.xs)
+
+            // URL input section - simplified without extra background
+            VStack(spacing: Theme.Spacing.sm) {
+                // URL Input Field
                 HStack(spacing: Theme.Spacing.sm) {
                     Image(systemName: "link")
                         .foregroundColor(isURLFieldFocused ? Theme.Colors.primary : .gray)
@@ -842,7 +861,7 @@ struct TextUploadView: View {
                 )
                 .animation(.easeInOut, value: isURLFieldFocused)
 
-                // Import Button
+                // Import Button - more compact
                 Button(action: { importFromUrl() }) {
                     HStack {
                         if isImportingFromUrl {
@@ -852,21 +871,19 @@ struct TextUploadView: View {
                                 .scaleEffect(0.8)
                             Text("Downloading PDF...")
                         } else {
-                            Text("Import PDF")
+                            Text("Import from URL")
                             Image(systemName: "arrow.right.circle.fill")
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .padding()
+                    .padding(.vertical, Theme.Spacing.sm)
+                    .padding(.horizontal, Theme.Spacing.md)
                     .background(pdfUrl.isEmpty || isImportingFromUrl ? Theme.Colors.primary.opacity(0.5) : Theme.Colors.primary)
                     .foregroundColor(.white)
                     .cornerRadius(Theme.Layout.cornerRadius)
                 }
                 .disabled(pdfUrl.isEmpty || isImportingFromUrl)
             }
-            .padding()
-            .background(Theme.Colors.tertiaryBackground.opacity(0.3))
-            .cornerRadius(Theme.Layout.cornerRadius)
 
             // Language Picker Section
             StandardLanguagePicker(selectedLanguage: $viewModel.selectedLanguage)
